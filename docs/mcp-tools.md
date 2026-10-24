@@ -1,6 +1,6 @@
 # MCP 工具参考
 
-服务以 MCP（Model Context Protocol）暴露 13 个工具。默认 stdio；`-transport http` 时使用 Streamable HTTP。
+服务以 MCP（Model Context Protocol）暴露 17 个工具。默认 stdio；`-transport http` 时使用 Streamable HTTP。
 
 ## 启动
 
@@ -38,8 +38,11 @@
 |---|---|---|---|
 | `entity` | string | 是 | 实体 ID，如 `猫猫` |
 | `path` | string | 否 | 点分路径，如 `身体.体力`；留空返回完整 `data` |
+| `diagnostics` | string | 否 | `none` / `summary`（默认）/ `full`；附加当前状态机诊断 |
 
-返回 `{"实体","类型","数据"}` 或 `{"实体","路径","值"}`。
+返回 `{"实体","类型","数据"}` 或 `{"实体","路径","值"}`。完整数据查询在诊断非空时额外带
+`diagnostics` 字段：`{"generation","summary":{"total","error","warning","info","overflow"},"items":[...],"truncated"}`。
+`items` 默认最多 3 条（`full` 为 50 条），单条消息截断到 200 字；`none` 完全不出现该字段。
 
 ### `entity_state_set`
 
@@ -113,7 +116,56 @@
 
 ### `neko_script_list`
 
-无参数，返回 `{"scripts":[...]}`。
+无参数，返回 `{"scripts":[...],"items":[{name,path,hash,rules,templates,funcs,events}]}`；
+`scripts` 保持旧版名字数组兼容。
+
+### `neko_script_read`
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `name` | string | 是 | 脚本名 |
+
+返回 `{"name","path","source","hash","actual_hash","entry"}`。只读；拒绝符号链接、越界路径与超过
+256KB 的源文件。
+
+### `neko_script_validate`
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `name` | string | 否 | 脚本名（用于安全检查上下文） |
+| `script` | string | 是 | 完整脚本原文 |
+
+dry-run：解析 + 安全 + 编译，**不注册、不落盘**。返回
+`{"ok","errors","warnings","templates","rules","funcs","events"}`。
+
+### `neko_script_write`
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `name` | string | 是 | 脚本名 |
+| `script` | string | 是 | 完整脚本原文 |
+| `expected_hash` | string | 否 | 当前脚本 hash；覆盖已有脚本时必填 |
+
+事务式写入：先编译，成功后才注册并原子写源文件；`expected_hash` 不匹配直接拒绝，不覆盖。
+编译失败不落盘、不注册。返回与 `neko_script_apply` 相同的 `ApplyResult`。
+
+### `diagnostics_query`
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `severity` | string | 否 | `error` / `warning` / `info` |
+| `source` | string | 否 | `registry` / `engine` / `bridge` / `consistency` |
+| `entity` | string | 否 | 按实体过滤 |
+| `script` | string | 否 | 按脚本过滤 |
+| `code` | string | 否 | 按错误码过滤 |
+| `since` | string | 否 | 只返回该时间之后出现的（RFC3339） |
+| `limit` | int | 否 | 最多条数，默认 20，上限 200 |
+
+返回 `{"generation","summary":{...},"items":[...],"truncated"}`。诊断在内存环形缓冲区中按
+`code+source+script+entity+line+message` 去重，重复只累加 `count`，容量 512，溢出计入 `overflow`。
+常见错误码：`script.apply.failed`、`script.replay.skipped`、`script.safety.blocked`、
+`script.source.missing`、`script.source.orphan`、`script.hash.mismatch`、`tick.rule.error`、
+`tick.conflict.pending`、`tick.budget.exceeded`、`event.unregistered`、`schema.validation.failed`。
 
 ## 库存
 
@@ -123,7 +175,8 @@
 
 ### `stats`
 
-无参数，返回实体总数与按类型分布、规则总数/启用数/优先级分布、模板数、脚本数。
+无参数，返回实体总数与按类型分布、规则总数/启用数/优先级分布、模板数、脚本数；
+接诊断存储时额外返回 `diagnostics` 汇总计数。
 
 ### `event_log`
 
@@ -131,7 +184,8 @@
 |---|---|---|---|
 | `limit` | int | 否 | 最近条数，默认 20 |
 
-返回 `{"validations":[...],"events":[...]}`：schema 校验失败（越界/类型不符）与最近一次事件派发记录。
+返回 `{"validations":[...],"events":[...],"history":[...]}`：schema 校验失败（越界/类型不符）、
+最近一次事件派发记录，以及最近若干条结构化派发历史（`name/entity/field/status/message/time`）。
 
 ### `entity_snapshot`
 
@@ -146,4 +200,6 @@
 - HTTP 模式支持 `http_token` Bearer 鉴权；token 为空时只允许回环地址。stdio 模式由启动方控制。
 - 服务没有 AstrBot 的「主人白名单」概念：**任何能连上 MCP 服务的客户端都拥有完整读写权限**。stdio 模式下由启动方控制；HTTP 模式请只绑定到 `127.0.0.1`，不要暴露到公网。
 - 写操作会直接改 `data/` 下的 JSON 与 `scripts/` 下的源文件。生产数据请先备份，或用只读副本调试。
+- `neko_script_write` 覆盖已有脚本必须带 `expected_hash`，只接受脚本名（不接受任意路径）；编译失败不注册、不落盘。
+- 诊断保存在内存（容量 512），进程重启即清空；它不替代 `data/logs/` 与 `llm_decisions.json` 的持久记录。
 - `side_effects` 会被编译成回填规则的 `then` 操作；`reason` 与冲突上下文写入 `<dataDir>/llm_decisions.json`。

@@ -30,6 +30,7 @@ func (s *Server) addStateMachineTools(server *mcp.Server) {
 			scope = "*"
 		}
 		result := s.machine.Tick(scope)
+		s.recordTick(result)
 		if s.logger != nil {
 			_ = s.logger.Log(result, scope, s.snapshotStates(result))
 		}
@@ -53,8 +54,18 @@ func (s *Server) addStateMachineTools(server *mcp.Server) {
 				return fail("side_effects 必须是 JSON 数组: %s", err)
 			}
 		}
+		var entityID string
+		for _, conflict := range s.machine.PendingConflicts() {
+			if conflict.ConflictID == args.ConflictID {
+				entityID = conflict.EntityID
+				break
+			}
+		}
 		if !s.machine.ResolveConflictWithEffects(args.ConflictID, target, args.Reason, effects) {
 			return fail("冲突 %s 不存在或已解决", args.ConflictID)
+		}
+		if s.diagnostics != nil && entityID != "" {
+			s.diagnostics.ClearByCodeEntity("tick.conflict.pending", entityID)
 		}
 		if err := s.store.Save(); err != nil {
 			return fail("保存失败: %s", err)

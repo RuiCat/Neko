@@ -15,11 +15,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ruicat/astrbox/internal/compiler"
+	"github.com/ruicat/astrbox/internal/diagnostics"
 	"github.com/ruicat/astrbox/internal/engine"
 	"github.com/ruicat/astrbox/internal/entity"
 	"github.com/ruicat/astrbox/internal/neko"
-	"github.com/ruicat/astrbox/internal/safety"
 )
 
 // Entry is one persisted script registration.
@@ -81,15 +80,17 @@ type FunctionSink interface {
 
 // Registry owns the script entries and the source directory.
 type Registry struct {
-	mu         sync.Mutex
-	store      *entity.Store
-	engine     *engine.StateMachine
-	path       string
-	scriptsDir string
-	entries    map[string]*Entry
-	order      []string
-	sources    map[string]string
-	sink       FunctionSink
+	mu          sync.Mutex
+	sourcesMu   sync.RWMutex
+	store       *entity.Store
+	engine      *engine.StateMachine
+	path        string
+	scriptsDir  string
+	entries     map[string]*Entry
+	order       []string
+	sources     map[string]string
+	sink        FunctionSink
+	diagnostics *diagnostics.Store
 }
 
 var scriptNamePattern = regexp.MustCompile(`^[\p{L}\p{N}_-]+$`)
@@ -109,22 +110,28 @@ func New(store *entity.Store, machine *engine.StateMachine, path, scriptsDir str
 
 // indexSources maps script names to their source path (scripts may be nested).
 func (r *Registry) indexSources() {
-	r.sources = map[string]string{}
+	sources := map[string]string{}
 	_ = filepath.WalkDir(r.scriptsDir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(entry.Name(), ".neko") {
 			return nil
 		}
 		name := strings.TrimSuffix(entry.Name(), ".neko")
-		if _, exists := r.sources[name]; !exists {
-			r.sources[name] = path
+		if _, exists := sources[name]; !exists {
+			sources[name] = path
 		}
 		return nil
 	})
+	r.sourcesMu.Lock()
+	r.sources = sources
+	r.sourcesMu.Unlock()
 }
 
 // sourcePath returns the source file for a script, defaulting to the root.
 func (r *Registry) sourcePath(name string) string {
-	if path, ok := r.sources[name]; ok {
+	r.sourcesMu.RLock()
+	path, ok := r.sources[name]
+	r.sourcesMu.RUnlock()
+	if ok {
 		return path
 	}
 	return filepath.Join(r.scriptsDir, name+".neko")
@@ -182,6 +189,9 @@ func (r *Registry) List() []string {
 // SetFunctionSink wires @函数/@事件 registration (optional).
 func (r *Registry) SetFunctionSink(sink FunctionSink) { r.sink = sink }
 
+// SetDiagnostics wires the shared diagnostic store (optional).
+func (r *Registry) SetDiagnostics(store *diagnostics.Store) { r.diagnostics = store }
+
 // Get returns one entry.
 func (r *Registry) Get(name string) *Entry {
 	r.mu.Lock()
@@ -197,12 +207,13 @@ func (r *Registry) Apply(name, text string, force, skipSafety bool) *ApplyResult
 // applyScript is the shared implementation; persist=false is used by replay so
 // a read-only startup does not rewrite scripts.json.
 func (r *Registry) applyScript(name, text string, force, skipSafety, persist bool) (result *ApplyResult) {
-	result = &ApplyResult{OK: true, Script: name, Errors: []ApplyError{}, Warnings: []ApplyError{}}
+	result = newApplyResult(name)
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			result.OK = false
 			result.Errors = append(result.Errors, ApplyError{Severity: "error", Message: fmt.Sprintf("编译或应用脚本时 panic: %v", recovered)})
 		}
+		r.recordApplyResult(result, persist)
 	}()
 	if err := validateName(name); err != "" {
 		result.OK = false
@@ -217,84 +228,16 @@ func (r *Registry) applyScript(name, text string, force, skipSafety, persist boo
 		result.Noop = true
 		return result
 	}
-	ast := neko.Parse(text)
-	for _, err := range ast.Errors {
-		// Mirrors the Python registry: a malformed data block is reported but does
-		// not stop the rules in the same script from being applied.
-		result.Warnings = append(result.Warnings, ApplyError{Severity: "warning", Message: err.Error()})
-	}
-	if !skipSafety && safety.Enabled() {
-		violations := safety.CheckAST(ast)
-		if len(violations) == 0 {
-			violations = safety.CheckScriptText(text, name)
-		}
-		if len(violations) > 0 {
-			result.OK = false
-			result.Errors = append(result.Errors, ApplyError{
-				Severity: "error", Block: "R18G安全检查",
-				Message: fmt.Sprintf("脚本 '%s' 含 R18G 敏感内容，已拒绝应用（%d 处）", name, len(violations)),
-			})
-			return result
-		}
-	}
-	compiled := compiler.CompileScript(ast)
-	if len(compiled.Errors) > 0 {
+	prepared := r.prepareScript(name, text, skipSafety)
+	result.Warnings = append(result.Warnings, prepared.Warnings...)
+	if len(prepared.Errors) > 0 {
 		result.OK = false
-		for _, err := range compiled.Errors {
-			result.Errors = append(result.Errors, ApplyError{Severity: "error", Message: err.Error()})
-		}
+		result.Errors = append(result.Errors, prepared.Errors...)
 		return result
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if old != nil {
-		delete(r.entries, name)
-		r.releaseLocked(old, result, persist)
-	}
-	newEntry := &Entry{
-		Hash: newHash, Templates: map[string]int{}, Rules: map[string]int{},
-		Funcs: []string{}, Events: []string{},
-		FuncDefs: toFuncRecords(compiled.Funcs), EventDefs: compiled.Events,
-	}
-	for typeName, data := range compiled.Templates {
-		r.store.AddTemplate(typeName, data)
-		if persist {
-			if err := r.store.SaveTemplateFile(typeName); err != nil {
-				result.Warnings = append(result.Warnings, ApplyError{Severity: "warning", Message: "模板落盘失败: " + err.Error()})
-			}
-		}
-		newEntry.Templates[typeName] = 1
-		result.Applied.Templates = append(result.Applied.Templates, typeName)
-	}
-	for _, rule := range compiled.Rules {
-		r.engine.AddRule(rule)
-		newEntry.Rules[rule.ID] = 1
-		result.Applied.Rules = append(result.Applied.Rules, rule.ID)
-	}
-	for _, def := range compiled.Funcs {
-		newEntry.Funcs = append(newEntry.Funcs, def.Name)
-	}
-	for _, def := range compiled.Events {
-		newEntry.Events = append(newEntry.Events, def.Name)
-	}
-	sort.Strings(newEntry.Funcs)
-	sort.Strings(newEntry.Events)
-	if _, exists := r.entries[name]; !exists {
-		r.order = append(r.order, name)
-	}
-	r.entries[name] = newEntry
-	if r.sink != nil {
-		r.sink.RegisterFuncs(compiled.Funcs)
-		r.sink.RegisterEvents(compiled.Events)
-		r.sink.Refresh()
-	}
-	if persist {
-		if err := r.Save(); err != nil {
-			result.Errors = append(result.Errors, ApplyError{Severity: "error", Message: "保存注册表失败: " + err.Error()})
-			result.OK = false
-		}
-		r.writeSourceLocked(name, text)
-	}
+	r.commitLocked(result, name, text, newHash, prepared, persist)
 	return result
 }
 
@@ -310,6 +253,9 @@ func (r *Registry) Remove(name string) *ApplyResult {
 	delete(r.entries, name)
 	r.order = removeName(r.order, name)
 	r.releaseLocked(entry, result, true)
+	if r.diagnostics != nil {
+		r.diagnostics.ClearByScript(name)
+	}
 	if r.sink != nil {
 		r.sink.UnregisterFuncs(entry.Funcs)
 		r.sink.UnregisterEvents(entry.Events)
@@ -352,22 +298,28 @@ func (r *Registry) refCountLocked(kind, name string) int {
 	return count
 }
 
-func (r *Registry) writeSourceLocked(name, text string) {
-	if r.scriptsDir == "" || validateName(name) != "" {
-		return
+func (r *Registry) writeSourceLocked(name, text string) error {
+	if r.scriptsDir == "" {
+		return nil
+	}
+	if err := validateName(name); err != "" {
+		return fmt.Errorf("%s", err)
 	}
 	if err := os.MkdirAll(r.scriptsDir, 0o755); err != nil {
-		return
+		return err
 	}
 	path := r.sourcePath(name)
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("拒绝写入符号链接脚本: %s", name)
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
+		return err
 	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(text), 0o644); err != nil {
-		return
+		return err
 	}
-	_ = os.Rename(tmp, path)
+	return os.Rename(tmp, path)
 }
 
 // BootstrapFromSources registers every top-level .neko source when the registry
@@ -420,6 +372,7 @@ func (r *Registry) ReplayAll() ReplayResult {
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			out.Skipped = append(out.Skipped, name)
+			r.recordSkipped(name, err)
 			continue
 		}
 		result := r.applyScript(name, string(raw), true, true, false)

@@ -17,6 +17,7 @@
 | `internal/function/` | `@函数` 解释器（变量/分支/循环/实体读写） |
 | `internal/events/` | 字段变化 → `@事件` → `@函数` 的桥接与事件总线 |
 | `internal/config/` | 基础配置层：状态词汇、全局实体、默认场景/事件字段/分类字段、HTTP token |
+| `internal/diagnostics/` | 诊断环形存储：脚本/tick/校验告警的去重与作用域查询 |
 | `internal/mcpserver/` | MCP 工具注册与处理器 |
 | `data/` | **本地运行数据（不进版本库）**：`entities.json`（环境实体）、`user/entities.json`（NPC）、`scripts.json`、`templates/`、`archives/`、`logs/` |
 | `scripts/` | `.neko` 脚本源文件，按 `core/behavior/auto/r18/rules/scene/meta/` 归档（含 `derivations/`、`repairs/`）；可选 `rules.json` |

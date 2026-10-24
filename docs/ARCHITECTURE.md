@@ -13,7 +13,7 @@ internal/mcpserver ──► internal/registry ──► internal/compiler ─�
                   internal/function ◄── internal/events
 ```
 
-依赖方向单向：`neko` 与 `entity` 不依赖其他内部包；`engine` 只依赖 `entity`；`function` 只依赖 `neko`/`entity`；`events` 依赖 `engine`/`entity`/`neko`；`compiler` 依赖 `neko`/`engine`/`entity`；`registry` 依赖 `compiler`/`engine`/`entity`；`mcpserver` 依赖前几者与 `entity`；`cmd` 只做装配。
+依赖方向单向：`neko` 与 `entity` 不依赖其他内部包；`engine` 只依赖 `entity`；`function` 只依赖 `neko`/`entity`；`events` 依赖 `engine`/`entity`/`neko`；`compiler` 依赖 `neko`/`engine`/`entity`；`registry` 依赖 `compiler`/`engine`/`entity`/`neko`/`safety`/`diagnostics`；`diagnostics` 只依赖标准库；`mcpserver` 依赖前几者与 `entity`；`cmd` 只做装配。
 
 ## 各包职责
 
@@ -25,6 +25,7 @@ internal/mcpserver ──► internal/registry ──► internal/compiler ─�
 | `internal/compiler` | AST → 模板（展开注解）、规则（条件重写、动作降级、分支）、函数/事件透传 | 不注册、不执行 |
 | `internal/function` | `@函数` 解释执行：变量、分支、循环、列表/字符串操作、实体路径读写、函数互调 | 不做事件分发 |
 | `internal/events` | 从模板注解构建 schema，字段变化触发 `@事件`，按条件调用 `@函数` 处理器 | 不定义规则语义 |
+| `internal/diagnostics` | 有界诊断环形存储：去重、严重级、按实体/脚本作用域查询 | 不持有实体/规则、不主动扫描 |
 | `internal/config` | 基础配置层：状态组、状态定义字段、默认子组的进程级配置与 JSON 加载 | 不持有实体或规则 |
 | `internal/registry` | 脚本 hash、增量应用、引用计数、源文件落盘、`scripts.json`、重启重放 | 不定义规则语义 |
 | `internal/mcpserver` | MCP 工具 schema 与处理器，把引擎能力暴露给客户端 | 不实现领域逻辑 |
@@ -37,9 +38,11 @@ internal/mcpserver ──► internal/registry ──► internal/compiler ─�
 3. `engine.New(store)`：空规则集；若存在 `scripts/rules.json`，解析并注册。
 4. `function.New(store)` + `events.NewSystem(store, funcs)`：创建函数执行器与事件系统；`machine.SetFuncCaller(funcs)` 让条件/动作能调用函数；`store.OnCreate` 挂到事件桥，新建实体自动绑定变更钩子。
 5. `registry.New(...)`：读取 `data/scripts.json` 条目，脚本源目录为 `scripts/`；`reg.SetFunctionSink(eventSystem)` 让 apply/remove 同步注册函数与事件。
-6. `registry.ReplayAll()`：对每个条目从 `scripts/<name>.neko` 重新解析、编译、注册；源文件缺失记 `skipped`，失败记 `failed`。
-7. 若注册表为空，`registry.BootstrapFromSources()` 扫描 `scripts/*.neko` 并注册（本地 `data/` 不进版本库，首次运行靠它引导）。
-8. `mcpserver.RunStdio` 或 HTTP handler 开始服务。
+6. `diagnostics.New(512)` + `reg.SetDiagnostics(...)`：把脚本生命周期、重放与一致性检查的警告写入内存环形缓冲区。
+7. `registry.ReplayAll()`：对每个条目从 `scripts/<name>.neko` 重新解析、编译、注册；源文件缺失记 `skipped`（并写诊断），失败记 `failed`。
+8. 若注册表为空，`registry.BootstrapFromSources()` 扫描 `scripts/*.neko` 并注册（本地 `data/` 不进版本库，首次运行靠它引导）。
+9. `reg.ScanConsistency()`：检查 `scripts.json` 与源文件的缺源/孤儿/hash 不一致，写入诊断。
+10. `mcpserver.RunStdio` 或 HTTP handler 开始服务。
 
 重放是必需的：规则只存在于内存，`scripts.json` 只记录每个脚本引用的模板与规则 id。
 
@@ -119,6 +122,10 @@ MCP 请求
         │        → data/scripts.json + scripts/ 源文件落盘 + schema 重建
         └─ 日志：tick 结果追加到 data/logs/state_YYYY-MM-DD.log
 ```
+
+诊断（`internal/diagnostics`）是**派生数据**：脚本 apply/remove/replay、tick 错误与冲突、schema 校验
+都会写入一个容量 512 的环形缓冲区；`entity_state_get` 在完整数据查询时附带摘要，
+`diagnostics_query` 提供完整过滤视图。诊断不落盘，不参与规则语义。
 
 `engine.Tick` **不落盘**（与 Python 不同）：服务端在 Tick 成功后显式 `store.Save()`；库使用者若直接调用 `Tick`，需要自己保存。启动重放同样不写 `data/scripts.json`，只有 apply/remove 才持久化。
 
