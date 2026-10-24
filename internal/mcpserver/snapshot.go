@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/ruicat/astrbox/internal/diagnostics"
 )
 
 type statsArgs struct{}
@@ -50,11 +51,15 @@ func (s *Server) addStatsTool(server *mcp.Server) {
 		if len(priorityRows) > 5 {
 			priorityRows = priorityRows[:5]
 		}
-		return jsonResult(map[string]any{
+		payload := map[string]any{
 			"entities": len(entities), "entity_types": typeRows,
 			"rules": len(rules), "rules_enabled": enabled, "rule_priorities": priorityRows,
 			"templates": len(s.store.ListTemplates()), "scripts": len(s.registry.List()),
-		})
+		}
+		if s.diagnostics != nil {
+			payload["diagnostics"] = s.diagnostics.Summary(diagnostics.Filter{})
+		}
+		return jsonResult(payload)
 	})
 }
 
@@ -139,12 +144,14 @@ func (s *Server) addEventLogTool(server *mcp.Server) {
 		if limit <= 0 {
 			limit = 20
 		}
-		if s.bridge == nil {
-			return jsonResult(map[string]any{"validations": []any{}, "events": []any{}})
+		payload := map[string]any{"validations": []any{}, "events": []any{}}
+		if s.bridge != nil {
+			payload["validations"] = s.bridge.LastValidations(limit)
+			payload["events"] = s.bridge.LastRecords()
 		}
-		return jsonResult(map[string]any{
-			"validations": s.bridge.LastValidations(limit),
-			"events":      s.bridge.LastRecords(),
-		})
+		if s.eventBus != nil {
+			payload["history"] = s.eventBus.History(limit)
+		}
+		return jsonResult(payload)
 	})
 }

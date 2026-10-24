@@ -3,7 +3,9 @@ package events
 
 import (
 	"fmt"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/ruicat/astrbox/internal/engine"
 	"github.com/ruicat/astrbox/internal/entity"
@@ -25,18 +27,30 @@ type Context struct {
 	Delta     any
 }
 
+// EventRecord is one structured entry in the bounded dispatch history.
+type EventRecord struct {
+	Name    string    `json:"name"`
+	Entity  string    `json:"entity,omitempty"`
+	Field   string    `json:"field,omitempty"`
+	Status  string    `json:"status"`
+	Message string    `json:"message"`
+	Time    time.Time `json:"time"`
+}
+
 // Bus holds registered events and dispatches them to handlers.
 type Bus struct {
-	mu     sync.RWMutex
-	store  *entity.Store
-	caller Caller
-	defs   map[string]neko.EventDef
-	depth  int
+	mu           sync.RWMutex
+	store        *entity.Store
+	caller       Caller
+	defs         map[string]neko.EventDef
+	depth        int
+	history      []EventRecord
+	historyLimit int
 }
 
 // NewBus creates an event bus bound to a store and a function caller.
 func NewBus(store *entity.Store, caller Caller) *Bus {
-	return &Bus{store: store, caller: caller, defs: map[string]neko.EventDef{}}
+	return &Bus{store: store, caller: caller, defs: map[string]neko.EventDef{}, historyLimit: 128}
 }
 
 // Register adds or replaces event definitions.
@@ -74,6 +88,50 @@ func (b *Bus) Get(name string) (neko.EventDef, bool) {
 
 // Fire dispatches one event and returns human-readable execution records.
 func (b *Bus) Fire(name string, ctx Context) []string {
+	records := b.fire(name, ctx)
+	b.appendHistory(name, ctx, records)
+	return records
+}
+
+// History returns at most limit recent dispatch records, oldest first.
+func (b *Bus) History(limit int) []EventRecord {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if limit <= 0 || limit > len(b.history) {
+		limit = len(b.history)
+	}
+	out := make([]EventRecord, limit)
+	copy(out, b.history[len(b.history)-limit:])
+	return out
+}
+
+// appendHistory stores one structured dispatch record in the bounded ring.
+func (b *Bus) appendHistory(name string, ctx Context, records []string) {
+	if len(records) == 0 {
+		return
+	}
+	status := "ok"
+	switch {
+	case strings.HasPrefix(records[0], "⚠️"):
+		status = "warning"
+	case strings.HasPrefix(records[0], "⏭️"):
+		status = "skipped"
+	case strings.HasPrefix(records[0], "ℹ️"):
+		status = "info"
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.history = append(b.history, EventRecord{
+		Name: name, Entity: ctx.EntityID, Field: ctx.FieldPath,
+		Status: status, Message: strings.Join(records, " | "), Time: time.Now(),
+	})
+	if len(b.history) > b.historyLimit {
+		b.history = append([]EventRecord(nil), b.history[1:]...)
+	}
+}
+
+// fire is the dispatch implementation shared by Fire.
+func (b *Bus) fire(name string, ctx Context) []string {
 	b.mu.Lock()
 	if b.depth >= 10 {
 		b.mu.Unlock()

@@ -10,6 +10,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ruicat/astrbox/internal/config"
+	"github.com/ruicat/astrbox/internal/diagnostics"
 	"github.com/ruicat/astrbox/internal/engine"
 	"github.com/ruicat/astrbox/internal/entity"
 	"github.com/ruicat/astrbox/internal/events"
@@ -18,12 +19,14 @@ import (
 
 // Server bundles the engine components behind one MCP server.
 type Server struct {
-	store    *entity.Store
-	machine  *engine.StateMachine
-	registry *registry.Registry
-	logger   *engine.StateLogger
-	dataDir  string
-	bridge   *events.Bridge
+	store       *entity.Store
+	machine     *engine.StateMachine
+	registry    *registry.Registry
+	logger      *engine.StateLogger
+	dataDir     string
+	bridge      *events.Bridge
+	eventBus    *events.Bus
+	diagnostics *diagnostics.Store
 }
 
 // New builds an MCP server over an initialized store, engine and registry.
@@ -40,12 +43,20 @@ func (s *Server) SetDataDir(path string) { s.dataDir = path }
 // SetEventBridge exposes validation/event logs through the event_log tool.
 func (s *Server) SetEventBridge(bridge *events.Bridge) { s.bridge = bridge }
 
+// SetDiagnostics wires the shared diagnostic store (optional).
+func (s *Server) SetDiagnostics(store *diagnostics.Store) { s.diagnostics = store }
+
+// SetEventBus exposes the structured event dispatch history (optional).
+func (s *Server) SetEventBus(bus *events.Bus) { s.eventBus = bus }
+
 // MCPServer constructs and registers every tool.
 func (s *Server) MCPServer() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "astrbox", Version: "1.0.0"}, nil)
 	s.addEntityTools(server)
 	s.addStateMachineTools(server)
 	s.addScriptTools(server)
+	s.addScriptFileTools(server)
+	s.addDiagnosticsTools(server)
 	s.addInventoryTool(server)
 	s.addStatsTool(server)
 	s.addSnapshotTool(server)
@@ -75,8 +86,9 @@ func fail(format string, args ...any) (*mcp.CallToolResult, any, error) {
 }
 
 type entityGetArgs struct {
-	Entity string `json:"entity" jsonschema:"实体ID，如 猫猫/梦梦/场景"`
-	Path   string `json:"path,omitempty" jsonschema:"点分路径，如 身体.体力；留空返回完整数据"`
+	Entity      string `json:"entity" jsonschema:"实体ID，如 猫猫/梦梦/场景"`
+	Path        string `json:"path,omitempty" jsonschema:"点分路径，如 身体.体力；留空返回完整数据"`
+	Diagnostics string `json:"diagnostics,omitempty" jsonschema:"诊断附加内容：none/summary/full，默认 summary"`
 }
 
 type entitySetArgs struct {
@@ -105,7 +117,9 @@ func (s *Server) addEntityTools(server *mcp.Server) {
 			return fail("实体 '%s' 不存在。可用: %s", args.Entity, jsonString(s.entityIDs()))
 		}
 		if args.Path == "" {
-			return jsonResult(map[string]any{"实体": ent.ID, "类型": ent.Type, "数据": ent.Data})
+			payload := map[string]any{"实体": ent.ID, "类型": ent.Type, "数据": ent.Data}
+			s.attachDiagnostics(payload, ent, args.Diagnostics)
+			return jsonResult(payload)
 		}
 		value, err := ent.Get(args.Path)
 		if err != nil {

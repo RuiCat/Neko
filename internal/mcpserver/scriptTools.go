@@ -35,7 +35,10 @@ func (s *Server) addScriptTools(server *mcp.Server) {
 		Name:        "neko_script_list",
 		Description: "列出已注册的脚本名。",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
-		return jsonResult(map[string]any{"scripts": s.registry.List()})
+		return jsonResult(map[string]any{
+			"scripts": s.registry.List(),
+			"items":   s.registry.ListScripts(),
+		})
 	})
 }
 

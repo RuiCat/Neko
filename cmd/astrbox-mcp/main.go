@@ -11,6 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ruicat/astrbox/internal/config"
+	"github.com/ruicat/astrbox/internal/diagnostics"
 	"github.com/ruicat/astrbox/internal/engine"
 	"github.com/ruicat/astrbox/internal/entity"
 	"github.com/ruicat/astrbox/internal/events"
@@ -56,6 +57,8 @@ func main() {
 		log.Fatalf("astrbox: 加载脚本注册表失败: %v", err)
 	}
 	reg.SetFunctionSink(eventSystem)
+	diagStore := diagnostics.New(diagnostics.DEFAULT_CAPACITY)
+	reg.SetDiagnostics(diagStore)
 	replay := reg.ReplayAll()
 	if len(reg.List()) == 0 {
 		bootstrap, err := reg.BootstrapFromSources()
@@ -75,10 +78,15 @@ func main() {
 			log.Printf("  - %s: %v", name, details)
 		}
 	}
+	if findings := reg.ScanConsistency(); findings > 0 {
+		log.Printf("astrbox: 脚本一致性检查发现 %d 个问题（可通过 diagnostics_query 查看）", findings)
+	}
 
 	server := mcpserver.New(store, machine, reg)
 	server.SetDataDir(*dataDir)
 	server.SetEventBridge(eventSystem.Bridge())
+	server.SetEventBus(eventSystem.Bus())
+	server.SetDiagnostics(diagStore)
 	server.SetStateLogger(engine.NewStateLogger(filepath.Join(*dataDir, "logs"), 7))
 	ctx := context.Background()
 	if *transport == "http" {

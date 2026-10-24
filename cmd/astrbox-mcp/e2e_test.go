@@ -109,8 +109,8 @@ func TestMCPStdioEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if len(tools.Tools) != 13 {
-		t.Fatalf("tools = %d, want 13", len(tools.Tools))
+	if len(tools.Tools) != 17 {
+		t.Fatalf("tools = %d, want 17", len(tools.Tools))
 	}
 
 	var inventory map[string]any
@@ -174,6 +174,38 @@ func TestMCPStdioEndToEnd(t *testing.T) {
 	templatePath := filepath.Join(dataDir, "templates", "测试实体.json")
 	if _, err := os.Stat(templatePath); err != nil {
 		t.Fatalf("template file missing after apply: %v", err)
+	}
+
+	var readBack map[string]any
+	callJSON(t, session, "neko_script_read", map[string]any{"name": "e2e_script"}, &readBack)
+	if readBack["source"] != script {
+		t.Fatalf("read source mismatch: %+v", readBack)
+	}
+	if hash, _ := readBack["hash"].(string); hash == "" {
+		t.Fatalf("read hash missing: %+v", readBack)
+	}
+	var validated map[string]any
+	callJSON(t, session, "neko_script_validate", map[string]any{"name": "e2e_script", "script": script}, &validated)
+	if ok, _ := validated["ok"].(bool); !ok {
+		t.Fatalf("validate = %+v", validated)
+	}
+	var rejected map[string]any
+	callJSON(t, session, "neko_script_write", map[string]any{
+		"name": "e2e_script", "script": script, "expected_hash": "wrong",
+	}, &rejected)
+	if ok, _ := rejected["ok"].(bool); ok {
+		t.Fatalf("write with wrong hash succeeded: %+v", rejected)
+	}
+	var withDiagnostics map[string]any
+	callJSON(t, session, "entity_state_get", map[string]any{"entity": "猫猫"}, &withDiagnostics)
+	if _, ok := withDiagnostics["diagnostics"]; !ok {
+		t.Fatalf("state response has no diagnostics: %+v", withDiagnostics)
+	}
+	var diagnosticQuery map[string]any
+	callJSON(t, session, "diagnostics_query", map[string]any{"limit": 5}, &diagnosticQuery)
+	items, _ := diagnosticQuery["items"].([]any)
+	if len(items) == 0 {
+		t.Fatalf("diagnostics_query returned no items: %+v", diagnosticQuery)
 	}
 
 	// Restart: the script must replay and the template file must survive.
