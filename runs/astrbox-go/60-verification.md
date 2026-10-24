@@ -505,3 +505,9 @@ $ make lint   # OK
 - 排除：`.local/`、`bin/`、`data/logs/`、`data/llm_decisions.json`。
 - 校验：`zstd -t`、`rsync -an --checksum` 无差异、`sha256sum -c` 通过。
 - 异盘目标仍只读（见第 10 节）。
+
+## 51. 测试交互历史文档与备份（2026-10-24 20:25 UTC）
+
+- 新增 `runs/astrbox-go/test-interaction-history.md`（stdio 调用序列、HTTP 鉴权、历次轮次、问题修复、当前快照）。
+- 本轮实测：`go test ./...` 11 包全绿（含 E2E 18.6s）；`make lint` OK；模块化 93 文件 0 违规 0 告警。
+- 备份：`.local/backups/astrbox-20261024T122509Z.tar.zst`（912 文件，1.0M；zstd/rsync/sha256 通过）。
