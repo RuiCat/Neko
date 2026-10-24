@@ -1,0 +1,17 @@
+{
+  "state_group": "状态",
+  "state_definition_field": "状态定义",
+  "default_state_subgroup": "身体",
+  "safety_enabled": false,
+  "global_entities": [
+    "场景",
+    "世界",
+    "时间",
+    "天气",
+    "全局"
+  ],
+  "default_scene": "场景",
+  "scene_event_field": "事件",
+  "classification_field": "分类",
+  "http_token": ""
+}

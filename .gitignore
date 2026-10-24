@@ -1,0 +1,32 @@
+# local machine state (module caches, go build cache, scratch)
+.local/
+.cache/
+
+# python artifacts (legacy tree)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# go artifacts
+/bin/
+/dist/
+*.test
+
+# runtime/temporary data
+*.tmp
+*.tmp.*
+data/*.tmp
+scripts/*.tmp
+
+# runtime data (local-only; registry bootstraps from scripts/ when absent)
+/legacy/
+/data/entities.json
+/data/scripts.json
+/data/templates/
+/data/user/
+/data/archives/
+/data/logs/
+/data/llm_decisions.json
+/data/entities.json
+/internal/compiler/testdata/python_rule_ids.json
+
