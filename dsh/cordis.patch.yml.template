@@ -1,0 +1,51 @@
+# dsh-astrbox bundle patch 模板（m4 的 render-dsh 渲染成本机路径后写入 dsh/cordis.patch.yml）。
+#
+# 占位符（渲染脚本负责替换；模板本身不得出现机器绝对路径）：
+#   ${REPO_ROOT}    仓库根目录
+#   ${DATA_DIR}     引擎数据目录（含 dsh-control.sock）
+#   ${SCRIPTS_DIR}  引擎脚本目录
+#   ${CONFIG}       引擎配置文件路径
+#
+# 两条 insert 的顺序固定：先挂 MCP client（提供 mcp__astrbox__* 工具），再挂本桥接插件。
+
+- insert:
+    - id: mcp-astrbox
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: astrbox
+        transport: stdio
+        command: ${REPO_ROOT}/bin/dsh-mcp
+        args:
+          - '-data-dir'
+          - ${DATA_DIR}
+          - '-scripts-dir'
+          - ${SCRIPTS_DIR}
+          - '-config'
+          - ${CONFIG}
+        cwd: ${REPO_ROOT}
+        toolCallTimeoutMs: 60000
+
+- insert:
+    - id: astrbox-bridge
+      name: 'dsh-astrbox'
+      config:
+        socketPath: ${DATA_DIR}/dsh-control.sock
+        entity: 猫猫
+        paths:
+          - '状态.情绪'
+          - '身体.体力'
+          - '心情.当前'
+          - '关系.亲密'
+          - '位置.场景'
+          - '睡眠.疲劳'
+          - '社交.互动需求'
+          - '任务.当前任务'
+        promptMaxChars: 1200
+        promptRefreshMs: 5000
+        tickEveryMs: 60000
+        tickScope: ''
+        workspacePrefix: ${REPO_ROOT}
+        functionName: dsh_on_event
+        requestTimeoutMs: 2000
+        tickTimeoutMs: 15000
+        warningAfterMs: 30000

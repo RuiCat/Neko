@@ -1,0 +1,20 @@
+{
+  "name": "dsh-astrbox",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DSH bundle for astrbox: static usage prompt, per-turn state snapshot, tick and session-event bridge",
+  "type": "module",
+  "main": "./lib/plugin.mjs",
+  "exports": {
+    ".": "./lib/plugin.mjs",
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

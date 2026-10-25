@@ -28,7 +28,7 @@
 ## 快速开始
 
 ```bash
-make build                      # 产物: bin/astrbox-mcp
+make build                      # 产物: bin/astrbox-mcp + bin/dsh-mcp
 make test                       # 全量 Go 测试
 ./bin/astrbox-mcp -data-dir data -scripts-dir scripts          # stdio MCP 服务
 ./bin/astrbox-mcp -data-dir data -scripts-dir scripts -config config.json
@@ -76,3 +76,4 @@ make lint        # go vet + gofmt 检查
 - [基础配置层](docs/config.md)
 - [与 Python 版对照](docs/parity.md)
 - [开发与测试](docs/development.md)
+- [DSH 插件安装与验证](docs/dsh-plugin.md)

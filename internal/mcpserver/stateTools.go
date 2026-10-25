@@ -25,16 +25,8 @@ func (s *Server) addStateMachineTools(server *mcp.Server) {
 		Name:        "state_machine_tick",
 		Description: "推进状态机一个周期；返回 transitions 与 conflicts。",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args tickArgs) (*mcp.CallToolResult, any, error) {
-		scope := args.Scope
-		if scope == "" {
-			scope = "*"
-		}
-		result := s.machine.Tick(scope)
-		s.recordTick(result)
-		if s.logger != nil {
-			_ = s.logger.Log(result, scope, s.snapshotStates(result))
-		}
-		if err := s.store.Save(); err != nil {
+		result, err := s.RunTick(args.Scope, TickOptions{})
+		if err != nil {
 			return fail("状态机执行后保存失败: %s", err)
 		}
 		return jsonResult(result)
