@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/ruicat/astrbox/internal/config"
@@ -27,6 +28,9 @@ type Server struct {
 	bridge      *events.Bridge
 	eventBus    *events.Bus
 	diagnostics *diagnostics.Store
+	// tickMu serializes RunTick so MCP tools and the control plane share one
+	// in-flight tick per process.
+	tickMu sync.Mutex
 }
 
 // New builds an MCP server over an initialized store, engine and registry.
@@ -117,7 +121,7 @@ func (s *Server) addEntityTools(server *mcp.Server) {
 			return fail("实体 '%s' 不存在。可用: %s", args.Entity, jsonString(s.entityIDs()))
 		}
 		if args.Path == "" {
-			payload := map[string]any{"实体": ent.ID, "类型": ent.Type, "数据": ent.Data}
+			payload := map[string]any{"实体": ent.ID, "类型": ent.Type, "数据": ent.Snapshot()}
 			s.attachDiagnostics(payload, ent, args.Diagnostics)
 			return jsonResult(payload)
 		}
@@ -132,16 +136,21 @@ func (s *Server) addEntityTools(server *mcp.Server) {
 		Name:        "entity_state_set",
 		Description: "写入实体状态值并落盘。",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args entitySetArgs) (*mcp.CallToolResult, any, error) {
-		ent := s.store.Get(args.Entity)
-		if ent == nil {
-			return fail("实体 '%s' 不存在", args.Entity)
-		}
 		value := parseValue(args.Value)
-		if err := ent.Set(args.Path, value); err != nil {
-			return fail("写入失败: %s", err)
-		}
-		if err := s.store.Save(); err != nil {
-			return fail("保存失败: %s", err)
+		if err := s.WithStateWrite(func() error {
+			ent := s.store.Get(args.Entity)
+			if ent == nil {
+				return fmt.Errorf("实体 '%s' 不存在", args.Entity)
+			}
+			if err := ent.Set(args.Path, value); err != nil {
+				return fmt.Errorf("写入失败: %s", err)
+			}
+			if err := s.store.Save(); err != nil {
+				return fmt.Errorf("保存失败: %s", err)
+			}
+			return nil
+		}); err != nil {
+			return fail("%s", err)
 		}
 		return textResult(fmt.Sprintf("✅ 已设置 %s.%s = %s", args.Entity, args.Path, jsonString(value)))
 	})

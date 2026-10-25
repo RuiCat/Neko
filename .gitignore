@@ -30,3 +30,8 @@ scripts/*.tmp
 /data/entities.json
 /internal/compiler/testdata/python_rule_ids.json
 
+# dsh plugin runtime artifacts (generated / machine-local)
+/data/dsh-control.sock
+/data/.engine.lock
+/dsh/cordis.patch.yml
+

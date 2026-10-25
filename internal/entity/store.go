@@ -125,7 +125,7 @@ func (s *Store) saveLocked() error {
 	for id, ent := range s.entities {
 		record := map[string]any{
 			"id": ent.ID, "type": ent.Type, "keys": ent.Keys,
-			"data": ent.Data, "_meta": ent.Meta,
+			"data": ent.Snapshot(), "_meta": ent.Meta,
 		}
 		if strings.HasPrefix(ent.Type, "NPC") {
 			user[id] = record

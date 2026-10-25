@@ -99,7 +99,7 @@ func (e *Entity) ValidateID() error {
 func (e *Entity) Get(path string) (any, error) {
 	parts := splitPath(path)
 	if len(parts) == 0 {
-		return e.snapshotData(), nil
+		return e.Snapshot(), nil
 	}
 	e.mu.RLock()
 	current, found := lookup(e.Data, parts)
@@ -183,7 +183,9 @@ func CreateEntity(entityID, typeName string, templates map[string]map[string]any
 	return ent, nil
 }
 
-func (e *Entity) snapshotData() map[string]any {
+// Snapshot returns a deep copy of the instance data. It holds the read lock
+// while copying, so callers never read Data outside the entity lock.
+func (e *Entity) Snapshot() map[string]any {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return deepCopyMap(e.Data)

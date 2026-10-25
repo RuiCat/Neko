@@ -86,7 +86,7 @@ func (s *Server) addSnapshotTool(server *mcp.Server) {
 		for _, ent := range s.store.ListAll() {
 			entities[ent.ID] = map[string]any{
 				"id": ent.ID, "type": ent.Type, "keys": ent.Keys,
-				"data": ent.Data, "_meta": ent.Meta,
+				"data": ent.Snapshot(), "_meta": ent.Meta,
 			}
 		}
 		payload := map[string]any{
