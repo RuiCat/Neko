@@ -62,9 +62,10 @@ func ScanBlocks(text string) []Block {
 					i = n
 					break
 				}
+				collected += " " + strings.TrimSpace(strings.SplitN(strings.TrimSpace(stripComment(lines[j])), "{", 2)[0])
 				i = j
 			}
-			name := strings.TrimSpace(strings.SplitN(strings.TrimSpace(runeSliceFrom(line, 3)), "{", 2)[0])
+			name := strings.TrimSpace(strings.SplitN(collected, "{", 2)[0])
 			fullText := joinFrom(lines, i)
 			open := findRune(fullText, '{')
 			if open < 0 {
@@ -102,9 +103,10 @@ func ScanBlocks(text string) []Block {
 					i = n
 					break
 				}
+				collected += " " + strings.TrimSpace(strings.SplitN(strings.TrimSpace(stripComment(lines[j])), "{", 2)[0])
 				i = j
 			}
-			name := strings.TrimSpace(strings.SplitN(strings.TrimSpace(runeSliceFrom(line, 5)), "{", 2)[0])
+			name := strings.TrimSpace(strings.SplitN(collected, "{", 2)[0])
 			fullText := joinFrom(lines, i)
 			open := findRune(fullText, '{')
 			if open < 0 {

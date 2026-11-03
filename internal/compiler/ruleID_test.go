@@ -7,7 +7,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 // TestRuleIDsMatchPython compares the rule ids produced by the Go compiler with

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 // TestSessionEventLoggedOnly covers the no-callback path: only a log line.
@@ -56,6 +58,43 @@ func TestSessionEventFunction(t *testing.T) {
 	}
 	logText := env.controlLogText(t)
 	if !containsAll(logText, "POST /session-event", "callback=ok") {
+		t.Fatalf("control log = %s", logText)
+	}
+}
+
+// TestSessionEventSummaryArgument covers the optional fifth positional argument:
+// the bridge's turn digest arrives as a JSON string.
+func TestSessionEventSummaryArgument(t *testing.T) {
+	env := newTestEnv(t, Options{})
+	definition := neko.FuncDef{
+		Name: "summaryEvent",
+		Params: []neko.Param{
+			{Name: "kind"}, {Name: "session_id"}, {Name: "cwd"}, {Name: "turn"}, {Name: "summary"},
+		},
+		Body: "状态.摘要 = summary\n返回 summary",
+	}
+	if err := env.runtime.Funcs.Register(definition); err != nil {
+		t.Fatalf("register summaryEvent: %v", err)
+	}
+	body := []byte(`{"kind":"turn-end","sessionId":"s-6","cwd":"/tmp/work","turn":2,` +
+		`"function":"summaryEvent","summary":{"assistantDigest":"你好","toolCalls":3,"steps":1}}`)
+	recorder := env.call(t, http.MethodPost, "/session-event", body)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	entity := env.runtime.Store.Get("猫猫")
+	value, err := entity.Get("状态.摘要")
+	if err != nil {
+		t.Fatalf("状态.摘要: %v", err)
+	}
+	text, ok := value.(string)
+	if !ok {
+		t.Fatalf("状态.摘要 = %T, want string", value)
+	}
+	if !containsAll(text, `"assistantDigest":"你好"`, `"toolCalls":3`, `"steps":1`) {
+		t.Fatalf("摘要 = %s", text)
+	}
+	if logText := env.controlLogText(t); !containsAll(logText, "summary=tools:3,steps:1") {
 		t.Fatalf("control log = %s", logText)
 	}
 }

@@ -22,6 +22,8 @@
           - ${SCRIPTS_DIR}
           - '-config'
           - ${CONFIG}
+          - '-contexts-config'
+          - ${REPO_ROOT}/contexts.json
         cwd: ${REPO_ROOT}
         toolCallTimeoutMs: 60000
 

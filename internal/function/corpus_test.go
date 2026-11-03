@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/entity"
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/entity"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 // corpusDir is the production script directory relative to this package.

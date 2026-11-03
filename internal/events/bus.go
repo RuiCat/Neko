@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ruicat/astrbox/internal/engine"
-	"github.com/ruicat/astrbox/internal/entity"
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/engine"
+	"github.com/RuiCat/Neko/internal/entity"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 // Caller is the subset of the function executor the bus needs.
@@ -43,14 +43,23 @@ type Bus struct {
 	store        *entity.Store
 	caller       Caller
 	defs         map[string]neko.EventDef
-	depth        int
+	inFlight     int
 	history      []EventRecord
 	historyLimit int
+	observer     func(name string, ctx Context, records []string)
 }
 
 // NewBus creates an event bus bound to a store and a function caller.
 func NewBus(store *entity.Store, caller Caller) *Bus {
 	return &Bus{store: store, caller: caller, defs: map[string]neko.EventDef{}, historyLimit: 128}
+}
+
+// SetObserver registers a callback after each dispatch. The callback runs
+// synchronously without any bus lock and must not call Fire synchronously.
+func (b *Bus) SetObserver(observer func(name string, ctx Context, records []string)) {
+	b.mu.Lock()
+	b.observer = observer
+	b.mu.Unlock()
 }
 
 // Register adds or replaces event definitions.
@@ -90,6 +99,12 @@ func (b *Bus) Get(name string) (neko.EventDef, bool) {
 func (b *Bus) Fire(name string, ctx Context) []string {
 	records := b.fire(name, ctx)
 	b.appendHistory(name, ctx, records)
+	b.mu.RLock()
+	observer := b.observer
+	b.mu.RUnlock()
+	if observer != nil {
+		observer(name, ctx, records)
+	}
 	return records
 }
 
@@ -130,23 +145,30 @@ func (b *Bus) appendHistory(name string, ctx Context, records []string) {
 	}
 }
 
+// MAX_IN_FLIGHT_EVENTS bounds how many event handlers may overlap. Recursion
+// depth is already guarded inside the function executor (function.MAX_CALL_DEPTH),
+// so this counter only caps concurrent dispatch, not call-stack nesting. The
+// limit is high enough that ordinary concurrent events never trip it, while a
+// runaway synchronous event chain still gets rejected before it exhausts memory.
+const MAX_IN_FLIGHT_EVENTS = 256
+
 // fire is the dispatch implementation shared by Fire.
 func (b *Bus) fire(name string, ctx Context) []string {
 	b.mu.Lock()
-	if b.depth >= 10 {
+	if b.inFlight >= MAX_IN_FLIGHT_EVENTS {
 		b.mu.Unlock()
-		return []string{"⚠️ 事件触发过深（> 10），疑似循环: " + name}
+		return []string{fmt.Sprintf("⚠️ 并发事件过多（> %d），疑似失控: %s", MAX_IN_FLIGHT_EVENTS, name)}
 	}
 	def, ok := b.defs[name]
 	if !ok {
 		b.mu.Unlock()
 		return []string{fmt.Sprintf("⚠️ 事件 '%s' 未注册（字段有 @绑定但无定义）", name)}
 	}
-	b.depth++
+	b.inFlight++
 	b.mu.Unlock()
 	defer func() {
 		b.mu.Lock()
-		b.depth--
+		b.inFlight--
 		b.mu.Unlock()
 	}()
 

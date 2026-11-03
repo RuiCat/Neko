@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ruicat/astrbox/internal/config"
-	"github.com/ruicat/astrbox/internal/entity"
+	"github.com/RuiCat/Neko/internal/config"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 // Tick budgets, mirroring Python's MAX_RULE_EVAL / MAX_TRANSITIONS.
@@ -219,7 +219,7 @@ func (m *StateMachine) Tick(scope string) TickResult {
 	transitionCount := 0
 
 	for _, rule := range enabled {
-		if evalCount > MAX_RULE_EVAL {
+		if evalCount >= MAX_RULE_EVAL {
 			break
 		}
 		if len(rule.Subjects) > 0 {
@@ -243,7 +243,7 @@ func (m *StateMachine) Tick(scope string) TickResult {
 			continue
 		}
 		evalCount++
-		if evalCount > MAX_RULE_EVAL {
+		if evalCount >= MAX_RULE_EVAL {
 			break
 		}
 		ruleTransitions := 0

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/entity"
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/entity"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 type fakeCaller struct {
@@ -90,6 +90,31 @@ func TestFieldChangeFiresBoundEvent(t *testing.T) {
 	}
 	if len(caller.calls) != 1 {
 		t.Fatalf("condition not enforced, calls = %d", len(caller.calls))
+	}
+}
+
+func TestObserverReceivesDispatch(t *testing.T) {
+	store := newStore(t)
+	caller := &fakeCaller{}
+	system := NewSystem(store, caller)
+	system.RegisterFuncs([]neko.FuncDef{{Name: "体力管理"}})
+	system.RegisterEvents([]neko.EventDef{{Name: "体力管理", Handler: "体力管理"}})
+	var names []string
+	system.Bus().SetObserver(func(name string, ctx Context, records []string) {
+		names = append(names, name)
+		if ctx.EntityID != "猫猫" || ctx.FieldPath != "身体.体力" {
+			t.Errorf("observer context = %+v", ctx)
+		}
+	})
+	ent, err := store.Create("猫猫", "NPC", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ent.Set("身体.体力", float64(50)); err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0] != "体力管理" {
+		t.Fatalf("observer names = %v", names)
 	}
 }
 

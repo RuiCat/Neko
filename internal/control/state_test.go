@@ -148,3 +148,26 @@ func TestStateReadsSnapshotOnly(t *testing.T) {
 		t.Fatalf("values = %v", values)
 	}
 }
+
+// TestStateTemplateFallback checks the K5/D2 semantics change: a path that
+// exists only in the template chain now resolves through Entity.Get instead of
+// being reported missing, matching the MCP entity_state_get tool.
+func TestStateTemplateFallback(t *testing.T) {
+	env := newTestEnv(t, Options{})
+	env.runtime.Store.AddTemplate("NPC", map[string]any{
+		"状态": map[string]any{"情绪": "平静", "身体": "健康"},
+		"身体": map[string]any{"体力": 80, "模板专有": "模板值"},
+	})
+	payload := decodeBody(t, env.call(t, http.MethodGet,
+		"/state?entity=猫猫&path=身体.模板专有&path=状态.情绪", nil))
+	values, _ := payload["values"].(map[string]any)
+	if values["身体.模板专有"] != "模板值" {
+		t.Fatalf("template fallback values = %v", values)
+	}
+	if values["状态.情绪"] != "平静" {
+		t.Fatalf("instance values = %v", values)
+	}
+	if missing, _ := payload["missing"].([]any); len(missing) != 0 {
+		t.Fatalf("missing = %v", missing)
+	}
+}

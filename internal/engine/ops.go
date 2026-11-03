@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ruicat/astrbox/internal/config"
-	"github.com/ruicat/astrbox/internal/entity"
+	"github.com/RuiCat/Neko/internal/config"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 // applyOp runs one op against the triggering entity or an explicit target and
@@ -71,7 +71,7 @@ func (m *StateMachine) applyOp(ent *entity.Entity, op Op, resolver ValueResolver
 			return nil
 		}
 		m.applyTextEffects(target, value)
-		if equalValues(oldValue, value) {
+		if equalValues(oldValue, newValue) {
 			return nil
 		}
 		return map[string]any{"op": "set", "path": path, "value": value}
@@ -176,7 +176,8 @@ func (m *StateMachine) resolveOpValue(value any, ent, target *entity.Entity, res
 }
 
 func (m *StateMachine) replacePlaceholders(text string, target *entity.Entity) string {
-	for {
+	limit := len(text)
+	for round := 0; round < limit; round++ {
 		start := strings.Index(text, "&{")
 		if start < 0 {
 			return text
@@ -200,6 +201,7 @@ func (m *StateMachine) replacePlaceholders(text string, target *entity.Entity) s
 		// Unresolved placeholder: leave it untouched and stop scanning.
 		return text
 	}
+	return text
 }
 
 // applyTextEffects mirrors the side effect of a set op whose value is effect

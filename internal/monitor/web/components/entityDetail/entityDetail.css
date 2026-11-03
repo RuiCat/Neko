@@ -1,0 +1,128 @@
+/* entityDetail.css —— Entity.Detail 样式载体：JSON 代码区与卡片视觉值全部走语义令牌。 */
+.nek-detail {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-xl);
+  box-sizing: border-box;
+  padding: var(--space-md);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  border: var(--border-width-thin) solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-sm);
+  line-height: var(--font-leading-tight);
+}
+
+.nek-detail__header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+}
+
+.nek-detail__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--font-leading-tight);
+}
+
+.nek-detail__type {
+  display: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.nek-detail__type[data-present="true"] {
+  display: inline;
+}
+
+.nek-detail__actions {
+  display: inline-flex;
+  gap: var(--space-xs);
+  margin-inline-start: auto;
+}
+
+.nek-detail__action,
+.nek-detail__path {
+  padding-inline: var(--space-sm);
+  padding-block: var(--space-2xs);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.nek-detail__paths {
+  display: none;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.nek-detail__paths[data-present="true"] {
+  display: flex;
+}
+
+.nek-detail__path {
+  font-family: var(--font-family-mono);
+}
+
+.nek-detail__code {
+  margin: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  line-height: var(--font-leading-tight);
+}
+
+.nek-detail__state {
+  display: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.nek-detail__state[data-present="true"] {
+  display: block;
+}
+
+.nek-detail__truncated {
+  display: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.nek-detail__truncated[data-present="true"] {
+  display: inline;
+}
+
+.nek-detail[data-state="ready"] .nek-detail__state {
+  display: none;
+}
+
+.nek-detail[data-state="loading"] .nek-detail__code,
+.nek-detail[data-state="missing-path"] .nek-detail__code,
+.nek-detail[data-state="empty"] .nek-detail__code,
+.nek-detail[data-state="error"] .nek-detail__code {
+  display: none;
+}
+
+.nek-detail[data-state="missing-path"] .nek-detail__state,
+.nek-detail[data-state="empty"] .nek-detail__state,
+.nek-detail[data-state="error"] .nek-detail__state {
+  display: block;
+}
+
+.nek-detail[data-state="error"] {
+  border-color: var(--color-border-strong);
+}

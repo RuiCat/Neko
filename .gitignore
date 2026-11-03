@@ -35,3 +35,8 @@ scripts/*.tmp
 /data/.engine.lock
 /dsh/cordis.patch.yml
 
+# dsh context driver (config holds the per-process launch token; never commit it)
+/contexts.json
+/data/contexts.json
+/data/contexts.json.tmp
+

@@ -9,8 +9,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/RuiCat/Neko/internal/diagnostics"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/ruicat/astrbox/internal/diagnostics"
 )
 
 type statsArgs struct{}

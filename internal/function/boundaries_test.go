@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/entity"
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/entity"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 func newBoundaryExecutor(t *testing.T) *Executor {

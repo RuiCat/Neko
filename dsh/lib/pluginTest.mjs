@@ -26,7 +26,7 @@ function stateBody(paths) {
  * @returns {Promise<{server: object, control: object}>} 服务与服务端开关
  */
 async function startBridgeServer(paths) {
-  const control = { stateMode: 'ok', stateBody: stateBody(paths), tickStatus: 200, tickDelayMs: 5, ticksCompleted: 0 }
+  const control = { stateMode: 'ok', stateBody: stateBody(paths), tickStatus: 200, tickDelayMs: 5, ticksCompleted: 0, turnContext: null }
   const server = await startControlServer((req, res) => {
     if (req.url === '/tick') {
       setTimeout(() => {
@@ -46,6 +46,14 @@ async function startBridgeServer(paths) {
     }
     if (req.url.startsWith('/session-event')) {
       writeJson(res, 200, { ok: true, applied: 'logged' })
+      return
+    }
+    if (req.url.startsWith('/turn-context')) {
+      if (control.turnContext === null) {
+        writeJson(res, 404, { ok: false, error: { code: 'not_found', message: 'no turn context' } })
+        return
+      }
+      writeJson(res, 200, control.turnContext)
       return
     }
     if (control.stateMode === 'fail') {
@@ -103,6 +111,34 @@ test('pre-step 每轮至多一条快照，step 1 之外的 step 不注入（C1/C
   assert.equal(turn2.messages.length, 1)
   // 5s 刷新窗口内复用缓存：整个用例只发 1 次 /state。
   assert.equal(server.requests.filter((request) => request.url.startsWith('/state')).length, 1)
+})
+
+test('pre-step 优先注入补偿包（含记忆），且不再请求 /state', async (t) => {
+  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
+  t.after(() => server.close())
+  control.turnContext = {
+    ok: true,
+    compensation: {
+      snapshot_id: 'ctx_1',
+      state: { '猫猫.状态.情绪': '平静' },
+      memory: [{ content: '昨晚的约定', type: 'retrieved', source_snapshot_id: 'evt_1', weight: 0.8 }],
+      persona_constraints: ['不主动道歉'],
+      situation: '室内·夜间',
+    },
+    gate: { active: ['事件记忆', '表达偏好'], version: 'gate-v1' },
+  }
+  const stub = createStubContext()
+  const runtime = apply(stub.ctx, { socketPath: server.socketPath })
+  t.after(() => runtime.dispose())
+
+  const result = await runPreStep(stub.handler('agent/pre-step'), { agent: {}, turn: 1, step: 1 })
+  const text = result.messages[0].content[0].text
+  assert.ok(text.startsWith('[astrbox] 猫猫补偿包 '), text)
+  assert.ok(text.includes('状态.情绪="平静"'), text)
+  assert.ok(text.includes('记忆: [retrieved evt_1] 昨晚的约定'), text)
+  assert.ok(text.includes('约束: 不主动道歉'), text)
+  assert.ok(text.includes('专家: 事件记忆、表达偏好'), text)
+  assert.equal(server.requests.filter((request) => request.url.startsWith('/state')).length, 0)
 })
 
 test('只请求 paths 白名单且 R18 值不出现在文本里（C12）', async (t) => {

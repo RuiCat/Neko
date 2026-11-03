@@ -11,8 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ruicat/astrbox/internal/bootstrap"
-	"github.com/ruicat/astrbox/internal/mcpserver"
+	"github.com/RuiCat/Neko/internal/bootstrap"
+	"github.com/RuiCat/Neko/internal/driver"
+	"github.com/RuiCat/Neko/internal/mcpserver"
 )
 
 const (
@@ -34,6 +35,8 @@ type Options struct {
 	FunctionName string
 	// Deadline bounds one request server-side (504 beyond it).
 	Deadline time.Duration
+	// Driver enables the /contexts and /context-invoke routes when set.
+	Driver *driver.Driver
 }
 
 // Server answers HTTP/1.1 control-plane requests on a Unix socket.
@@ -45,6 +48,7 @@ type Server struct {
 	entityID     string
 	functionName string
 	deadline     time.Duration
+	driver       *driver.Driver
 	startedAt    time.Time
 	log          *dailyLogger
 	closing      atomic.Bool
@@ -61,6 +65,7 @@ func New(runtime *bootstrap.Runtime, mcp *mcpserver.Server, options Options) *Se
 		entityID:     options.Entity,
 		functionName: options.FunctionName,
 		deadline:     options.Deadline,
+		driver:       options.Driver,
 		startedAt:    time.Now(),
 	}
 	if server.entityID == "" {
@@ -110,7 +115,7 @@ func (s *Server) dispatchWithinDeadline(r *http.Request) response {
 	ctx, cancel := context.WithTimeout(r.Context(), s.deadline)
 	defer cancel()
 	result := make(chan response, 1)
-	go func() { result <- s.dispatch(r) }()
+	go func() { result <- s.dispatch(r.WithContext(ctx)) }()
 	select {
 	case resp := <-result:
 		return resp

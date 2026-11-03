@@ -1,0 +1,126 @@
+/* fieldWriteForm.css —— Field.WriteForm 样式载体：输入框 / 焦点环 / 主操作色全部走语义令牌。 */
+.nek-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  box-sizing: border-box;
+  padding: var(--space-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  transition: border-color var(--motion-duration-fast), color var(--motion-duration-fast);
+}
+
+.nek-form__path,
+.nek-form__value {
+  box-sizing: border-box;
+  padding-inline: var(--space-sm);
+  padding-block: var(--space-xs);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  transition: border-color var(--motion-duration-fast);
+}
+
+.nek-form__value {
+  min-height: 0;
+  resize: vertical;
+}
+
+.nek-form__path:hover,
+.nek-form__value:hover {
+  border-color: var(--color-border-strong);
+}
+
+.nek-form__path:focus-visible,
+.nek-form__value:focus-visible {
+  outline: var(--border-width-thick) solid var(--color-focus-ring);
+}
+
+.nek-form__hint {
+  display: none;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+}
+
+.nek-form__hint[data-present="true"] {
+  display: block;
+}
+
+.nek-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+}
+
+.nek-form__submit,
+.nek-form__cancel {
+  padding-inline: var(--space-md);
+  padding-block: var(--space-xs);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background var(--motion-duration-fast), border-color var(--motion-duration-fast);
+}
+
+.nek-form__submit {
+  border-color: var(--color-accent-base);
+  background: var(--color-accent-base);
+  color: var(--color-text-inverse);
+}
+
+.nek-form__submit:hover {
+  border-color: var(--color-accent-hover);
+  background: var(--color-accent-hover);
+}
+
+.nek-form__cancel:hover {
+  border-color: var(--color-border-strong);
+}
+
+.nek-form__submit:disabled,
+.nek-form__cancel:disabled {
+  color: var(--color-text-muted);
+  border-color: var(--color-border-subtle);
+  background: var(--color-surface-sunken);
+}
+
+.nek-form[data-state="idle"] {
+  border-color: var(--color-border-default);
+}
+
+.nek-form[data-state="dirty"] {
+  border-color: var(--color-border-strong);
+}
+
+.nek-form[data-state="submitting"] {
+  color: var(--color-text-secondary);
+}
+
+.nek-form[data-state="success"] {
+  border-color: var(--color-intent-success-fg);
+}
+
+.nek-form[data-state="error"] {
+  border-color: var(--color-intent-error-fg);
+}
+
+.nek-form[data-state="read-only"] {
+  color: var(--color-text-muted);
+  border-color: var(--color-border-subtle);
+}

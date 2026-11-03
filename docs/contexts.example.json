@@ -1,0 +1,23 @@
+{
+  "dsh_url": "http://127.0.0.1:3080",
+  "dsh_token": "REPLACE_WITH_DSH_LAUNCH_TOKEN",
+  "registry_path": "data/contexts.json",
+  "contexts": [
+    {
+      "context_id": "ctx-cat",
+      "character_id": "猫猫",
+      "session_id": "neko-cat",
+      "preset_id": "standard",
+      "cwd": "/home/ruicat/Desktop/Neko",
+      "entity": "猫猫"
+    }
+  ],
+  "routes": [
+    {
+      "event": "心情变化",
+      "context_id": "ctx-cat",
+      "priority": "normal",
+      "template": "【neko 事件】{{entity}} 的 {{field}} 从 {{old}} 变成 {{new}}"
+    }
+  ]
+}

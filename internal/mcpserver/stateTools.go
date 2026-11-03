@@ -3,10 +3,11 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
+	"github.com/RuiCat/Neko/internal/config"
+	"github.com/RuiCat/Neko/internal/engine"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/ruicat/astrbox/internal/config"
-	"github.com/ruicat/astrbox/internal/engine"
 )
 
 type tickArgs struct {
@@ -53,14 +54,19 @@ func (s *Server) addStateMachineTools(server *mcp.Server) {
 				break
 			}
 		}
-		if !s.machine.ResolveConflictWithEffects(args.ConflictID, target, args.Reason, effects) {
-			return fail("冲突 %s 不存在或已解决", args.ConflictID)
-		}
-		if s.diagnostics != nil && entityID != "" {
-			s.diagnostics.ClearByCodeEntity("tick.conflict.pending", entityID)
-		}
-		if err := s.store.Save(); err != nil {
-			return fail("保存失败: %s", err)
+		if err := s.WithStateWrite(func() error {
+			if !s.machine.ResolveConflictWithEffects(args.ConflictID, target, args.Reason, effects) {
+				return fmt.Errorf("冲突 %s 不存在或已解决", args.ConflictID)
+			}
+			if s.diagnostics != nil && entityID != "" {
+				s.diagnostics.ClearByCodeEntity("tick.conflict.pending", entityID)
+			}
+			if err := s.store.Save(); err != nil {
+				return fmt.Errorf("保存失败: %s", err)
+			}
+			return nil
+		}); err != nil {
+			return fail("%s", err)
 		}
 		return textResult("✅ 冲突 " + args.ConflictID + " 已解决")
 	})

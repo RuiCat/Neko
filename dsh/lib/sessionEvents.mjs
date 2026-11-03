@@ -6,6 +6,8 @@
  * - 同一 `(kind, sessionId, turn)` 只发一次，去重表按会话上限 256；
  * - 监听器整体 try/catch，绝不向宿主同步抛错；发送是 fire-and-forget。
  */
+import { summarizeTurn } from './turnSummary.mjs'
+
 export const DEDUPE_LIMIT = 256
 
 /**
@@ -84,7 +86,7 @@ export function createSessionEventSender(options) {
       }
     },
 
-    /** 处理 `agent/turn-stopping`：上报 turn-end，turn 必须是整数。 */
+    /** 处理 `agent/turn-stopping`：上报 turn-end（带可选轮次摘要），turn 必须是整数。 */
     turnStopping(payload) {
       try {
         const session = payload?.agent?.session
@@ -95,7 +97,11 @@ export function createSessionEventSender(options) {
         const sessionId = session?.id
         if (typeof sessionId !== 'string' || sessionId === '') return
         if (alreadySent('turn-end', sessionId, turn)) return
-        send({ kind: 'turn-end', sessionId, cwd, turn })
+        // 摘要只做观测：取不到就省略字段，保持旧请求体兼容。
+        const summary = summarizeTurn(session, turn)
+        const event = { kind: 'turn-end', sessionId, cwd, turn }
+        if (summary !== undefined) event.summary = summary
+        send(event)
       } catch (error) {
         warn(`agent/turn-stopping 处理失败（已忽略）：${error instanceof Error ? error.message : String(error)}`)
       }

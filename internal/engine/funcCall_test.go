@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/entity"
-	nekoFunction "github.com/ruicat/astrbox/internal/function"
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/entity"
+	nekoFunction "github.com/RuiCat/Neko/internal/function"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 // loadScriptFunction parses one @函数 out of a corpus script.

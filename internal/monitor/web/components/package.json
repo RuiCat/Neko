@@ -1,0 +1,6 @@
+{
+  "name": "neko-monitor-web-components",
+  "private": true,
+  "type": "module",
+  "description": "m5 元件实现目录；type=module 仅让 node 按 ES module 解析元件 .js（逐元件 verify 用），不引入依赖与打包器。"
+}

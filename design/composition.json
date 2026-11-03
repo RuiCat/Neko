@@ -1,0 +1,194 @@
+{
+  "version": "1",
+  "scenes": {
+    "Monitor.Main": {
+      "source": "internal/monitor/web/app.js",
+      "root": "shell"
+    }
+  },
+  "nodes": {
+    "shell": {
+      "scene": "Monitor.Main",
+      "component": "App.Shell",
+      "parent": null,
+      "children": ["topbar", "tree", "detail", "diagPanel", "scriptsPanel", "logs", "tick"],
+      "props": { "theme": "dark", "density": "comfortable" }
+    },
+    "topbar": {
+      "scene": "Monitor.Main",
+      "component": "App.TopBar",
+      "parent": "shell",
+      "slot": "topbar",
+      "children": [],
+      "props": { "title": "Neko Monitor", "readOnly": false }
+    },
+    "tree": {
+      "scene": "Monitor.Main",
+      "component": "Entity.Tree",
+      "parent": "shell",
+      "slot": "sidebar",
+      "children": ["treeRows", "treeEmpty", "treeError"],
+      "props": { "filter": "" }
+    },
+    "treeRows": {
+      "scene": "Monitor.Main",
+      "component": "Row.Item",
+      "parent": "tree",
+      "repeat": { "over": "entities", "key": "id", "as": "entity" },
+      "children": [],
+      "props": { "primary": "${entity.id}", "secondary": "${entity.type}", "tone": "neutral" }
+    },
+    "treeEmpty": {
+      "scene": "Monitor.Main",
+      "component": "Empty.State",
+      "parent": "tree",
+      "conditional": "entities.length === 0",
+      "children": [],
+      "props": { "kind": "empty", "title": "没有实体", "hint": "引擎尚未创建实体，先运行一次 tick" }
+    },
+    "treeError": {
+      "scene": "Monitor.Main",
+      "component": "Empty.State",
+      "parent": "tree",
+      "conditional": "tree.status === 'error'",
+      "children": [],
+      "props": { "kind": "error", "title": "实体树加载失败", "actionLabel": "重试" }
+    },
+    "detail": {
+      "scene": "Monitor.Main",
+      "component": "Entity.Detail",
+      "parent": "shell",
+      "slot": "detail",
+      "children": ["detailForm", "detailEmpty", "detailError"],
+      "props": { "entityId": "${selection.id}" }
+    },
+    "detailForm": {
+      "scene": "Monitor.Main",
+      "component": "Field.WriteForm",
+      "parent": "detail",
+      "slot": "fieldForm",
+      "children": [],
+      "props": { "entityId": "${selection.id}", "readOnly": false }
+    },
+    "detailEmpty": {
+      "scene": "Monitor.Main",
+      "component": "Empty.State",
+      "parent": "detail",
+      "conditional": "detail.status === 'empty'",
+      "children": [],
+      "props": { "kind": "empty", "title": "选择左侧实体", "hint": "详情区显示实体 JSON 与字段写表单" }
+    },
+    "detailError": {
+      "scene": "Monitor.Main",
+      "component": "Empty.State",
+      "parent": "detail",
+      "conditional": "detail.status === 'error'",
+      "children": [],
+      "props": { "kind": "error", "title": "实体详情加载失败", "actionLabel": "重试" }
+    },
+    "diagPanel": {
+      "scene": "Monitor.Main",
+      "component": "List.Panel",
+      "parent": "shell",
+      "slot": "diagnostics",
+      "children": ["diagRows", "diagEmpty", "diagError"],
+      "props": { "title": "诊断", "kind": "diagnostics" }
+    },
+    "diagRows": {
+      "scene": "Monitor.Main",
+      "component": "Row.Item",
+      "parent": "diagPanel",
+      "repeat": { "over": "diagnostics.items", "key": "id", "as": "diagnostic" },
+      "children": [],
+      "props": { "primary": "${diagnostic.code}", "secondary": "${diagnostic.message}", "tone": "${diagnostic.severity}" }
+    },
+    "diagEmpty": {
+      "scene": "Monitor.Main",
+      "component": "Empty.State",
+      "parent": "diagPanel",
+      "conditional": "diagnostics.items.length === 0",
+      "children": [],
+      "props": { "kind": "empty", "title": "没有诊断", "hint": "当前 generation 下无记录" }
+    },
+    "diagError": {
+      "scene": "Monitor.Main",
+      "component": "Empty.State",
+      "parent": "diagPanel",
+      "conditional": "diagnostics.status === 'error'",
+      "children": [],
+      "props": { "kind": "error", "title": "诊断加载失败", "actionLabel": "重试" }
+    },
+    "scriptsPanel": {
+      "scene": "Monitor.Main",
+      "component": "List.Panel",
+      "parent": "shell",
+      "slot": "scripts",
+      "children": ["scriptRows", "scriptsEmpty", "scriptsError"],
+      "props": { "title": "脚本", "kind": "scripts" }
+    },
+    "scriptRows": {
+      "scene": "Monitor.Main",
+      "component": "Row.Item",
+      "parent": "scriptsPanel",
+      "repeat": { "over": "scripts.items", "key": "name", "as": "script" },
+      "children": [],
+      "props": { "primary": "${script.name}", "secondary": "${script.hash}", "meta": "rules ${script.rules}" }
+    },
+    "scriptsEmpty": {
+      "scene": "Monitor.Main",
+      "component": "Empty.State",
+      "parent": "scriptsPanel",
+      "conditional": "scripts.items.length === 0",
+      "children": [],
+      "props": { "kind": "empty", "title": "没有脚本", "hint": "scripts 目录为空" }
+    },
+    "scriptsError": {
+      "scene": "Monitor.Main",
+      "component": "Empty.State",
+      "parent": "scriptsPanel",
+      "conditional": "scripts.status === 'error'",
+      "children": [],
+      "props": { "kind": "error", "title": "脚本列表加载失败", "actionLabel": "重试" }
+    },
+    "logs": {
+      "scene": "Monitor.Main",
+      "component": "Logs.Stream",
+      "parent": "shell",
+      "slot": "logs",
+      "children": ["logRows", "logsEmpty", "logsError"],
+      "props": { "kind": "state", "paused": false, "follow": true }
+    },
+    "logRows": {
+      "scene": "Monitor.Main",
+      "component": "Row.Item",
+      "parent": "logs",
+      "repeat": { "over": "logs.lines", "key": "index", "as": "line" },
+      "children": [],
+      "props": { "primary": "${line.raw}", "secondary": "${line.ts}", "tone": "neutral" }
+    },
+    "logsEmpty": {
+      "scene": "Monitor.Main",
+      "component": "Empty.State",
+      "parent": "logs",
+      "conditional": "logs.lines.length === 0",
+      "children": [],
+      "props": { "kind": "empty", "title": "当天没有日志", "hint": "切换日期或等待新日志" }
+    },
+    "logsError": {
+      "scene": "Monitor.Main",
+      "component": "Empty.State",
+      "parent": "logs",
+      "conditional": "logs.status === 'error'",
+      "children": [],
+      "props": { "kind": "error", "title": "日志加载失败", "actionLabel": "重试" }
+    },
+    "tick": {
+      "scene": "Monitor.Main",
+      "component": "Tick.Result",
+      "parent": "shell",
+      "slot": "tick",
+      "children": [],
+      "props": { "status": "idle" }
+    }
+  }
+}

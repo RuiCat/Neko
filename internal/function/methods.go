@@ -20,6 +20,8 @@ func (r *runner) evalMethodCall(node *methodCallExpression) (any, error) {
 	switch node.method {
 	case "append", "extend", "pop", "popitem", "clear", "insert", "remove", "sort", "reverse", "update":
 		return r.evalListMutation(node, args)
+	case "setdefault":
+		return r.evalSetDefault(node, args)
 	}
 	target, err := r.eval(node.target)
 	if err != nil {
@@ -45,8 +47,6 @@ func (r *runner) evalMethodCall(node *methodCallExpression) (any, error) {
 		return methodGet(target, argumentAt(args, 0), argumentAt(args, 1)), nil
 	case "copy":
 		return methodCopy(target), nil
-	case "setdefault":
-		return methodSetDefault(target, argumentAt(args, 0), argumentAt(args, 1)), nil
 	}
 	return nil, fmt.Errorf("不支持的方法: %s", node.method)
 }
@@ -306,6 +306,37 @@ func methodCopy(target any) any {
 		return copied
 	}
 	return target
+}
+
+// evalSetDefault handles setdefault: entity paths are written back through
+// assignPath so the mutation persists and fires listeners; local map values
+// are written in place.
+func (r *runner) evalSetDefault(node *methodCallExpression, args []any) (any, error) {
+	key := argumentAt(args, 0)
+	fallback := argumentAt(args, 1)
+	if path, ok := node.target.(*pathExpression); ok {
+		current := r.getPath(path)
+		object, ok := current.(map[string]any)
+		if !ok {
+			return fallback, nil
+		}
+		name := pyText(key)
+		if value, exists := object[name]; exists {
+			return value, nil
+		}
+		copied := make(map[string]any, len(object)+1)
+		for item, value := range object {
+			copied[item] = value
+		}
+		copied[name] = fallback
+		r.assignPath(path, copied)
+		return fallback, nil
+	}
+	target, err := r.eval(node.target)
+	if err != nil {
+		return nil, err
+	}
+	return methodSetDefault(target, key, fallback), nil
 }
 
 func methodSetDefault(target, key, fallback any) any {

@@ -1,0 +1,17 @@
+{
+  "version": "1",
+  "scenes": {
+    "Panel.Main": {
+      "source": "src/sceneMain.js",
+      "root": "n1"
+    }
+  },
+  "nodes": {
+    "n1": {
+      "scene": "Panel.Main",
+      "component": "Ghost.Panel",
+      "parent": null,
+      "children": []
+    }
+  }
+}

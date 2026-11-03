@@ -1,0 +1,18 @@
+/* app.css —— 组合层布局：页面挂载点与视口高度；只写布局/响应式，不覆盖元件内部样式。 */
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--color-bg-canvas);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-sans);
+}
+
+#monitor-root {
+  display: grid;
+  grid-template-rows: minmax(100vh, auto);
+  min-height: 100vh;
+}

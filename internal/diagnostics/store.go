@@ -17,6 +17,9 @@ type Store struct {
 	index      map[string]int
 	overflow   int
 	generation uint64
+	// notifyMu guards notify; notify callbacks always run outside mu.
+	notifyMu sync.RWMutex
+	notify   func(record Record, op string)
 }
 
 // New builds a store with the given capacity; non-positive values use the default.
@@ -27,6 +30,16 @@ func New(capacity int) *Store {
 	return &Store{capacity: capacity, index: map[string]int{}}
 }
 
+// SetNotify registers a mutation observer. added/updated fire after one Add
+// (updated when the fingerprint already existed), removed fires for a cleared
+// or evicted record. The callback runs after Store.mu is released, so it may
+// call Generation/Snapshot/Summary/Len; it must not call Add.
+func (s *Store) SetNotify(notify func(record Record, op string)) {
+	s.notifyMu.Lock()
+	s.notify = notify
+	s.notifyMu.Unlock()
+}
+
 // Add inserts or updates one diagnostic and returns its stable id.
 func (s *Store) Add(record Record) string {
 	record = record.normalize()
@@ -34,39 +47,66 @@ func (s *Store) Add(record Record) string {
 	now := time.Now()
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.generation++
+	op := "added"
+	var out Record
+	var evicted *Record
 	if position, ok := s.index[key]; ok {
 		existing := &s.records[position]
 		existing.Count++
 		existing.LastSeen = now
 		existing.Generation = s.generation
-		return existing.ID
+		out = *existing
+		op = "updated"
+	} else {
+		record.ID = "diag_" + key[:12]
+		record.Count = 1
+		record.FirstSeen = now
+		record.LastSeen = now
+		record.Generation = s.generation
+		s.records = append(s.records, record)
+		s.index[key] = len(s.records) - 1
+		if len(s.records) > s.capacity {
+			if dropped, ok := s.evictOldestLocked(); ok {
+				evicted = &dropped
+			}
+		}
+		out = record
 	}
-	record.ID = "diag_" + key[:12]
-	record.Count = 1
-	record.FirstSeen = now
-	record.LastSeen = now
-	record.Generation = s.generation
-	s.records = append(s.records, record)
-	s.index[key] = len(s.records) - 1
-	if len(s.records) > s.capacity {
-		s.evictOldestLocked()
+	s.mu.Unlock()
+
+	if evicted != nil {
+		s.notifyRecord(*evicted, "removed")
 	}
-	return record.ID
+	s.notifyRecord(out, op)
+	return out.ID
 }
 
-// evictOldestLocked drops the oldest record and rebuilds the position index.
-func (s *Store) evictOldestLocked() {
+// evictOldestLocked drops the oldest record and rebuilds the position index,
+// returning the evicted record for the out-of-lock notification.
+func (s *Store) evictOldestLocked() (Record, bool) {
 	if len(s.records) == 0 {
-		return
+		return Record{}, false
 	}
+	dropped := s.records[0]
 	s.records = append([]Record(nil), s.records[1:]...)
 	s.index = make(map[string]int, len(s.records))
 	for position, record := range s.records {
 		s.index[record.fingerprint()] = position
 	}
 	s.overflow++
+	return dropped, true
+}
+
+// notifyRecord runs one notify callback after the store lock was released.
+func (s *Store) notifyRecord(record Record, op string) {
+	s.notifyMu.RLock()
+	callback := s.notify
+	s.notifyMu.RUnlock()
+	if callback == nil {
+		return
+	}
+	callback(record, op)
 }
 
 // ClearByScript removes every diagnostic owned by one script.
@@ -91,15 +131,18 @@ func (s *Store) ClearBySource(source string) {
 	s.clear(func(record Record) bool { return record.Source == source })
 }
 
-// clear drops matching records and rebuilds the position index.
+// clear drops matching records and rebuilds the position index. Removed
+// records are reported to the notify callback after the lock is released.
 func (s *Store) clear(match func(Record) bool) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	kept := make([]Record, 0, len(s.records))
+	removed := make([]Record, 0)
 	for _, record := range s.records {
-		if !match(record) {
-			kept = append(kept, record)
+		if match(record) {
+			removed = append(removed, record)
+			continue
 		}
+		kept = append(kept, record)
 	}
 	s.records = kept
 	s.index = make(map[string]int, len(kept))
@@ -107,6 +150,11 @@ func (s *Store) clear(match func(Record) bool) {
 		s.index[record.fingerprint()] = position
 	}
 	s.generation++
+	s.mu.Unlock()
+
+	for _, record := range removed {
+		s.notifyRecord(record, "removed")
+	}
 }
 
 // Snapshot returns matching records ordered by severity then recency.

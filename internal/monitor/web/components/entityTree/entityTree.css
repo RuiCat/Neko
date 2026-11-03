@@ -1,0 +1,53 @@
+/* entityTree.css —— Entity.Tree 样式载体：侧栏底色 / 分隔线 / 状态全部走语义令牌。 */
+.nek-tree {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  border-right: var(--border-width-thin) solid var(--color-border-subtle);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-sm);
+}
+
+.nek-tree__filter {
+  box-sizing: border-box;
+  padding-inline: var(--space-sm);
+  padding-block: var(--space-xs);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-sm);
+}
+
+.nek-tree__filter:focus-visible {
+  outline: var(--border-width-thick) solid var(--color-focus-ring);
+}
+
+.nek-tree__content {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-xs);
+  overflow: auto;
+}
+
+.nek-tree[data-state="loading"] .nek-tree__content {
+  color: var(--color-text-muted);
+}
+
+.nek-tree[data-state="ready"] .nek-tree__content {
+  color: var(--color-text-secondary);
+}
+
+.nek-tree[data-state="empty"] .nek-tree__content {
+  color: var(--color-text-muted);
+}
+
+.nek-tree[data-state="error"] {
+  border-right-color: var(--color-border-strong);
+}

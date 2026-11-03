@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 const (
@@ -37,15 +39,14 @@ func (s *Server) handleState(r *http.Request) response {
 		}
 	}
 
-	entity := s.runtime.Store.Get(entityID)
-	if entity == nil {
+	ent := s.runtime.Store.Get(entityID)
+	if ent == nil {
 		return notFound(fmt.Sprintf("实体 '%s' 不存在", entityID))
 	}
-	snapshot := entity.Snapshot()
 	if len(paths) == 0 {
-		return wholeStateResponse(entityID, snapshot, maxBytes)
+		return wholeStateResponse(entityID, ent.Snapshot(), maxBytes)
 	}
-	return pathsStateResponse(entityID, snapshot, paths)
+	return pathsStateResponse(entityID, ent, paths)
 }
 
 // wholeStateResponse answers the full snapshot, or truncated:true when the
@@ -68,13 +69,15 @@ func wholeStateResponse(entityID string, snapshot map[string]any, maxBytes int) 
 }
 
 // pathsStateResponse answers only the requested paths; absent ones are listed
-// in missing instead of failing the whole request.
-func pathsStateResponse(entityID string, snapshot map[string]any, paths []string) response {
+// in missing instead of failing the whole request. Entity.Get is the same
+// source as the MCP entity_state_get tool, so a path present only in the
+// template chain now resolves instead of reporting missing (K5/D2).
+func pathsStateResponse(entityID string, ent *entity.Entity, paths []string) response {
 	values := make(map[string]any, len(paths))
 	missing := make([]string, 0, len(paths))
 	for _, path := range paths {
-		value, ok := lookupSnapshotPath(snapshot, path)
-		if !ok {
+		value, err := ent.Get(path)
+		if err != nil {
 			missing = append(missing, path)
 			continue
 		}
@@ -103,20 +106,4 @@ func parseMaxBytes(raw string) (int, error) {
 		return 0, fmt.Errorf("maxBytes 必须在 %d..%d 之间", MIN_MAX_BYTES, MAX_MAX_BYTES)
 	}
 	return value, nil
-}
-
-// lookupSnapshotPath resolves a dotted path inside a snapshot copy.
-func lookupSnapshotPath(snapshot map[string]any, path string) (any, bool) {
-	var current any = snapshot
-	for _, segment := range strings.Split(path, ".") {
-		object, ok := current.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		current, ok = object[segment]
-		if !ok {
-			return nil, false
-		}
-	}
-	return current, true
 }

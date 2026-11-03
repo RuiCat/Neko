@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "unusedAllow": ["Widget.Box"],
+  "components": {
+    "Widget.Box": {
+      "kind": "atom",
+      "source": "src/widgetBox.js",
+      "props": {},
+      "events": {},
+      "slots": {},
+      "style": { "color": "color.text.primary" },
+      "states": ["default"],
+      "verify": "test -f src/widgetBox.js"
+    }
+  }
+}

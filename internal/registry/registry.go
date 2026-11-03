@@ -15,10 +15,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ruicat/astrbox/internal/diagnostics"
-	"github.com/ruicat/astrbox/internal/engine"
-	"github.com/ruicat/astrbox/internal/entity"
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/diagnostics"
+	"github.com/RuiCat/Neko/internal/engine"
+	"github.com/RuiCat/Neko/internal/entity"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 // Entry is one persisted script registration.
@@ -223,11 +223,12 @@ func (r *Registry) applyScript(name, text string, force, skipSafety, persist boo
 	newHash := textHash(text)
 	r.mu.Lock()
 	old := r.entries[name]
-	r.mu.Unlock()
 	if old != nil && old.Hash == newHash && !force {
+		r.mu.Unlock()
 		result.Noop = true
 		return result
 	}
+	r.mu.Unlock()
 	prepared := r.prepareScript(name, text, skipSafety)
 	result.Warnings = append(result.Warnings, prepared.Warnings...)
 	if len(prepared.Errors) > 0 {
@@ -237,6 +238,10 @@ func (r *Registry) applyScript(name, text string, force, skipSafety, persist boo
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if old := r.entries[name]; old != nil && old.Hash == newHash && !force {
+		result.Noop = true
+		return result
+	}
 	r.commitLocked(result, name, text, newHash, prepared, persist)
 	return result
 }
@@ -261,8 +266,13 @@ func (r *Registry) Remove(name string) *ApplyResult {
 		r.sink.UnregisterEvents(entry.Events)
 		r.sink.Refresh()
 	}
-	_ = r.Save()
-	_ = os.Remove(r.sourcePath(name))
+	if err := r.Save(); err != nil {
+		result.Errors = append(result.Errors, ApplyError{Severity: "error", Message: "保存注册表失败: " + err.Error()})
+		result.OK = false
+	}
+	if err := os.Remove(r.sourcePath(name)); err != nil && !os.IsNotExist(err) {
+		result.Warnings = append(result.Warnings, ApplyError{Severity: "warning", Message: "源文件删除失败: " + err.Error()})
+	}
 	return result
 }
 

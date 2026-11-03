@@ -1,0 +1,82 @@
+/* tickResult.css —— Tick.Result 样式载体：胶囊底 / 状态色全部走语义令牌（info 为契约声明色）。 */
+.nek-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  box-sizing: border-box;
+  padding-inline: var(--space-md);
+  padding-block: var(--space-2xs);
+  border: var(--border-width-thin) solid var(--color-border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--font-leading-tight);
+  cursor: pointer;
+}
+
+.nek-tick__status {
+  font-weight: var(--font-weight-semibold);
+}
+
+.nek-tick__metric,
+.nek-tick__id {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.nek-tick__error {
+  display: none;
+  color: var(--color-intent-error-fg);
+  font-size: var(--font-size-xs);
+}
+
+.nek-tick__error[data-present="true"] {
+  display: inline;
+}
+
+.nek-tick__retry {
+  display: none;
+  padding-inline: var(--space-sm);
+  padding-block: var(--space-2xs);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.nek-tick__retry[data-present="true"] {
+  display: inline-block;
+}
+
+.nek-tick[data-state="idle"] {
+  color: var(--color-text-muted);
+}
+
+.nek-tick[data-state="running"] .nek-tick__status {
+  color: var(--color-intent-info-fg);
+  background: var(--color-intent-info-bg);
+}
+
+.nek-tick[data-state="success"] .nek-tick__status {
+  color: var(--color-intent-success-fg);
+}
+
+.nek-tick[data-state="failed"] {
+  border-color: var(--color-intent-error-fg);
+}
+
+.nek-tick[data-state="failed"] .nek-tick__status {
+  color: var(--color-intent-error-fg);
+  background: var(--color-intent-error-bg);
+}
+
+.nek-tick[data-state="busy"] .nek-tick__status {
+  color: var(--color-intent-info-fg);
+  background: var(--color-intent-info-bg);
+}

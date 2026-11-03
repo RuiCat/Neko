@@ -21,11 +21,46 @@ func (s *Server) dispatch(r *http.Request) response {
 			return methodNotAllowed(http.MethodPost)
 		}
 		return s.handleTick(r)
+	case "/turn-context":
+		if r.Method != http.MethodGet {
+			return methodNotAllowed(http.MethodGet)
+		}
+		return s.handleTurnContext(r)
+	case "/nightly":
+		if r.Method != http.MethodPost {
+			return methodNotAllowed(http.MethodPost)
+		}
+		return s.handleNightly(r)
+	case "/judge":
+		if r.Method != http.MethodPost {
+			return methodNotAllowed(http.MethodPost)
+		}
+		return s.handleJudge(r)
+	case "/candidates":
+		if r.Method != http.MethodGet {
+			return methodNotAllowed(http.MethodGet)
+		}
+		return s.handleCandidates(r)
+	case "/candidates/resolve":
+		if r.Method != http.MethodPost {
+			return methodNotAllowed(http.MethodPost)
+		}
+		return s.handleResolveCandidate(r)
 	case "/session-event":
 		if r.Method != http.MethodPost {
 			return methodNotAllowed(http.MethodPost)
 		}
 		return s.handleSessionEvent(r)
+	case "/contexts":
+		if r.Method != http.MethodGet {
+			return methodNotAllowed(http.MethodGet)
+		}
+		return s.handleContextsList()
+	case "/context-invoke":
+		if r.Method != http.MethodPost {
+			return methodNotAllowed(http.MethodPost)
+		}
+		return s.handleContextInvoke(r)
 	default:
 		return unknownEndpoint(r.URL.Path)
 	}

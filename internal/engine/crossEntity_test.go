@@ -3,9 +3,9 @@ package engine
 import (
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/entity"
-	nekoFunction "github.com/ruicat/astrbox/internal/function"
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/entity"
+	nekoFunction "github.com/RuiCat/Neko/internal/function"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 func TestBranchRaceAcrossEntities(t *testing.T) {

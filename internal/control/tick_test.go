@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ruicat/astrbox/internal/engine"
+	"github.com/RuiCat/Neko/internal/engine"
 )
 
 // addTransitionRule installs a rule that always writes one state path so a tick

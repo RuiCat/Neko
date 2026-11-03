@@ -130,6 +130,19 @@ export function createControlClient(options) {
     },
 
     /**
+     * `GET /turn-context`：取当前补偿包（只读投影，不写经历日志）。
+     * @param {{entity: string}} query 查询参数
+     * @returns {Promise<any>} 响应体
+     */
+    async getTurnContext(query) {
+      const params = new URLSearchParams()
+      params.set('entity', query.entity)
+      const response = await send({ method: 'GET', path: `/turn-context?${params.toString()}`, timeoutMs: requestTimeoutMs })
+      if (response.status !== 200) throw errorFromResponse(response)
+      return response.body
+    },
+
+    /**
      * `POST /tick`：单飞由服务端 409 兜底；409 作为“跳过”结果返回而不抛错。
      * @param {{scope?: string}} [request] tick 参数
      * @returns {Promise<{status: number, busy: boolean, body: any}>} 结果

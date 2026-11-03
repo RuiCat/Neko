@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 // registerInline registers one ad-hoc function and fails the test on errors.

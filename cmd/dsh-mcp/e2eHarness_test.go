@@ -75,7 +75,6 @@ type dshProcess struct {
 	stderr     *syncBuffer
 	waitDone   chan struct{}
 	waitErr    error
-	waitOnce   sync.Once
 }
 
 // startProcess launches dsh-mcp on fresh temp directories.

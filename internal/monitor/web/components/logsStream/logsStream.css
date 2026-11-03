@@ -1,0 +1,87 @@
+/* logsStream.css —— Logs.Stream 样式载体：下凹底 / 等宽字体 / 时间戳弱化色全部走语义令牌。 */
+.nek-logs {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  box-sizing: border-box;
+  gap: var(--space-2xs);
+  padding: var(--space-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-primary);
+  border: var(--border-width-thin) solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--font-leading-tight);
+  transition: border-color var(--motion-duration-fast);
+}
+
+.nek-logs__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.nek-logs__kind {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.nek-logs__date,
+.nek-logs__pause,
+.nek-logs__more {
+  padding-inline: var(--space-sm);
+  padding-block: var(--space-2xs);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.nek-logs__meta {
+  margin-inline-start: auto;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.nek-logs__content {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  overflow: auto;
+}
+
+.nek-logs__more {
+  display: none;
+  margin-inline-start: auto;
+}
+
+.nek-logs__more[data-present="true"] {
+  display: inline-block;
+}
+
+.nek-logs[data-state="live"] .nek-logs__kind {
+  color: var(--color-intent-success-fg);
+}
+
+.nek-logs[data-state="paused"] .nek-logs__kind {
+  color: var(--color-intent-warning-fg);
+}
+
+.nek-logs[data-state="truncated"] .nek-logs__meta {
+  color: var(--color-text-secondary);
+}
+
+.nek-logs[data-state="empty"] .nek-logs__content {
+  color: var(--color-text-muted);
+}
+
+.nek-logs[data-state="error"] {
+  border-color: var(--color-border-strong);
+}

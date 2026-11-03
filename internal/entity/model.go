@@ -103,10 +103,12 @@ func (e *Entity) Get(path string) (any, error) {
 	}
 	e.mu.RLock()
 	current, found := lookup(e.Data, parts)
-	e.mu.RUnlock()
 	if found {
-		return current, nil
+		copied := deepCopy(current)
+		e.mu.RUnlock()
+		return copied, nil
 	}
+	e.mu.RUnlock()
 	if value, ok := lookupTemplates(e.Templates, e.Type, parts); ok {
 		return value, nil
 	}

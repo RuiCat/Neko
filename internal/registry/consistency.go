@@ -5,7 +5,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/ruicat/astrbox/internal/diagnostics"
+	"github.com/RuiCat/Neko/internal/diagnostics"
 )
 
 // ScanConsistency rebuilds script/source consistency diagnostics and returns

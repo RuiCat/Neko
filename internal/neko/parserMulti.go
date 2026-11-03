@@ -91,18 +91,12 @@ func parseMulticond(body, header string, pos Pos) []RuleDef {
 			break
 		}
 		bracePos := i + byteToRuneIndex(sub, loc[1]-1)
-		depth := 1
-		j := bracePos + 1
-		for j < n && depth > 0 {
-			if rs[j] == '{' {
-				depth++
-			} else if rs[j] == '}' {
-				depth--
-			}
-			j++
+		closeIdx := findBalanced(content, bracePos, '{', '}')
+		if closeIdx < 0 {
+			break
 		}
-		subInners = append(subInners, runeSlice(content, bracePos+1, j-1))
-		i = j
+		subInners = append(subInners, runeSlice(content, bracePos+1, closeIdx))
+		i = closeIdx + 1
 	}
 
 	result := []RuleDef{}
@@ -235,19 +229,13 @@ func parseRuleRange(body, header string, pos Pos) []RuleDef {
 		}
 		name := strings.TrimSpace(sub[loc[2]:loc[3]])
 		bracePos := i + byteToRuneIndex(sub, loc[1]-1)
-		depth := 1
-		j := bracePos + 1
-		for j < n && depth > 0 {
-			if rs[j] == '{' {
-				depth++
-			} else if rs[j] == '}' {
-				depth--
-			}
-			j++
+		closeIdx := findBalanced(content, bracePos, '{', '}')
+		if closeIdx < 0 {
+			break
 		}
-		inner := runeSlice(content, bracePos+1, j-1)
+		inner := runeSlice(content, bracePos+1, closeIdx)
 		branches = append(branches, rawBranch{name: name, actions: parseActionLines(inner, pos)})
-		i = j
+		i = closeIdx + 1
 	}
 
 	type rangeBucket struct {
@@ -346,17 +334,11 @@ func parseMultiIf(body string, subjects []Subject, pos Pos) []RuleDef {
 			if rs[j] == '{' {
 				before := strings.TrimSpace(string(rs[i:j]))
 				if before == "" || strings.HasSuffix(before, " in") || before == "in" {
-					depthIn := 1
-					k := j + 1
-					for k < n && depthIn > 0 {
-						if rs[k] == '{' {
-							depthIn++
-						} else if rs[k] == '}' {
-							depthIn--
-						}
-						k++
+					closeIn := findBalanced(content, j, '{', '}')
+					if closeIn < 0 {
+						break
 					}
-					j = k
+					j = closeIn + 1
 					continue
 				}
 				bracePos = j
@@ -368,19 +350,13 @@ func parseMultiIf(body string, subjects []Subject, pos Pos) []RuleDef {
 			break
 		}
 		condExpr := strings.TrimSpace(string(rs[i:bracePos]))
-		depth := 1
-		k := bracePos + 1
-		for k < n && depth > 0 {
-			if rs[k] == '{' {
-				depth++
-			} else if rs[k] == '}' {
-				depth--
-			}
-			k++
+		closeIdx := findBalanced(content, bracePos, '{', '}')
+		if closeIdx < 0 {
+			break
 		}
-		actionText := runeSlice(content, bracePos+1, k-1)
+		actionText := runeSlice(content, bracePos+1, closeIdx)
 		branches = append(branches, multiBranch{cond: condExpr, actions: parseActionLines(actionText, pos)})
-		i = k
+		i = closeIdx + 1
 		for i < n && (unicode.IsSpace(rs[i]) || rs[i] == ',') {
 			i++
 		}
