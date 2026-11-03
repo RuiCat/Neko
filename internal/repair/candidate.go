@@ -60,18 +60,25 @@ func Build(findings []triage.Finding, now time.Time) ([]Candidate, []Rejection) 
 			kind = KindRule
 		}
 		patch := fmt.Sprintf("%s 修复：%s @ %s — %s", kind, finding.Kind, finding.TurnID, finding.Detail)
-		hash := shortHash(fmt.Sprintf("%s|%s|%s|%s", kind, finding.SnapshotID, finding.TurnID, patch))
-		candidates = append(candidates, Candidate{
-			ID:               "repair_" + hash,
-			Kind:             kind,
-			SourceSnapshotID: finding.SnapshotID,
-			NegativeTurnID:   finding.TurnID,
-			Patch:            patch,
-			Hash:             hash,
-			CreatedAt:        now,
-		})
+		candidates = append(candidates, NewCandidate(kind, finding.SnapshotID, finding.TurnID, patch, now))
 	}
 	return candidates, rejections
+}
+
+// NewCandidate builds one candidate with a stable ID and hash. It is shared by
+// the triage-driven Build and the apply executor so an approved queue entry and
+// a scanned finding produce the same identity.
+func NewCandidate(kind Kind, snapshotID, turnID, patch string, now time.Time) Candidate {
+	hash := shortHash(fmt.Sprintf("%s|%s|%s|%s", kind, snapshotID, turnID, patch))
+	return Candidate{
+		ID:               "repair_" + hash,
+		Kind:             kind,
+		SourceSnapshotID: snapshotID,
+		NegativeTurnID:   turnID,
+		Patch:            patch,
+		Hash:             hash,
+		CreatedAt:        now,
+	}
 }
 
 // shortHash returns the first 16 hex characters of the SHA-256 of text.
