@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ruicat/astrbox/internal/config"
-	"github.com/ruicat/astrbox/internal/engine"
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/config"
+	"github.com/RuiCat/Neko/internal/engine"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 // DeriveMatch derives the match selector, extra conditions and subject list.
@@ -14,12 +14,6 @@ func DeriveMatch(subjects []neko.Subject) (string, []string, bool, []string) {
 	extraWhen := []string{}
 	multi := false
 	var subjectsList []string
-	var globals []string
-	for _, subject := range subjects {
-		if subject.Kind == "global" {
-			globals = append(globals, subject.EntityID+subject.Var)
-		}
-	}
 	hasPrimary := false
 	for _, subject := range subjects {
 		if subject.Kind == "primary" || subject.Kind == "multi" {

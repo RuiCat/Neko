@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/engine"
-	"github.com/ruicat/astrbox/internal/entity"
+	"github.com/RuiCat/Neko/internal/engine"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 func TestScriptOrderPreserved(t *testing.T) {

@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ruicat/astrbox/internal/config"
-	"github.com/ruicat/astrbox/internal/entity"
+	"github.com/RuiCat/Neko/internal/config"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 // Effect is one parsed delta effect.

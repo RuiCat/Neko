@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ruicat/astrbox/internal/engine"
-	"github.com/ruicat/astrbox/internal/mcpserver"
+	"github.com/RuiCat/Neko/internal/engine"
+	"github.com/RuiCat/Neko/internal/mcpserver"
 )
 
 // TestConcurrentTickStateSetAndStateRead runs the three entry points that share

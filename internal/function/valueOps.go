@@ -302,6 +302,8 @@ func callBuiltin(name string, args []any) (any, bool, error) {
 		return builtinSorted(argumentAt(args, 0)), true, nil
 	case "reversed":
 		return builtinReversed(argumentAt(args, 0)), true, nil
+	case "随机":
+		return builtinRandom(args), true, nil
 	case "print":
 		return nil, true, nil
 	}

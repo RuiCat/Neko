@@ -1,9 +1,30 @@
 // Additional Python-style builtins available to .neko function bodies.
 package function
 
-import "sort"
+import (
+	"math/rand/v2"
+	"sort"
+)
 
 const maxRangeItems = 100000
+
+// builtinRandom implements 随机(a, b): an integer in [min(a,b), max(a,b)].
+// Bounds are swapped when reversed so callers need not order them.
+func builtinRandom(args []any) any {
+	low, _ := toIntValue(argumentAt(args, 0))
+	high, _ := toIntValue(argumentAt(args, 1))
+	if low > high {
+		low, high = high, low
+	}
+	if high == low {
+		return low
+	}
+	span := high - low + 1
+	if span <= 0 {
+		return low
+	}
+	return low + rand.IntN(span)
+}
 
 // builtinRange implements range(stop) / range(start, stop[, step]).
 func builtinRange(args []any) any {

@@ -12,6 +12,7 @@ import (
 
 // FROZEN_TOOLS is the K6 tool-name set exposed by dsh-mcp (alphabetical).
 var frozenTools = []string{
+	"context_list", "context_send",
 	"diagnostics_query", "entity_create", "entity_query", "entity_snapshot",
 	"entity_state_get", "entity_state_set", "event_log", "inventory",
 	"neko_script_apply", "neko_script_list", "neko_script_read",
@@ -19,7 +20,7 @@ var frozenTools = []string{
 	"state_machine_resolve", "state_machine_tick", "stats",
 }
 
-// TestE2EStdioToolsListAndStdoutPurity checks tools/list equals the frozen 17
+// TestE2EStdioToolsListAndStdoutPurity checks tools/list equals the frozen 19
 // names and that stdout carries nothing but MCP frames.
 func TestE2EStdioToolsListAndStdoutPurity(t *testing.T) {
 	session := startStdioSession(t)

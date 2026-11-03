@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/entity"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 func stringPtr(value string) *string { return &value }

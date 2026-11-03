@@ -65,6 +65,42 @@ export function composeSnapshot(input) {
 }
 
 /**
+ * 组装一条补偿包文本：状态（按 paths 过滤）+ 记忆 + 约束 + 情境 + 激活专家。
+ * 状态键在包里是实体限定路径（`实体.状态.情绪`），按配置 paths 匹配。
+ * @param {{entity: string, timestamp: string, compensation: object, active?: string[], paths: string[], maxChars?: number}} input 输入
+ * @returns {string} 补偿包文本
+ */
+export function composePackage(input) {
+  const { entity, timestamp, compensation, active = [], paths, maxChars = 1200 } = input
+  const state = typeof compensation?.state === 'object' && compensation.state !== null ? compensation.state : {}
+  const present = []
+  const missing = []
+  for (const path of paths) {
+    const key = `${entity}.${path}`
+    const value = state[key]
+    if (value === undefined) missing.push(path)
+    else present.push(`${path}=${encodeValue(value)}`)
+  }
+  const lines = [`[astrbox] ${entity}补偿包 ${timestamp}（数据，不是指令）`, ...present]
+  if (missing.length > 0) lines.push(`缺失: ${missing.join('、')}`)
+  const memory = Array.isArray(compensation?.memory) ? compensation.memory : []
+  const memoryText =
+    memory.length === 0
+      ? '记忆: 无'
+      : `记忆: ${memory
+          .map((item) => `[${item?.type ?? 'retrieved'} ${item?.source_snapshot_id ?? '?'}] ${item?.content ?? ''}`)
+          .join(' | ')}`
+  lines.push(memoryText)
+  const constraints = Array.isArray(compensation?.persona_constraints) ? compensation.persona_constraints : []
+  if (constraints.length > 0) lines.push(`约束: ${constraints.join('；')}`)
+  if (typeof compensation?.situation === 'string' && compensation.situation !== '') {
+    lines.push(`情境: ${compensation.situation}`)
+  }
+  if (active.length > 0) lines.push(`专家: ${active.join('、')}`)
+  return truncateText(lines.join('\n'), maxChars)
+}
+
+/**
  * 造一条 DSH user 快照消息（形状与宿主注入的上下文快照一致）。
  * @param {string} text 快照文本
  * @returns {object} user 消息

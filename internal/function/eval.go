@@ -314,6 +314,9 @@ func sliceIndices(length int, low, high *int, step int) []int {
 	}
 	if high != nil {
 		end = normalizeIndex(*high, length)
+		if end < -1 {
+			end = -1
+		}
 	}
 	for index := start; index > end; index += step {
 		indices = append(indices, index)
@@ -326,26 +329,6 @@ func normalizeIndex(index, length int) int {
 		return index + length
 	}
 	return index
-}
-
-// clampBounds normalises Python-style slice bounds; high<0 means "to the end".
-func clampBounds(length, low, high int) (int, int) {
-	if high < 0 {
-		high = length
-	}
-	if low < 0 {
-		low += length
-	}
-	if high > length {
-		high = length
-	}
-	if low < 0 {
-		low = 0
-	}
-	if low > high {
-		low = high
-	}
-	return low, high
 }
 
 // evalCall evaluates arguments and dispatches to a user or builtin function.

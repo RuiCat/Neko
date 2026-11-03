@@ -106,12 +106,6 @@ func (s Selector) TypeMatches(entityType string, classifications []string) bool 
 	return false
 }
 
-// BindSelectorToID rewrites wildcard selectors to a concrete entity id.
-func BindSelectorToID(expr, entityID string) string {
-	re := regexp.MustCompile(`\[[*]\]\.`)
-	return re.ReplaceAllString(expr, entityID+".")
-}
-
 // ExtractSelector returns the first selector found in an expression.
 func ExtractSelector(expr string) (Selector, bool) {
 	re := regexp.MustCompile(`(?:[\p{L}\p{N}_:]+\[[*]?[\p{L}\p{N}_]*\]|\[\*\]|[\p{L}\p{N}_]+)(?:\.[\p{L}\p{N}_]+)*`)

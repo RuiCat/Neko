@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ruicat/astrbox/internal/config"
-	"github.com/ruicat/astrbox/internal/entity"
+	"github.com/RuiCat/Neko/internal/config"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 // fieldAliases normalises multi-role wording back to the legacy "主人" names.

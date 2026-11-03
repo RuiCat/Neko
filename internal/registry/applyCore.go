@@ -5,10 +5,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ruicat/astrbox/internal/compiler"
-	"github.com/ruicat/astrbox/internal/diagnostics"
-	"github.com/ruicat/astrbox/internal/neko"
-	"github.com/ruicat/astrbox/internal/safety"
+	"github.com/RuiCat/Neko/internal/compiler"
+	"github.com/RuiCat/Neko/internal/diagnostics"
+	"github.com/RuiCat/Neko/internal/neko"
+	"github.com/RuiCat/Neko/internal/safety"
 )
 
 // preparedScript is the side-effect-free result of parsing, safety-checking and
@@ -61,9 +61,14 @@ func (r *Registry) prepareScript(name, text string, skipSafety bool) *preparedSc
 
 // commitLocked registers a prepared script. The caller must hold r.mu.
 func (r *Registry) commitLocked(result *ApplyResult, name, text, newHash string, prepared *preparedScript, persist bool) {
-	if old := r.entries[name]; old != nil {
+	old := r.entries[name]
+	if old != nil {
 		delete(r.entries, name)
 		r.releaseLocked(old, result, persist)
+		if r.sink != nil {
+			r.sink.UnregisterFuncs(old.Funcs)
+			r.sink.UnregisterEvents(old.Events)
+		}
 	}
 	newEntry := &Entry{
 		Hash: newHash, Templates: map[string]int{}, Rules: map[string]int{},
@@ -98,7 +103,7 @@ func (r *Registry) commitLocked(result *ApplyResult, name, text, newHash string,
 	}
 	sort.Strings(newEntry.Funcs)
 	sort.Strings(newEntry.Events)
-	if _, exists := r.entries[name]; !exists {
+	if old == nil {
 		r.order = append(r.order, name)
 	}
 	r.entries[name] = newEntry

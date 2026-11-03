@@ -2,12 +2,16 @@
 
 把 AstrBox 引擎接进 [DSH](https://github.com/deepseek-ai/deepseek-harness)：
 
-- `bin/dsh-mcp`：同一份引擎的第二个入口。MCP stdio 暴露 17 个 `mcp__astrbox__*` 工具，
+- `bin/dsh-mcp`：同一份引擎的第二个入口。MCP stdio 暴露 19 个 `mcp__astrbox__*` 工具，
   另在 `<data-dir>/dsh-control.sock` 上提供本地控制面（Unix domain socket）。
 - `dsh/`：DSH bundle。`dsh.bundle.patch` 指向渲染后的 `dsh/cordis.patch.yml`，
   装入 profile 后自动插入两条条目：`mcp-astrbox`（MCP client）与 `astrbox-bridge`（本插件）。
-- `dsh/lib/*.mjs`：静态使用说明段、每轮一条 `[astrbox]` 状态快照、定时 `POST /tick`、
+- `dsh/lib/*.mjs`：静态使用说明段、每轮优先注入一条 `[astrbox]` 补偿包（`GET /turn-context`；
+  状态投影 + 记忆 + 约束 + 情境 + 激活专家），旧引擎回退 `/state` 快照；定时 `POST /tick`、
   `session/created` 与 `agent/turn-stopping` 的 `POST /session-event`。
+  `turn-end` 携带的助手摘要会被控制面回写成一条 `source=dsh-turn` 的 complete TurnRecord
+  （`answer` = 摘要、`user_input` = 用户摘要），并写入专家隔离上下文，供下一轮补偿包召回；
+  引擎的周期 tick 记录标 `source=tick`，指标/回放会跳过它们。
 
 安装由**用户**执行。仓库脚本只负责构建、渲染与只读/隔离验证，不运行 `dsh plugin add`，
 也不写 `~/.dsh`。
@@ -29,7 +33,7 @@ make render-dsh
 ```
 
 `make render-dsh` 把 `${REPO_ROOT}`、`${DATA_DIR}`、`${SCRIPTS_DIR}`、`${CONFIG}`
-替换为 `scripts/renderDshPatch.sh` 看到的路径（默认 `$PWD` 及其下的 `data/`、`scripts/`、
+替换为 `scripts/tools/renderDshPatch.sh` 看到的路径（默认 `$PWD` 及其下的 `data/`、`scripts/`、
 `config.json`；可用同名环境变量覆盖）。生成物 `dsh/cordis.patch.yml` 已进 `.gitignore`，
 **必须在安装前渲染**：bundle 加载的是这个文件，未渲染时其中仍是占位符。
 
@@ -77,7 +81,7 @@ dsh plugin --profile web add link:/home/ruicat/Desktop/Neko/dsh
 ### 1) 组合验证（不碰真 profile、不耗模型调用）
 
 ```bash
-bash scripts/verifyProfile.sh --composition
+bash scripts/tools/verifyProfile.sh --composition
 ```
 
 它会在 `.local/profile-test` 重建隔离 `DSH_HOME`：只读复制源 profile 的
@@ -107,11 +111,11 @@ make doctor
 
 直接 spawn `bin/dsh-mcp`（临时 `data-dir`/`scripts-dir`，不读写 `data/`），完成
 `initialize`（`clientInfo.name=doctor`，`protocolVersion=2025-06-18`）与 `tools/list`，
-断言 17 个冻结工具名（大小写/顺序无关）、socket 权限 `0600`、`SIGTERM` 后 socket 被清理。
+断言 19 个冻结工具名（大小写/顺序无关）、socket 权限 `0600`、`SIGTERM` 后 socket 被清理。
 期望输出：
 
 ```text
-OK: doctor 通过（17 tools, socket 0600, SIGTERM 清理；data=/tmp/dsh-mcp-doctor-.../data）
+OK: doctor 通过（19 tools, socket 0600, SIGTERM 清理；data=/tmp/dsh-mcp-doctor-.../data）
 ```
 
 ### 3) 真装证据（用户回传）
@@ -127,10 +131,10 @@ OK: doctor 通过（17 tools, socket 0600, SIGTERM 清理；data=/tmp/dsh-mcp-do
 | 会话快照 | 真装会话中出现过的 `[astrbox]` 快照行 |
 
 ```bash
-bash scripts/verifyProfile.sh --evidence <file>
+bash scripts/tools/verifyProfile.sh --evidence <file>
 ```
 
-齐全输出 `OK: 23 checks`；缺字段逐条打印 `MISSING: <field>` 并以非 0 退出，例如：
+齐全输出 `OK: 25 checks`；缺字段逐条打印 `MISSING: <field>` 并以非 0 退出，例如：
 
 ```text
 MISSING: socket 0600 (stat line with dsh-control.sock)
@@ -180,7 +184,7 @@ make clean                                      # 只删 bin/，不动 data/
 | 启动报 socket 已被占用 / 退出码 3 | 另一个 `dsh-mcp` 还在用同一 `data/`：先停 DSH（或对应 MCP 子进程），再 `rm data/dsh-control.sock` 重试 |
 | stale socket（上次 `kill -9` 后残留） | 正常路径会自动 `ECONNREFUSED → unlink` 自愈；仍失败时手工 `rm data/dsh-control.sock` |
 | 锁被占用但找不到进程 | 只有持有 `flock` 的进程算占用；`kill -9` 后内核已释放，直接重启即可。确认无进程再用 `rm data/.engine.lock` |
-| 工具消失 / `tools/list` 不满 17 个 | `make doctor` 先确认二进制；再看 profile `package.json` 的 `dsh.profile.bundles` 是否含 `dsh-astrbox`、`dsh/cordis.patch.yml` 是否已渲染为绝对路径；最后看 DSH 启动日志里的 `mcp-astrbox` 错误 |
+| 工具消失 / `tools/list` 不满 19 个 | `make doctor` 先确认二进制；再看 profile `package.json` 的 `dsh.profile.bundles` 是否含 `dsh-astrbox`、`dsh/cordis.patch.yml` 是否已渲染为绝对路径；最后看 DSH 启动日志里的 `mcp-astrbox` 错误 |
 | 快照不出现 | 检查 `socketPath` 与 `dsh-mcp` 的 `-data-dir` 是否一致、`workspacePrefix` 是否覆盖当前会话 `cwd`、`paths` 是否在白名单内 |
 | 重复 tick / `tick_busy` | `/tick` 用 `TryRunTick`，MCP `state_machine_tick` 或另一个 tick 在飞时返回 `409`，插件按设计跳过本次；持续出现时把 `tickEveryMs` 调大或设 `0` 关闭定时 tick |
 | `/session-event` 只有 `logged` | `functionName` 指向的函数未注册；用 `entity`/脚本工具确认函数存在，或改配置指向已注册函数 |
@@ -188,8 +192,8 @@ make clean                                      # 只删 bin/，不动 data/
 ## 相关文件
 
 - `Makefile`：`build` / `test` / `lint` / `render-dsh` / `doctor` / `clean`
-- `scripts/renderDshPatch.sh`：模板 → `dsh/cordis.patch.yml`
-- `scripts/doctorDsh.mjs`：`make doctor` 的实现
-- `scripts/verifyProfile.sh`：`--composition` / `--evidence`
+- `scripts/tools/renderDshPatch.sh`：模板 → `dsh/cordis.patch.yml`
+- `scripts/tools/doctorDsh.mjs`：`make doctor` 的实现
+- `scripts/tools/verifyProfile.sh`：`--composition` / `--evidence`
 - `dsh/cordis.patch.yml.template`：占位符模板（版本库内，不含机器绝对路径）
-- `dsh/lib/`：插件运行时；`docs/mcp-tools.md`：17 个 MCP 工具的参考
+- `dsh/lib/`：插件运行时；`docs/mcp-tools.md`：19 个 MCP 工具的参考

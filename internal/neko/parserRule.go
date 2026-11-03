@@ -3,7 +3,7 @@
 package neko
 
 import (
-	"github.com/ruicat/astrbox/internal/config"
+	"github.com/RuiCat/Neko/internal/config"
 	"regexp"
 	"strconv"
 	"strings"
@@ -216,6 +216,10 @@ func findActionBrace(text string, start int) int {
 	for j < n {
 		ch := rs[j]
 		if inStr != 0 {
+			if ch == '\\' {
+				j += 2
+				continue
+			}
 			if ch == inStr {
 				inStr = 0
 			}

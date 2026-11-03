@@ -3,7 +3,7 @@ package neko
 import (
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/config"
+	"github.com/RuiCat/Neko/internal/config"
 )
 
 func TestConfiguredStateSugar(t *testing.T) {

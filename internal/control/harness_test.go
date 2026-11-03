@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ruicat/astrbox/internal/bootstrap"
-	"github.com/ruicat/astrbox/internal/mcpserver"
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/bootstrap"
+	"github.com/RuiCat/Neko/internal/mcpserver"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 // testEnv is one control server backed by a real runtime in temp directories.

@@ -6,15 +6,22 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
-	"github.com/ruicat/astrbox/internal/config"
-	"github.com/ruicat/astrbox/internal/diagnostics"
-	"github.com/ruicat/astrbox/internal/engine"
-	"github.com/ruicat/astrbox/internal/entity"
-	"github.com/ruicat/astrbox/internal/events"
-	"github.com/ruicat/astrbox/internal/function"
-	"github.com/ruicat/astrbox/internal/mcpserver"
-	"github.com/ruicat/astrbox/internal/registry"
+	"github.com/RuiCat/Neko/internal/blackboard"
+	"github.com/RuiCat/Neko/internal/compensation"
+	"github.com/RuiCat/Neko/internal/config"
+	"github.com/RuiCat/Neko/internal/diagnostics"
+	"github.com/RuiCat/Neko/internal/engine"
+	"github.com/RuiCat/Neko/internal/entity"
+	"github.com/RuiCat/Neko/internal/events"
+	"github.com/RuiCat/Neko/internal/expert"
+	"github.com/RuiCat/Neko/internal/function"
+	"github.com/RuiCat/Neko/internal/gate"
+	"github.com/RuiCat/Neko/internal/hardstate"
+	"github.com/RuiCat/Neko/internal/journal"
+	"github.com/RuiCat/Neko/internal/mcpserver"
+	"github.com/RuiCat/Neko/internal/registry"
 )
 
 // Options selects the runtime locations. Empty strings follow the historical
@@ -26,6 +33,15 @@ type Options struct {
 	ScriptsDir string
 	// ConfigPath is the domain config JSON; a missing file means defaults.
 	ConfigPath string
+	// Journal enables per-turn journaling under <dataDir>/journal. It is opt-in
+	// so tests and embedders that do not want a background writer stay
+	// unchanged (the writer goroutine would race temp-dir cleanup).
+	Journal bool
+	// NightlyAt enables the in-process daily decay at local "HH:MM"; empty
+	// disables it.
+	NightlyAt string
+	// NightlyFactor is the decay factor; 0 uses DEFAULT_NIGHTLY_FACTOR.
+	NightlyFactor float64
 }
 
 // Runtime is the assembled engine shared by astrbox-mcp and dsh-mcp. It owns
@@ -39,8 +55,20 @@ type Runtime struct {
 	Registry    *registry.Registry
 	Diagnostics *diagnostics.Store
 	StateLogger *engine.StateLogger
+	Journal     *journal.Writer
+	// JournalSequence issues snapshot IDs and is seeded from the journal.
+	JournalSequence *hardstate.Sequence
+	// HardState defines which fields the snapshot captures.
+	HardState hardstate.Schema
+	Board     *blackboard.Board
+	Experts   *expert.Registry
+	// ExpertsPath is where the expert contexts are persisted.
+	ExpertsPath string
+	Assembler   *compensation.Assembler
 	DataDir     string
 	ScriptsDir  string
+	nightlyStop chan struct{}
+	nightlyDone chan struct{}
 }
 
 // New loads config, data and scripts, replays scripts and assembles a Runtime.
@@ -106,18 +134,68 @@ func New(options Options) (*Runtime, error) {
 		log.Printf("astrbox: 脚本一致性检查发现 %d 个问题（可通过 diagnostics_query 查看）", findings)
 	}
 
-	return &Runtime{
-		Config:      domainConfig,
-		Store:       store,
-		Machine:     machine,
-		Funcs:       funcs,
-		Events:      eventSystem,
-		Registry:    reg,
-		Diagnostics: diagStore,
-		StateLogger: engine.NewStateLogger(filepath.Join(options.DataDir, "logs"), 7),
-		DataDir:     options.DataDir,
-		ScriptsDir:  options.ScriptsDir,
-	}, nil
+	journalDir := filepath.Join(options.DataDir, "journal")
+	sequence := hardstate.NewSequence()
+	if maxSeq, err := journal.MaxSequence(journalDir, time.Now()); err != nil {
+		log.Printf("astrbox: 恢复交互日志序号失败: %v", err)
+	} else {
+		sequence.SetLast(maxSeq)
+	}
+	var journalWriter *journal.Writer
+	if options.Journal {
+		journalWriter = journal.NewWriter(journalDir)
+	}
+	board := blackboard.New()
+	experts := expert.NewDefaultRegistry(expert.DEFAULT_CONTEXT_CAPACITY)
+	expertsPath := filepath.Join(options.DataDir, "experts.json")
+	if err := expert.LoadFile(expertsPath, experts); err != nil {
+		log.Printf("astrbox: 恢复专家上下文失败: %v", err)
+	}
+	assembler := compensation.NewAssembler(gate.NewRuleGate(), experts)
+
+	runtime := &Runtime{
+		Config:          domainConfig,
+		Store:           store,
+		Machine:         machine,
+		Funcs:           funcs,
+		Events:          eventSystem,
+		Registry:        reg,
+		Diagnostics:     diagStore,
+		StateLogger:     engine.NewStateLogger(filepath.Join(options.DataDir, "logs"), 7),
+		Journal:         journalWriter,
+		JournalSequence: sequence,
+		HardState:       hardstate.DefaultSchema(),
+		Board:           board,
+		Experts:         experts,
+		ExpertsPath:     expertsPath,
+		Assembler:       assembler,
+		DataDir:         options.DataDir,
+		ScriptsDir:      options.ScriptsDir,
+	}
+	runtime.startNightly(options)
+	return runtime, nil
+}
+
+// Close persists expert contexts and flushes the journal writer. Callers that
+// own the runtime should call it on shutdown; records queued after Close are
+// rejected with an error.
+func (r *Runtime) Close() error {
+	r.stopNightly()
+	if err := r.SaveExperts(); err != nil {
+		return err
+	}
+	if r.Journal == nil {
+		return nil
+	}
+	return r.Journal.Close()
+}
+
+// SaveExperts persists the experts' working memory to <data-dir>/experts.json.
+func (r *Runtime) SaveExperts() error {
+	if r.Experts == nil || r.ExpertsPath == "" {
+		return nil
+	}
+	return expert.SaveFile(r.ExpertsPath, r.Experts)
 }
 
 // NewMCPServer wires the runtime into an MCP tool server, keeping the tool
@@ -129,6 +207,12 @@ func (r *Runtime) NewMCPServer() *mcpserver.Server {
 	server.SetEventBus(r.Events.Bus())
 	server.SetDiagnostics(r.Diagnostics)
 	server.SetStateLogger(r.StateLogger)
+	if r.Journal != nil {
+		server.SetJournal(r.Journal, r.JournalSequence, r.HardState)
+	}
+	if r.Assembler != nil {
+		server.SetLearningLoop(r.Board, r.Assembler)
+	}
 	return server
 }
 

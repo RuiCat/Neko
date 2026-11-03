@@ -1,6 +1,8 @@
 # MCP 工具参考
 
-服务以 MCP（Model Context Protocol）暴露 17 个工具。默认 stdio；`-transport http` 时使用 Streamable HTTP。
+服务以 MCP（Model Context Protocol）暴露工具。`astrbox-mcp` 暴露 17 个引擎工具；
+`dsh-mcp` 在此基础上增加 `context_list` / `context_send`（共 19 个，用于角色上下文驱动）。
+默认 stdio；`-transport http` 时使用 Streamable HTTP。
 
 ## 启动
 
@@ -194,6 +196,25 @@ dry-run：解析 + 安全 + 编译，**不注册、不落盘**。返回
 | `name` | string | 否 | 快照文件名（不含路径/扩展名），缺省用 UTC 时间戳 |
 
 把当前全部实体写入 `<dataDir>/archives/<name>.json`，返回 `{"path","entities","bytes"}`。名称不允许包含路径分隔符、点或空格。
+
+## 上下文（跨角色，仅 `dsh-mcp`）
+
+### `context_list`
+
+无参数，返回 `{"contexts":[{contextId,characterId,sessionId,status,lastTurn,...}]}`。
+未配置 `contexts.json` 时返回 `❌ 上下文驱动未启用`。
+
+### `context_send`
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `target_context_id` | string | 是 | 目标上下文（先查 `context_list`） |
+| `text` | string | 是 | 投递正文 |
+| `priority` | string | 否 | `normal`（默认）/ `urgent`（对方思考中插入） |
+| `source_context_id` | string | 否 | 来源上下文；用于循环防护与署名 |
+
+保护：同一 `(来源,目标,正文)` 60 秒内只发一次；每个来源每分钟最多 10 条。
+MCP 调用本身不携带会话身份，来源需要调用方显式给出（P3 的桥接原生工具才能自动归属）。
 
 ## 权限与安全
 

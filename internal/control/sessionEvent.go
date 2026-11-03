@@ -24,6 +24,20 @@ type sessionEventRequest struct {
 	// Function optionally overrides the configured callback name; empty keeps
 	// the server default (dsh_on_event by default).
 	Function string `json:"function"`
+	// Summary is the optional turn digest the bridge reports with turn-end.
+	Summary *sessionEventSummary `json:"summary"`
+}
+
+// sessionEventSummary is the optional turn digest from the bridge.
+type sessionEventSummary struct {
+	// AssistantDigest is the last assistant text of the turn, truncated.
+	AssistantDigest string `json:"assistantDigest"`
+	// UserDigest is the last user text of the turn, truncated.
+	UserDigest string `json:"userDigest"`
+	// ToolCalls counts the turn's tool calls.
+	ToolCalls int `json:"toolCalls"`
+	// Steps counts the turn's steps.
+	Steps int `json:"steps"`
 }
 
 // callbackName resolves the optional per-request function override.
@@ -73,6 +87,8 @@ func (s *Server) handleSessionEvent(r *http.Request) response {
 	if err := request.validate(); err != nil {
 		return badRequest(err.Error())
 	}
+	// Remember the session so turn records written by later ticks carry it.
+	s.mcp.SetSessionID(request.SessionID)
 	turn := 0
 	if request.Turn != nil {
 		turn = *request.Turn
@@ -82,15 +98,38 @@ func (s *Server) handleSessionEvent(r *http.Request) response {
 		return badRequest(err.Error())
 	}
 	note := fmt.Sprintf("kind=%s session=%s function=%s", request.Kind, request.SessionID, functionName)
+	if request.Summary != nil {
+		note += fmt.Sprintf(" summary=tools:%d,steps:%d", request.Summary.ToolCalls, request.Summary.Steps)
+	}
+	// The driver owns context status; update it even when no .neko callback
+	// is registered so a finished turn always releases the context.
+	if s.driver != nil && request.Kind == KIND_TURN_END {
+		if driverErr := s.driver.HandleTurnEnd(request.SessionID, turn); driverErr != nil {
+			note += " driver=failed"
+		} else {
+			note += " driver=ok"
+		}
+	}
 	if !s.runtime.Funcs.Has(functionName) {
+		s.recordDSHTurn(request)
 		return response{status: http.StatusOK, body: map[string]any{
 			"ok": true, "applied": "logged",
 		}, note: note + " callback=missing"}
 	}
 
 	entity := s.runtime.Store.Get(s.entityID)
+	if entity == nil {
+		return notFound(fmt.Sprintf("实体 '%s' 不存在", s.entityID))
+	}
 	writeErr := s.mcp.WithStateWrite(func() error {
 		args := []any{request.Kind, request.SessionID, request.Cwd, turn}
+		// The summary travels as a JSON string so existing 4-parameter
+		// callbacks keep working and scripts can parse it when they want it.
+		if request.Summary != nil {
+			if raw, marshalErr := json.Marshal(request.Summary); marshalErr == nil {
+				args = append(args, string(raw))
+			}
+		}
 		if _, err := s.runtime.Funcs.Call(functionName, args, entity); err != nil {
 			return err
 		}
@@ -102,6 +141,7 @@ func (s *Server) handleSessionEvent(r *http.Request) response {
 				"error": map[string]any{"code": CODE_INTERNAL, "message": writeErr.Error()}},
 			note: note + " callback=failed"}
 	}
+	s.recordDSHTurn(request)
 	return response{status: http.StatusOK, body: map[string]any{
 		"ok": true, "applied": "function",
 	}, note: note + " callback=ok"}

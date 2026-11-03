@@ -29,3 +29,39 @@ func TestExtraBuiltins(t *testing.T) {
 		}
 	}
 }
+
+func TestRandomBuiltin(t *testing.T) {
+	executor := newBoundaryExecutor(t)
+	body := `
+样本 = []
+for i in range(0, 30) {
+  样本.append(随机(1, 3))
+}
+返回 [样本, 随机(5, 1), 随机(-2, -2), 随机(0, 0)]`
+	got := registerAndCall(t, executor, body, nil, nil)
+	parts, ok := got.([]any)
+	if !ok || len(parts) != 4 {
+		t.Fatalf("返回 = %#v", got)
+	}
+	samples, ok := parts[0].([]any)
+	if !ok || len(samples) != 30 {
+		t.Fatalf("样本 = %#v", parts[0])
+	}
+	seen := map[int]bool{}
+	for _, sample := range samples {
+		number, ok := sample.(int)
+		if !ok || number < 1 || number > 3 {
+			t.Fatalf("随机(1,3) 越界: %#v", sample)
+		}
+		seen[number] = true
+	}
+	if len(seen) != 3 {
+		t.Fatalf("随机(1,3) 只出现 %v", seen)
+	}
+	if number, ok := parts[1].(int); !ok || number < 1 || number > 5 {
+		t.Fatalf("随机(5,1) 越界: %#v", parts[1])
+	}
+	if parts[2] != -2 || parts[3] != 0 {
+		t.Fatalf("同界随机 = %#v / %#v", parts[2], parts[3])
+	}
+}

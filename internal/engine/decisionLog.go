@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/RuiCat/Neko/internal/config"
 )
 
 // SetDecisionLog enables persistence of arbitration decisions (JSON array).
@@ -57,7 +59,7 @@ func (m *StateMachine) backfillRuleLocked(conflict Conflict, target map[string]a
 	then := make([]Op, 0, len(groups)+len(effects))
 	for _, group := range groups {
 		then = append(then, Op{
-			Op: "set", Path: conflict.EntityID + ".状态." + group, Value: target[group],
+			Op: "set", Path: conflict.EntityID + "." + config.Current().StatePath(group), Value: target[group],
 		})
 	}
 	then = append(then, effects...)

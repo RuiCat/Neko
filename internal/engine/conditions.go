@@ -386,12 +386,18 @@ func compareValues(left, right any, op string) bool {
 		return false
 	}
 	if set, ok := right.(setLiteral); ok {
-		if op == "in" || op == "==" {
-			for _, item := range set.items {
-				if item == pyString(left) {
-					return true
-				}
+		found := false
+		for _, item := range set.items {
+			if item == pyString(left) {
+				found = true
+				break
 			}
+		}
+		switch op {
+		case "in", "==":
+			return found
+		case "!=":
+			return !found
 		}
 		return false
 	}

@@ -4,7 +4,7 @@ package engine
 import (
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/entity"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 func newExprEnv(t *testing.T) (*entity.Store, *StateMachine) {

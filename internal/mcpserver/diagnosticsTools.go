@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/RuiCat/Neko/internal/diagnostics"
+	"github.com/RuiCat/Neko/internal/engine"
+	"github.com/RuiCat/Neko/internal/entity"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/ruicat/astrbox/internal/diagnostics"
-	"github.com/ruicat/astrbox/internal/engine"
-	"github.com/ruicat/astrbox/internal/entity"
 )
 
 // attachDiagnostics adds a bounded diagnostic block to one entity response.

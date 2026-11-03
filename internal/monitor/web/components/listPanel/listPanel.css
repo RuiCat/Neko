@@ -1,0 +1,111 @@
+/* listPanel.css —— List.Panel 样式载体：面板底色 / kind 徽标 / 错误态全部走语义令牌。 */
+.nek-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  box-sizing: border-box;
+  gap: var(--space-xs);
+  padding: var(--space-lg);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  border-top: var(--border-width-thin) solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-sm);
+  transition: border-color var(--motion-duration-normal), background var(--motion-duration-normal);
+}
+
+.nek-panel__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.nek-panel__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.nek-panel__badge {
+  padding-inline: var(--space-sm);
+  padding-block: var(--space-2xs);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.nek-panel[data-kind="diagnostics"] .nek-panel__badge {
+  color: var(--color-intent-info-fg);
+  background: var(--color-intent-info-bg);
+}
+
+.nek-panel[data-kind="scripts"] .nek-panel__badge {
+  color: var(--color-intent-success-fg);
+  background: var(--color-intent-success-bg);
+}
+
+.nek-panel__more {
+  display: none;
+  margin-inline-start: auto;
+  padding-inline: var(--space-sm);
+  padding-block: var(--space-2xs);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.nek-panel__more[data-present="true"] {
+  display: inline-block;
+}
+
+.nek-panel__state {
+  display: none;
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.nek-panel__state[data-present="true"] {
+  display: block;
+}
+
+.nek-panel__content {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-xs);
+  overflow: auto;
+}
+
+.nek-panel[data-state="ready"] {
+  border-top-color: var(--color-border-subtle);
+}
+
+.nek-panel[data-state="loading"] .nek-panel__state,
+.nek-panel[data-state="error"] .nek-panel__state {
+  display: block;
+}
+
+.nek-panel[data-state="error"] {
+  border-top-color: var(--color-intent-error-fg);
+}
+
+.nek-panel[data-state="error"] .nek-panel__state {
+  color: var(--color-intent-error-fg);
+  background: var(--color-intent-error-bg);
+}
+
+.nek-panel[data-state="empty"] .nek-panel__content {
+  color: var(--color-text-muted);
+}
+
+.nek-panel[data-state="truncated"] .nek-panel__more {
+  display: inline-block;
+}

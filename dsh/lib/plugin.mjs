@@ -12,7 +12,7 @@
 import { normalizeConfig } from './config.mjs'
 import { createControlClient } from './controlClient.mjs'
 import { createLogger } from './logger.mjs'
-import { STATIC_USAGE_TEXT, composeSnapshot, createSnapshotMessage } from './prompt.mjs'
+import { STATIC_USAGE_TEXT, composePackage, composeSnapshot, createSnapshotMessage } from './prompt.mjs'
 import { createSessionEventSender } from './sessionEvents.mjs'
 
 export const name = 'astrbox-bridge'
@@ -73,13 +73,30 @@ function createRuntime(options) {
   let stateCheckedAt = 0
   let tickInFlight = false
 
-  /** 拉一次 `/state` 并渲染快照；失败保留上一版，连续失败达到上限则本轮不注入。 */
+  /** 拉一次补偿包；失败或无包时回退 `/state`，保持旧引擎可用。 */
   async function currentSnapshot() {
     if (disposed) return ''
     const at = Date.now()
     // 最多每 promptRefreshMs 拉一次；失败也占一个刷新窗口，避免失败时每轮打服务端。
     if (stateCheckedAt !== 0 && at - stateCheckedAt < config.promptRefreshMs) return stateText
     stateCheckedAt = at
+    try {
+      const context = await client.getTurnContext({ entity: config.entity })
+      if (context?.ok === true && typeof context.compensation === 'object' && context.compensation !== null) {
+        stateText = composePackage({
+          entity: config.entity,
+          timestamp: new Date().toISOString(),
+          compensation: context.compensation,
+          active: Array.isArray(context.gate?.active) ? context.gate.active : [],
+          paths: config.paths,
+          maxChars: config.promptMaxChars,
+        })
+        stateFailures = 0
+        return stateText
+      }
+    } catch {
+      // 旧引擎没有 /turn-context：回退到 /state，不额外告警。
+    }
     try {
       const state = await client.getState({ entity: config.entity, paths: config.paths })
       stateText = composeSnapshot({

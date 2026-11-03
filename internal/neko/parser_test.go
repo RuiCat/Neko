@@ -400,6 +400,8 @@ var expectedVectors = map[string][5]int{
 	"behavior/cat_daily.neko":               {1, 9, 0, 1, 0},
 	"behavior/cat-repro-cycle-advance.neko": {0, 1, 0, 0, 0},
 	"core/cat_anatomy_eversion.neko":        {0, 7, 0, 0, 0},
+	"core/cat_reaction_timer.neko":          {1, 2, 0, 1, 0},
+	"r18/cat_organ_damage.neko":             {1, 16, 0, 0, 0},
 }
 
 // knownErrorFiles are corpus scripts the Python parser also rejects (invalid
@@ -434,8 +436,8 @@ func collectCorpus(t *testing.T) []string {
 // TestCorpus parses every corpus script and checks counts against the Python run.
 func TestCorpus(t *testing.T) {
 	files := collectCorpus(t)
-	if len(files) != 262 {
-		t.Fatalf("corpus has %d files, want 262", len(files))
+	if len(files) != 188 {
+		t.Fatalf("corpus has %d files, want 188", len(files))
 	}
 	var total [5]int
 	clean := 0
@@ -472,10 +474,10 @@ func TestCorpus(t *testing.T) {
 			total[i] += got[i]
 		}
 	}
-	if clean != 260 {
-		t.Errorf("clean scripts = %d, want 260", clean)
+	if clean != 186 {
+		t.Errorf("clean scripts = %d, want 186", clean)
 	}
-	wantTotal := [5]int{54, 1901, 5, 15, 0}
+	wantTotal := [5]int{56, 1843, 5, 16, 0}
 	if total != wantTotal {
 		t.Errorf("corpus totals (data,rule,event,func,meta) = %v, want %v", total, wantTotal)
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/entity"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 func TestResolveConflictLogsAndBackfills(t *testing.T) {

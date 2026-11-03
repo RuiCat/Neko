@@ -3,7 +3,7 @@ package events
 import (
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 func TestBusHistoryRecordsDispatchOutcomes(t *testing.T) {

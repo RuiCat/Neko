@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ruicat/astrbox/internal/control"
+	"github.com/RuiCat/Neko/internal/control"
 )
 
 const (

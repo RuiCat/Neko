@@ -5,17 +5,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"sync"
 
+	"github.com/RuiCat/Neko/internal/blackboard"
+	"github.com/RuiCat/Neko/internal/compensation"
+	"github.com/RuiCat/Neko/internal/config"
+	"github.com/RuiCat/Neko/internal/diagnostics"
+	"github.com/RuiCat/Neko/internal/driver"
+	"github.com/RuiCat/Neko/internal/engine"
+	"github.com/RuiCat/Neko/internal/entity"
+	"github.com/RuiCat/Neko/internal/events"
+	"github.com/RuiCat/Neko/internal/hardstate"
+	"github.com/RuiCat/Neko/internal/journal"
+	"github.com/RuiCat/Neko/internal/registry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/ruicat/astrbox/internal/config"
-	"github.com/ruicat/astrbox/internal/diagnostics"
-	"github.com/ruicat/astrbox/internal/engine"
-	"github.com/ruicat/astrbox/internal/entity"
-	"github.com/ruicat/astrbox/internal/events"
-	"github.com/ruicat/astrbox/internal/registry"
 )
 
 // Server bundles the engine components behind one MCP server.
@@ -28,9 +34,28 @@ type Server struct {
 	bridge      *events.Bridge
 	eventBus    *events.Bus
 	diagnostics *diagnostics.Store
+	// contextDriver enables the context_list/context_send tools when set.
+	contextDriver *driver.Driver
+	// contextTools registers the cross-context tools; the dsh-mcp entry sets it.
+	contextTools bool
 	// tickMu serializes RunTick so MCP tools and the control plane share one
 	// in-flight tick per process.
 	tickMu sync.Mutex
+	// tickObserverMu guards tickObserver, which is set once at wiring time.
+	tickObserverMu sync.RWMutex
+	// tickObserver receives every finished tick outside tickMu.
+	tickObserver func(engine.TickResult)
+	// journal writes one TurnRecord per tick when enabled; the snapshot
+	// sequence and schema are fixed at wiring time.
+	journal         *journal.Writer
+	journalSequence *hardstate.Sequence
+	hardStateSchema hardstate.Schema
+	// sessionMu guards sessionID, updated by the control plane.
+	sessionMu sync.RWMutex
+	sessionID string
+	// board and assembler enable the compensation dry-run per tick.
+	board     *blackboard.Board
+	assembler *compensation.Assembler
 }
 
 // New builds an MCP server over an initialized store, engine and registry.
@@ -41,6 +66,37 @@ func New(store *entity.Store, machine *engine.StateMachine, reg *registry.Regist
 // SetStateLogger enables daily tick logging (optional).
 func (s *Server) SetStateLogger(logger *engine.StateLogger) { s.logger = logger }
 
+// SetJournal enables one TurnRecord per finished tick. The sequence and schema
+// are fixed at wiring time; appends never block the tick gate.
+func (s *Server) SetJournal(writer *journal.Writer, sequence *hardstate.Sequence, schema hardstate.Schema) {
+	s.journal = writer
+	s.journalSequence = sequence
+	s.hardStateSchema = schema
+}
+
+// SetSessionID records the active DSH session for later turn records. The
+// control plane calls it on every session event.
+func (s *Server) SetSessionID(id string) {
+	s.sessionMu.Lock()
+	s.sessionID = id
+	s.sessionMu.Unlock()
+}
+
+// SetLearningLoop enables the compensation dry-run: every journaled tick
+// builds a package from the board and attaches the activated experts. No
+// remote model is called here; that arrives with the LLM adapter.
+func (s *Server) SetLearningLoop(board *blackboard.Board, assembler *compensation.Assembler) {
+	s.board = board
+	s.assembler = assembler
+}
+
+// currentSessionID returns the last session seen, or an empty string.
+func (s *Server) currentSessionID() string {
+	s.sessionMu.RLock()
+	defer s.sessionMu.RUnlock()
+	return s.sessionID
+}
+
 // SetDataDir sets the directory used for manual snapshots.
 func (s *Server) SetDataDir(path string) { s.dataDir = path }
 
@@ -50,8 +106,23 @@ func (s *Server) SetEventBridge(bridge *events.Bridge) { s.bridge = bridge }
 // SetDiagnostics wires the shared diagnostic store (optional).
 func (s *Server) SetDiagnostics(store *diagnostics.Store) { s.diagnostics = store }
 
+// SetTickObserver registers the tick observer. The callback runs outside
+// tickMu and must not call RunTick/TryRunTick/WithStateWrite/Store.Save; see
+// notifyTick for the non-blocking delivery contract.
+func (s *Server) SetTickObserver(observer func(engine.TickResult)) {
+	s.tickObserverMu.Lock()
+	s.tickObserver = observer
+	s.tickObserverMu.Unlock()
+}
+
 // SetEventBus exposes the structured event dispatch history (optional).
 func (s *Server) SetEventBus(bus *events.Bus) { s.eventBus = bus }
+
+// SetContextDriver enables the cross-context tools (optional).
+func (s *Server) SetContextDriver(contextDriver *driver.Driver) { s.contextDriver = contextDriver }
+
+// EnableContextTools registers context_list/context_send in this server.
+func (s *Server) EnableContextTools() { s.contextTools = true }
 
 // MCPServer constructs and registers every tool.
 func (s *Server) MCPServer() *mcp.Server {
@@ -65,6 +136,9 @@ func (s *Server) MCPServer() *mcp.Server {
 	s.addStatsTool(server)
 	s.addSnapshotTool(server)
 	s.addEventLogTool(server)
+	if s.contextTools {
+		s.addContextTools(server)
+	}
 	return server
 }
 
@@ -142,6 +216,9 @@ func (s *Server) addEntityTools(server *mcp.Server) {
 			if ent == nil {
 				return fmt.Errorf("实体 '%s' 不存在", args.Entity)
 			}
+			if check := hardstate.CheckWrite(s.hardStateSchema, args.Entity, args.Path, hardstate.SOURCE_MCP); check.HardState && !check.Allowed {
+				log.Printf("astrbox: 硬状态写入告警: %s", check.Reason)
+			}
 			if err := ent.Set(args.Path, value); err != nil {
 				return fmt.Errorf("写入失败: %s", err)
 			}
@@ -188,11 +265,16 @@ func (s *Server) addEntityTools(server *mcp.Server) {
 			}
 			data = object
 		}
-		if _, err := s.store.Create(args.Name, args.Type, data, nil); err != nil {
-			return fail("创建失败: %s", err)
-		}
-		if err := s.store.Save(); err != nil {
-			return fail("保存失败: %s", err)
+		if err := s.WithStateWrite(func() error {
+			if _, err := s.store.Create(args.Name, args.Type, data, nil); err != nil {
+				return fmt.Errorf("创建失败: %s", err)
+			}
+			if err := s.store.Save(); err != nil {
+				return fmt.Errorf("保存失败: %s", err)
+			}
+			return nil
+		}); err != nil {
+			return fail("%s", err)
 		}
 		return textResult(fmt.Sprintf("✅ 已创建实体 %s (类型: %s)", args.Name, args.Type))
 	})

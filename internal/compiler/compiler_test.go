@@ -3,7 +3,7 @@ package compiler
 import (
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/neko"
+	"github.com/RuiCat/Neko/internal/neko"
 )
 
 func TestRewriteCondition(t *testing.T) {

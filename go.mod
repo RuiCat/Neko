@@ -1,8 +1,13 @@
-module github.com/ruicat/astrbox
+// Module path follows the repository (github.com/RuiCat/Neko). Binaries and
+// the DSH plugin keep the historical AstrBox product name.
+module github.com/RuiCat/Neko
 
 go 1.25.0
 
-require github.com/modelcontextprotocol/go-sdk v1.6.0
+require (
+	github.com/coder/websocket v1.8.14
+	github.com/modelcontextprotocol/go-sdk v1.6.0
+)
 
 require (
 	github.com/google/jsonschema-go v0.4.3 // indirect

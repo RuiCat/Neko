@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ruicat/astrbox/internal/config"
+	"github.com/RuiCat/Neko/internal/config"
 )
 
 // Store is the single owner of templates and entity state.
@@ -100,8 +100,11 @@ func (s *Store) loadEntitiesFileLocked(path string) error {
 		} `json:"entities"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		_ = os.Rename(path, path+".broken.bak")
-		return nil
+		backup := path + ".broken.bak"
+		if renameErr := os.Rename(path, backup); renameErr != nil {
+			return fmt.Errorf("实体文件解析失败: %w（备份到 %s 也失败: %v）", err, backup, renameErr)
+		}
+		return fmt.Errorf("实体文件解析失败: %w（已备份到 %s，请人工检查/恢复）", err, backup)
 	}
 	for id, item := range payload.Entities {
 		s.entities[id] = &Entity{
@@ -173,10 +176,29 @@ func atomicWrite(path string, data []byte) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // GetTemplate returns a deep copy of a template.
@@ -259,15 +281,17 @@ func (s *Store) ListTemplates() []string {
 // Create builds and stores a new entity.
 func (s *Store) Create(entityID, typeName string, data map[string]any, keys map[string]string) (*Entity, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if _, exists := s.entities[entityID]; exists {
+		s.mu.Unlock()
 		return nil, &ValidationError{Message: fmt.Sprintf("实体 '%s' 已存在", entityID)}
 	}
 	ent, err := CreateEntity(entityID, typeName, s.templates, data, keys)
 	if err != nil {
+		s.mu.Unlock()
 		return nil, err
 	}
 	s.entities[entityID] = ent
+	s.mu.Unlock()
 	if s.OnCreate != nil {
 		s.OnCreate(ent)
 	}
@@ -415,9 +439,13 @@ func (s *Store) Loaded() bool {
 	return s.loaded
 }
 
-// Templates returns the template map (read-only use).
+// Templates returns a deep copy of the template map.
 func (s *Store) Templates() map[string]map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.templates
+	out := make(map[string]map[string]any, len(s.templates))
+	for name, template := range s.templates {
+		out[name] = deepCopyMap(template)
+	}
+	return out
 }

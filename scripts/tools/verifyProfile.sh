@@ -9,12 +9,13 @@
 #                   field is absent.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CLI="${DSH_CLI:-/home/ruicat/Desktop/deepseek-harness/apps/cli/lib/bin.js}"
 SOURCE_PROFILE="${DSH_SOURCE_PROFILE:-$HOME/.dsh/profiles/web}"
 
 # K6 frozen tool names (lowercase).
 FROZEN_TOOLS=(
+	context_list context_send
 	diagnostics_query entity_create entity_query entity_snapshot
 	entity_state_get entity_state_set event_log inventory
 	neko_script_apply neko_script_list neko_script_read
@@ -49,7 +50,7 @@ runComposition() {
 	local patch="$ROOT/dsh/cordis.patch.yml"
 	if [ ! -f "$patch" ]; then
 		printf 'verifyProfile: 生成缺失的 %s\n' "$patch"
-		REPO_ROOT="$ROOT" bash "$ROOT/scripts/renderDshPatch.sh" || fail "renderDshPatch.sh 失败"
+		REPO_ROOT="$ROOT" bash "$ROOT/scripts/tools/renderDshPatch.sh" || fail "renderDshPatch.sh 失败"
 	fi
 	[ -f "$patch" ] || fail "生成 patch 不存在: $patch"
 	[ -f "$CLI" ] || fail "DSH CLI 不存在: $CLI（可用 DSH_CLI 覆盖）"
@@ -142,7 +143,7 @@ runEvidence() {
 	# ③ control log shows both request kinds.
 	require 'dsh-control log POST /tick' hasFixed 'POST /tick'
 	require 'dsh-control log POST /session-event' hasFixed 'POST /session-event'
-	# ④ tools/list carries the frozen 17 names.
+	# ④ tools/list carries the frozen 19 names.
 	local name
 	for name in "${FROZEN_TOOLS[@]}"; do
 		require "tools/list name: $name" hasFixed "$name"

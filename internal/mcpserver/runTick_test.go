@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RuiCat/Neko/internal/engine"
+	"github.com/RuiCat/Neko/internal/entity"
+	"github.com/RuiCat/Neko/internal/registry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/ruicat/astrbox/internal/engine"
-	"github.com/ruicat/astrbox/internal/entity"
-	"github.com/ruicat/astrbox/internal/registry"
 )
 
 type tickFixture struct {

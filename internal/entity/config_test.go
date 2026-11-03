@@ -3,7 +3,7 @@ package entity
 import (
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/config"
+	"github.com/RuiCat/Neko/internal/config"
 )
 
 func TestConfiguredClassificationField(t *testing.T) {

@@ -1,0 +1,81 @@
+/* rowItem.css —— Row.Item 样式载体：行底色 / 选中底 / 警告与错误色全部走语义令牌。 */
+.nek-row {
+  display: grid;
+  box-sizing: border-box;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "primary meta"
+    "secondary meta";
+  align-items: center;
+  gap: var(--space-2xs);
+  padding-inline: var(--space-md);
+  padding-block: var(--space-2xs);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--font-leading-normal);
+  cursor: pointer;
+  transition: background var(--motion-duration-normal), border-color var(--motion-duration-normal);
+}
+
+.nek-row:hover {
+  border-color: var(--color-border-strong);
+}
+
+.nek-row[data-state="selected"] {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-base);
+}
+
+.nek-row[data-state="disabled"] {
+  color: var(--color-text-muted);
+  border-color: var(--color-border-subtle);
+  cursor: not-allowed;
+}
+
+.nek-row[data-state="warning"] {
+  background: var(--color-intent-warning-bg);
+  color: var(--color-intent-warning-fg);
+}
+
+.nek-row[data-state="error"] {
+  background: var(--color-intent-error-bg);
+  color: var(--color-intent-error-fg);
+}
+
+.nek-row__primary {
+  grid-area: primary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nek-row__secondary {
+  display: none;
+  grid-area: secondary;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-regular);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nek-row__secondary[data-present="true"] {
+  display: block;
+}
+
+.nek-row__meta {
+  display: none;
+  grid-area: meta;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+.nek-row__meta[data-present="true"] {
+  display: block;
+}

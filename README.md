@@ -4,6 +4,8 @@
 
 本仓库是原 AstrBot Python 插件的 **Go 重写版**：引擎核心（实体存储、`.neko` 词法/语法/编译、状态机、注册表）用 Go 实现，通过 [MCP](https://modelcontextprotocol.io) 暴露工具，不再依赖 AstrBot 运行时。原 Python 实现完整保留在 `legacy/python-astrbox/` 作为只读参考。
 
+> 仓库名是 **Neko**，Go module 路径为 `github.com/RuiCat/Neko`；二进制与 DSH 插件沿用历史产品名 AstrBox（`astrbox-mcp`、`dsh-mcp`、`dsh-astrbox`），两者不是同一个命名轴。
+
 ## 仓库布局
 
 | 路径 | 内容 |
@@ -20,7 +22,7 @@
 | `internal/diagnostics/` | 诊断环形存储：脚本/tick/校验告警的去重与作用域查询 |
 | `internal/mcpserver/` | MCP 工具注册与处理器 |
 | `data/` | **本地运行数据（不进版本库）**：`entities.json`（环境实体）、`user/entities.json`（NPC）、`scripts.json`、`templates/`、`archives/`、`logs/` |
-| `scripts/` | `.neko` 脚本源文件，按 `core/behavior/auto/r18/rules/scene/meta/` 归档（含 `derivations/`、`repairs/`）；可选 `rules.json` |
+| `scripts/` | `.neko` 脚本源文件：手写按 `core/behavior/rules/scene/r18/meta/` 归档；机器生成放 `generated/{auto,derive,repair}/`；工具放 `tools/`。未注册的旧副本归档在 `archive/scripts-orphans/`（不在 `scripts/` 下，不参与引导） |
 | `legacy/python-astrbox/` | 原 Python 实现（冻结参考，不参与构建） |
 | `docs/` | 架构、脚本语言、MCP 工具、迁移对照、开发说明 |
 | `runs/astrbox-go/` | 本次迁移的范围与验证证据 |
@@ -77,3 +79,4 @@ make lint        # go vet + gofmt 检查
 - [与 Python 版对照](docs/parity.md)
 - [开发与测试](docs/development.md)
 - [DSH 插件安装与验证](docs/dsh-plugin.md)
+- [DSH 上下文驱动](docs/contexts.md)

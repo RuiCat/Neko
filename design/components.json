@@ -1,0 +1,360 @@
+{
+  "version": "1",
+  "unusedAllow": [],
+  "components": {
+    "App.Shell": {
+      "kind": "template",
+      "source": "internal/monitor/web/components/appShell/appShell.js",
+      "props": {
+        "theme": { "type": "enum", "values": ["dark", "light"], "required": false, "default": "dark" },
+        "density": { "type": "enum", "values": ["comfortable", "compact"], "required": false, "default": "comfortable" }
+      },
+      "events": {
+        "onThemeChange": { "payload": "string" },
+        "onLayoutChange": { "payload": "{ columns: number }" }
+      },
+      "slots": {
+        "topbar": { "accepts": ["App.TopBar"] },
+        "sidebar": { "accepts": ["Entity.Tree"] },
+        "detail": { "accepts": ["Entity.Detail"] },
+        "diagnostics": { "accepts": ["List.Panel"] },
+        "scripts": { "accepts": ["List.Panel"] },
+        "logs": { "accepts": ["Logs.Stream"] },
+        "tick": { "accepts": ["Tick.Result"] }
+      },
+      "style": {
+        "background": "color.bg.canvas",
+        "color": "color.text.primary",
+        "fontFamily": "font.family.sans",
+        "fontSize": "font.size.md",
+        "lineHeight": "font.leading.normal",
+        "padding": "space.lg",
+        "gap": "space.xl",
+        "transitionDuration": "motion.duration.slow"
+      },
+      "states": ["default", "narrow", "wide"],
+      "verify": "bash internal/monitor/web/components/appShell/verify.sh",
+      "notes": "全局布局壳：只负责画布、栅格与插槽位置，不含任何数据逻辑；窄屏/宽屏只改布局不断点值。"
+    },
+    "App.TopBar": {
+      "kind": "organism",
+      "source": "internal/monitor/web/components/appTopBar/appTopBar.js",
+      "props": {
+        "title": { "type": "string", "required": true },
+        "version": { "type": "string", "required": false },
+        "readOnly": { "type": "boolean", "required": false, "default": false },
+        "connection": { "type": "enum", "values": ["live", "reconnecting", "offline"], "required": false, "default": "offline" }
+      },
+      "events": {
+        "onTickRequest": { "payload": "void" },
+        "onReconnect": { "payload": "void" }
+      },
+      "slots": {},
+      "style": {
+        "background": "color.bg.surface",
+        "color": "color.text.secondary",
+        "borderColor": "color.border.subtle",
+        "borderBottomWidth": "border.width.thin",
+        "paddingInline": "space.md",
+        "paddingBlock": "space.sm",
+        "gap": "space.sm",
+        "boxShadow": "shadow.sm",
+        "fontSize": "font.size.lg",
+        "fontWeight": "font.weight.semibold",
+        "transitionDuration": "motion.duration.fast",
+        "connectionOkColor": "color.intent.success.fg",
+        "connectionOkBackground": "color.intent.success.bg"
+      },
+      "states": ["default", "scrolled", "read-only", "connecting", "offline"],
+      "verify": "bash internal/monitor/web/components/appTopBar/verify.sh",
+      "notes": "顶栏同时承担连接状态（live/reconnecting/offline）与 tick 触发入口；连接态色只用 intent.success 语义令牌。"
+    },
+    "Entity.Tree": {
+      "kind": "organism",
+      "source": "internal/monitor/web/components/entityTree/entityTree.js",
+      "props": {
+        "entities": { "type": "array", "required": true },
+        "selectedId": { "type": "string", "required": false },
+        "filter": { "type": "string", "required": false, "default": "" },
+        "status": { "type": "enum", "values": ["idle", "loading", "ready", "error"], "required": false, "default": "idle" }
+      },
+      "events": {
+        "onSelect": { "payload": "string" },
+        "onFilterChange": { "payload": "string" },
+        "onRetry": { "payload": "void" }
+      },
+      "slots": {},
+      "style": {
+        "background": "color.bg.surface",
+        "color": "color.text.secondary",
+        "borderColor": "color.border.subtle",
+        "borderRightWidth": "border.width.thin",
+        "padding": "space.sm",
+        "gap": "space.xs",
+        "fontSize": "font.size.sm"
+      },
+      "states": ["loading", "ready", "empty", "error"],
+      "verify": "bash internal/monitor/web/components/entityTree/verify.sh",
+      "notes": "实体树容器：行由 Row.Item 以 repeat 填充；空态/错误态由 Empty.State 以 conditional 填充。"
+    },
+    "Row.Item": {
+      "kind": "molecule",
+      "source": "internal/monitor/web/components/rowItem/rowItem.js",
+      "props": {
+        "primary": { "type": "string", "required": true },
+        "secondary": { "type": "string", "required": false },
+        "meta": { "type": "string", "required": false },
+        "tone": { "type": "enum", "values": ["neutral", "error", "warning", "info", "success"], "required": false, "default": "neutral" },
+        "selected": { "type": "boolean", "required": false, "default": false },
+        "disabled": { "type": "boolean", "required": false, "default": false }
+      },
+      "events": {
+        "onActivate": { "payload": "string" },
+        "onContextMenu": { "payload": "{ id: string, x: number, y: number }" }
+      },
+      "slots": {},
+      "style": {
+        "background": "color.surface.raised",
+        "selectedBackground": "color.accent.soft",
+        "color": "color.text.primary",
+        "borderColor": "color.border.default",
+        "borderRadius": "radius.sm",
+        "paddingInline": "space.md",
+        "paddingBlock": "space.2xs",
+        "gap": "space.2xs",
+        "fontSize": "font.size.md",
+        "fontWeight": "font.weight.medium",
+        "lineHeight": "font.leading.normal",
+        "transitionDuration": "motion.duration.normal",
+        "metaColor": "color.text.muted",
+        "metaFontSize": "font.size.xs",
+        "warningColor": "color.intent.warning.fg",
+        "warningBackground": "color.intent.warning.bg",
+        "errorColor": "color.intent.error.fg",
+        "errorBackground": "color.intent.error.bg"
+      },
+      "states": ["default", "hover", "selected", "disabled", "warning", "error"],
+      "verify": "bash internal/monitor/web/components/rowItem/verify.sh",
+      "notes": "实体行/诊断行/脚本行/日志行共用（≥2 处复用）；严重级用 tone 表达，不新造徽标原子。"
+    },
+    "Entity.Detail": {
+      "kind": "organism",
+      "source": "internal/monitor/web/components/entityDetail/entityDetail.js",
+      "props": {
+        "entityId": { "type": "string", "required": true },
+        "entityType": { "type": "string", "required": false },
+        "payload": { "type": "string", "required": false },
+        "selectedPaths": { "type": "array", "required": false, "default": [] },
+        "truncated": { "type": "boolean", "required": false, "default": false },
+        "status": { "type": "enum", "values": ["loading", "ready", "missing-path", "empty", "error"], "required": false, "default": "ready" }
+      },
+      "events": {
+        "onPathToggle": { "payload": "string" },
+        "onRefresh": { "payload": "void" },
+        "onCopy": { "payload": "string" }
+      },
+      "slots": {
+        "fieldForm": { "accepts": ["Field.WriteForm"] }
+      },
+      "style": {
+        "background": "color.bg.surface",
+        "color": "color.text.primary",
+        "borderColor": "color.border.subtle",
+        "borderRadius": "radius.lg",
+        "padding": "space.md",
+        "gap": "space.xl",
+        "boxShadow": "shadow.md",
+        "fontSize": "font.size.sm",
+        "titleSize": "font.size.xl",
+        "titleWeight": "font.weight.semibold",
+        "codeBackground": "color.surface.sunken",
+        "codeFontFamily": "font.family.mono",
+        "codeFontSize": "font.size.xs",
+        "lineHeight": "font.leading.tight"
+      },
+      "states": ["loading", "ready", "missing-path", "empty", "error"],
+      "verify": "bash internal/monitor/web/components/entityDetail/verify.sh",
+      "notes": "实体详情：只读 JSON 视图 + fieldForm 插槽；写表单是本组件插槽里独立元件，详情不内含写逻辑。"
+    },
+    "Field.WriteForm": {
+      "kind": "organism",
+      "source": "internal/monitor/web/components/fieldWriteForm/fieldWriteForm.js",
+      "props": {
+        "entityId": { "type": "string", "required": true },
+        "path": { "type": "string", "required": false },
+        "value": { "type": "string", "required": false },
+        "readOnly": { "type": "boolean", "required": false, "default": false },
+        "submitState": { "type": "enum", "values": ["idle", "dirty", "submitting", "success", "error"], "required": false, "default": "idle" }
+      },
+      "events": {
+        "onSubmit": { "payload": "{ entity: string, path: string, value: string }" },
+        "onCancel": { "payload": "void" },
+        "onValidate": { "payload": "{ path: string, value: string }" }
+      },
+      "slots": {},
+      "style": {
+        "background": "color.surface.raised",
+        "color": "color.text.primary",
+        "borderColor": "color.border.default",
+        "hoverBorderColor": "color.border.strong",
+        "focusRingColor": "color.focus.ring",
+        "focusRingWidth": "border.width.thick",
+        "borderRadius": "radius.md",
+        "padding": "space.md",
+        "gap": "space.xs",
+        "fontSize": "font.size.sm",
+        "fontWeight": "font.weight.medium",
+        "transitionDuration": "motion.duration.fast",
+        "actionBackground": "color.accent.base",
+        "actionHoverBackground": "color.accent.hover",
+        "actionColor": "color.text.inverse"
+      },
+      "states": ["idle", "dirty", "submitting", "success", "error", "read-only"],
+      "verify": "bash internal/monitor/web/components/fieldWriteForm/verify.sh",
+      "notes": "字段写表单：自带提交按钮与校验态；不改详情内部样式，只消费 fieldForm 插槽。"
+    },
+    "List.Panel": {
+      "kind": "organism",
+      "source": "internal/monitor/web/components/listPanel/listPanel.js",
+      "props": {
+        "title": { "type": "string", "required": true },
+        "kind": { "type": "enum", "values": ["diagnostics", "scripts"], "required": true },
+        "items": { "type": "array", "required": true },
+        "status": { "type": "enum", "values": ["idle", "loading", "ready", "empty", "error"], "required": false, "default": "idle" },
+        "selectedId": { "type": "string", "required": false },
+        "truncated": { "type": "boolean", "required": false, "default": false }
+      },
+      "events": {
+        "onSelect": { "payload": "string" },
+        "onRetry": { "payload": "void" },
+        "onLoadMore": { "payload": "void" }
+      },
+      "slots": {},
+      "style": {
+        "background": "color.bg.surface",
+        "color": "color.text.secondary",
+        "borderColor": "color.border.subtle",
+        "borderTopWidth": "border.width.thin",
+        "borderRadius": "radius.md",
+        "padding": "space.lg",
+        "gap": "space.xs",
+        "fontSize": "font.size.sm",
+        "titleSize": "font.size.lg",
+        "titleWeight": "font.weight.semibold",
+        "transitionDuration": "motion.duration.normal",
+        "infoColor": "color.intent.info.fg",
+        "infoBackground": "color.intent.info.bg",
+        "successColor": "color.intent.success.fg",
+        "successBackground": "color.intent.success.bg",
+        "errorColor": "color.intent.error.fg",
+        "errorBackground": "color.intent.error.bg"
+      },
+      "states": ["loading", "ready", "empty", "error", "truncated"],
+      "verify": "bash internal/monitor/web/components/listPanel/verify.sh",
+      "notes": "诊断/脚本两个列表共用同一容器契约（标题与列由 props 区分），行由 Row.Item repeat 填充；两列表各自独立取数。"
+    },
+    "Logs.Stream": {
+      "kind": "organism",
+      "source": "internal/monitor/web/components/logsStream/logsStream.js",
+      "props": {
+        "kind": { "type": "enum", "values": ["state", "control"], "required": true },
+        "date": { "type": "string", "required": false },
+        "lines": { "type": "array", "required": true },
+        "paused": { "type": "boolean", "required": false, "default": false },
+        "follow": { "type": "boolean", "required": false, "default": true },
+        "truncated": { "type": "boolean", "required": false, "default": false }
+      },
+      "events": {
+        "onPauseToggle": { "payload": "boolean" },
+        "onDateChange": { "payload": "string" },
+        "onLoadMore": { "payload": "void" }
+      },
+      "slots": {},
+      "style": {
+        "background": "color.surface.sunken",
+        "color": "color.text.primary",
+        "borderColor": "color.border.subtle",
+        "borderRadius": "radius.md",
+        "padding": "space.sm",
+        "gap": "space.2xs",
+        "fontFamily": "font.family.mono",
+        "fontSize": "font.size.md",
+        "fontWeight": "font.weight.regular",
+        "lineHeight": "font.leading.tight",
+        "timestampColor": "color.text.muted",
+        "transitionDuration": "motion.duration.fast"
+      },
+      "states": ["live", "paused", "empty", "error", "truncated"],
+      "verify": "bash internal/monitor/web/components/logsStream/verify.sh",
+      "notes": "日志流：等宽字体、尾部跟随；行由 Row.Item 以 mono 语义复用，不另造原子。"
+    },
+    "Tick.Result": {
+      "kind": "molecule",
+      "source": "internal/monitor/web/components/tickResult/tickResult.js",
+      "props": {
+        "tickId": { "type": "string", "required": false },
+        "status": { "type": "enum", "values": ["idle", "running", "success", "failed", "busy"], "required": false, "default": "idle" },
+        "ruleCount": { "type": "number", "required": false },
+        "entityCount": { "type": "number", "required": false },
+        "durationMs": { "type": "number", "required": false },
+        "error": { "type": "string", "required": false }
+      },
+      "events": {
+        "onRetry": { "payload": "void" },
+        "onOpenDetails": { "payload": "string" }
+      },
+      "slots": {},
+      "style": {
+        "background": "color.surface.raised",
+        "color": "color.text.primary",
+        "borderColor": "color.border.subtle",
+        "borderRadius": "radius.pill",
+        "paddingInline": "space.md",
+        "paddingBlock": "space.2xs",
+        "gap": "space.sm",
+        "fontFamily": "font.family.mono",
+        "fontSize": "font.size.xs",
+        "fontWeight": "font.weight.medium",
+        "lineHeight": "font.leading.tight",
+        "infoColor": "color.intent.info.fg",
+        "infoBackground": "color.intent.info.bg"
+      },
+      "states": ["idle", "running", "success", "failed", "busy"],
+      "verify": "bash internal/monitor/web/components/tickResult/verify.sh",
+      "notes": "tick 结果摘要：tick_id/规则数/实体数/耗时；busy 对应 409 tick_busy，不自造状态文案样式。"
+    },
+    "Empty.State": {
+      "kind": "molecule",
+      "source": "internal/monitor/web/components/emptyState/emptyState.js",
+      "props": {
+        "kind": { "type": "enum", "values": ["empty", "error", "loading", "forbidden"], "required": true },
+        "title": { "type": "string", "required": true },
+        "hint": { "type": "string", "required": false },
+        "actionLabel": { "type": "string", "required": false }
+      },
+      "events": {
+        "onAction": { "payload": "void" },
+        "onRetry": { "payload": "void" }
+      },
+      "slots": {},
+      "style": {
+        "background": "color.surface.sunken",
+        "color": "color.text.secondary",
+        "borderColor": "color.border.subtle",
+        "borderRadius": "radius.lg",
+        "padding": "space.2xl",
+        "gap": "space.sm",
+        "fontSize": "font.size.md",
+        "titleSize": "font.size.2xl",
+        "titleWeight": "font.weight.semibold",
+        "lineHeight": "font.leading.relaxed",
+        "mutedColor": "color.text.muted",
+        "errorColor": "color.intent.error.fg",
+        "errorBackground": "color.intent.error.bg"
+      },
+      "states": ["empty", "error", "loading", "forbidden"],
+      "verify": "bash internal/monitor/web/components/emptyState/verify.sh",
+      "notes": "空态/错误态/加载态/只读拒绝共用；由 props.kind 选择状态，不做卡片内联样式。"
+    }
+  }
+}

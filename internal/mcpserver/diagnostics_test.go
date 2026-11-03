@@ -3,8 +3,8 @@ package mcpserver
 import (
 	"testing"
 
-	"github.com/ruicat/astrbox/internal/diagnostics"
-	"github.com/ruicat/astrbox/internal/entity"
+	"github.com/RuiCat/Neko/internal/diagnostics"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 func TestAttachDiagnosticsModes(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ruicat/astrbox/internal/entity"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 // Bridge attaches schema-driven change hooks to entities.

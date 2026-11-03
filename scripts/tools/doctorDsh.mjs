@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // dsh-mcp doctor: spawn bin/dsh-mcp, complete the MCP handshake, assert the
-// frozen 17-tool list, the 0600 control socket, and SIGTERM cleanup. It uses a
+// frozen 19-tool list, the 0600 control socket, and SIGTERM cleanup. It uses a
 // throwaway data directory and never touches data/ or a DSH profile.
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -15,6 +15,7 @@ const SOCKET_WAIT_MS = 10000;
 
 // K6 frozen tool set (alphabetical).
 const FROZEN_TOOLS = [
+  'context_list', 'context_send',
   'diagnostics_query', 'entity_create', 'entity_query', 'entity_snapshot',
   'entity_state_get', 'entity_state_set', 'event_log', 'inventory',
   'neko_script_apply', 'neko_script_list', 'neko_script_read',
@@ -22,7 +23,7 @@ const FROZEN_TOOLS = [
   'state_machine_resolve', 'state_machine_tick', 'stats',
 ];
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const BINARY = join(REPO_ROOT, 'bin', 'dsh-mcp');
 
 const TEMPLATE_ENTITIES = JSON.stringify({
@@ -234,7 +235,7 @@ async function run() {
     await waitGone(socketPath);
 
     console.log(
-      `OK: doctor 通过（17 tools, socket 0600, SIGTERM 清理；data=${session.dataDir}）`,
+      `OK: doctor 通过（19 tools, socket 0600, SIGTERM 清理；data=${session.dataDir}）`,
     );
   } finally {
     if (session && session.child.exitCode === null) session.child.kill('SIGKILL');

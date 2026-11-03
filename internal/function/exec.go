@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/ruicat/astrbox/internal/entity"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 // MAX_EXEC_STEPS bounds one function invocation to keep runaway loops finite.
@@ -230,6 +230,9 @@ func (r *runner) execAssign(node *assignStatement) error {
 		if evalErr != nil {
 			return evalErr
 		}
+		if _, numeric := toNumber(previous); !numeric {
+			return newScriptError("type", "%s 要求左侧为数值: %v", node.operator, previous)
+		}
 		value = applyBinary(string(node.operator[0]), previous, value)
 	}
 	return r.assignTarget(node.target, value)
@@ -278,12 +281,25 @@ func (r *runner) assignIndex(target *indexExpression, value any) error {
 	switch typed := container.(type) {
 	case []any:
 		position, ok := toIntValue(index)
-		if !ok || position < 0 || position >= len(typed) {
-			return nil
+		if !ok {
+			return newScriptError("type", "列表索引必须是整数: %v", index)
 		}
-		typed[position] = value
+		if position < 0 {
+			position += len(typed)
+		}
+		if position < 0 || position >= len(typed) {
+			return newScriptError("value", "列表索引越界: %d", position)
+		}
+		copied := append([]any{}, typed...)
+		copied[position] = value
+		return r.assignTarget(target.target, copied)
 	case map[string]any:
-		typed[pyText(index)] = value
+		copied := make(map[string]any, len(typed)+1)
+		for name, item := range typed {
+			copied[name] = item
+		}
+		copied[pyText(index)] = value
+		return r.assignTarget(target.target, copied)
 	}
-	return nil
+	return fmt.Errorf("不支持的索引赋值目标: %T", container)
 }

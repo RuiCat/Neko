@@ -5,7 +5,7 @@ package function
 import (
 	"strings"
 
-	"github.com/ruicat/astrbox/internal/entity"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 // getPath resolves a dotted path to a value, returning nil when it is missing.

@@ -1,0 +1,102 @@
+/* appTopBar.css —— App.TopBar 样式载体：连接态色只用 intent.success 语义令牌。 */
+.nek-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  gap: var(--space-sm);
+  padding-inline: var(--space-md);
+  padding-block: var(--space-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  border-bottom: var(--border-width-thin) solid var(--color-border-subtle);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  transition: box-shadow var(--motion-duration-fast), color var(--motion-duration-fast);
+}
+
+.nek-topbar[data-state="scrolled"] {
+  box-shadow: var(--shadow-md);
+}
+
+.nek-topbar[data-state="read-only"] {
+  color: var(--color-text-muted);
+}
+
+.nek-topbar[data-state="connecting"] {
+  color: var(--color-text-secondary);
+}
+
+.nek-topbar[data-state="offline"] {
+  color: var(--color-text-muted);
+}
+
+.nek-topbar__identity,
+.nek-topbar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.nek-topbar__title {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.nek-topbar__version {
+  display: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.nek-topbar__version[data-present="true"] {
+  display: inline;
+}
+
+.nek-topbar__connection {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding-inline: var(--space-sm);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  transition: color var(--motion-duration-fast), background var(--motion-duration-fast);
+}
+
+.nek-topbar__connection[data-state="live"] {
+  color: var(--color-intent-success-fg);
+  background: var(--color-intent-success-bg);
+}
+
+.nek-topbar__action {
+  padding-inline: var(--space-md);
+  padding-block: var(--space-xs);
+  border: var(--border-width-thin) solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background var(--motion-duration-fast), border-color var(--motion-duration-fast);
+}
+
+.nek-topbar__action:hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-base);
+}
+
+.nek-topbar__action:focus-visible {
+  outline: var(--border-width-thick) solid var(--color-focus-ring);
+}
+
+.nek-topbar__action:disabled {
+  color: var(--color-text-muted);
+  border-color: var(--color-border-subtle);
+}
