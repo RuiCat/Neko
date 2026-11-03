@@ -1034,3 +1034,48 @@ make lint  # 283 文件，0 违规 0 告警
 - TTL 固定 7 天，**没有配置项/命令行参数**；过期只在 nightly 触发（进程内或手工 POST）。
 - `approved` 仍没有"应用到状态机"的路径；回滚没有。
 - 无置信度字段；C7 教师信号未实现；真实 DSH 20 轮仍未跑。
+
+## 31 P3 夜间离线实现记录（2026-11-03）
+
+**状态**：`cmd/astrbox-nightly` + `internal/triage` + `internal/repair` + `internal/regression` 完成；`make build` / `make test` / `make lint` 全绿。P3 闸门仍未达成（缺真实 DSH 20 轮与人工抽检；参照集为 v0 结构校验）。
+
+### 31.1 新增
+
+| 文件 | 职责 |
+|---|---|
+| `internal/triage/finding.go` | `Finding` + 三类队列（fact / consistency / preference） |
+| `internal/triage/scan.go` | A 类全量（快照 / turn_id / 补偿包 / gate 数）+ B 类标注抽样；判错→fact、未判定→preference |
+| `internal/triage/write.go` | `triage.jsonl` 原子落盘 |
+| `internal/repair/candidate.go` | 修复候选：consistency→policy、fact→rule、preference/无快照拒收（约束 #9） |
+| `internal/repair/versions.go` | 版本化 v1/v2 + hash + 回滚 |
+| `internal/regression/gate.go` | 确定性回归闸门：replay 审计 + 参照集结构（空集跳过、不静默通过语义） |
+| `cmd/astrbox-nightly/main.go` | 夜间流水线：扫描→三分流→候选→闸门→上线未通过则不应用→衰减→报告；`-dry-run` / `-rollback` |
+| `Makefile` | 新增 `bin/astrbox-nightly` |
+
+### 31.2 实测（实际输出）
+
+```bash
+make build   # 6 个二进制（含 bin/astrbox-nightly）
+go test ./internal/triage ./internal/repair ./internal/regression   # ok
+go test -race ./internal/triage ./internal/repair ./internal/regression  # ok
+
+# 干净 20 轮 journal（.local/chat-run 样例）：
+./bin/astrbox-nightly -data-dir .local/nightly-smoke -dry-run
+# 扫描 20 条，findings=0，replay valid=20 invalid=0，参照集 30 条有效 → exit 0
+
+# 篡改 1 条 compensation：
+./bin/astrbox-nightly -data-dir .local/nightly-bad
+# findings=1（compensation_invalid, consistency），候选=1，replay invalid=1 → 不应用、exit 1
+
+# 回滚（无版本时如实报错）：
+./bin/astrbox-nightly -data-dir .local/nightly-smoke -rollback
+```
+
+合规机检：`internal/triage internal/repair internal/regression cmd/astrbox-nightly` 共 10 文件，0 违规 0 告警。
+
+### 31.3 残留
+
+- P3 闸门未跑真实闭环：参照集只做结构校验，未做语义评分（需模型）；真实 DSH 20 轮与人工抽检仍缺。
+- 修复补丁是**规则/策略版本描述**，尚无「应用到状态机规则表」的执行器（与 §30.3 的 approved→apply 同一缺口）。
+- 无标注目录时 B 类为空，triage 只有 A 类结构 findings。
+- `cmd/astrbox-nightly` 未接 DSH 定时器；当前靠 cron/手工调用。
