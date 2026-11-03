@@ -1079,3 +1079,120 @@ go test -race ./internal/triage ./internal/repair ./internal/regression  # ok
 - 修复补丁是**规则/策略版本描述**，尚无「应用到状态机规则表」的执行器（与 §30.3 的 approved→apply 同一缺口）。
 - 无标注目录时 B 类为空，triage 只有 A 类结构 findings。
 - `cmd/astrbox-nightly` 未接 DSH 定时器；当前靠 cron/手工调用。
+
+## 32 P4 规划：教师信号与闭环收尾（2026-11-03）
+
+**状态**：规划草案（本步只出规划，不改源码）。依据 §25.3–§31.3 的残留与 `01-contracts-freeze.md` §5「C7 未实现」。
+
+### 32.1 缺口清单（全部来自现有计划的残留）
+
+| # | 缺口 | 来源 |
+|---|---|---|
+| G1 | C7 教师信号未实现：`/judge` 只能外部手工调用 | 契约 C7、§28.3/§29.3 |
+| G2 | 修复补丁无「应用到状态机规则表」执行器 | §30.3、§31.3 |
+| G3 | approved 候选无 apply/回滚闭环 | §30.3 |
+| G4 | 候选 TTL 固定 7 天，无配置 | §30.3 |
+| G5 | nightly 未接定时器 | §31.3 |
+| G6 | 真实 DSH 20 轮 + 语义闸门（需环境/模型） | §25–§31 |
+| G7 | 消融/难例/修复类指标未实现 | §26.3/§27.3 |
+
+### 32.2 范围与不做
+
+- **做**：G1–G5（确定性、可测、不依赖真实模型）。
+- **不做**：G6（需真实 LLM key/环境）、G7（需真实对话样本）、真模型训练（独立 Python/GPU 项目）。
+
+### 32.3 接口契约草案（待冻结）
+
+**C7 教师信号**（沿用 `01-contracts-freeze.md` C7，补传输与语义）：
+
+```go
+type TeacherSignal struct {
+    SemanticGate         string
+    AffectDelta          map[string]float64
+    TransitionCandidates []engine.Candidate
+    Rebuild              *Rebuild
+}
+```
+
+- 传输：**建议控制面新增 `POST /teacher-signal`**（不动冻结的 17 个 MCP 工具；与 `/turn-context` 同属 K1 附加端点）。
+- 处理：逐候选 `machine.Judge` → `uncovered` 入候选队列（`candidates.Store.Append`）；`illegal` 记诊断 `teacher_signal_rejected`；`legal` 也**不**自动写状态（信号不是真值）。
+- 解析失败：记 `teacher_signal_missing`，不阻塞回答。
+
+**apply 执行器**（G2/G3）：
+
+- 目标：把 `approved` 候选变成可回滚的「规则/策略版本」——不做权重训练。
+- 建议契约：`POST /candidates/{id}/apply` → 生成 `repair.Candidate`（复用 P3 版本化）→ 版本 vN → 回归闸门 → 通过上线 / 失败回滚。
+- 规则侧执行：`engine.AddRule/RemoveRule`（已有），由 apply 执行器调用。
+
+### 32.4 需拍板的决策点
+
+| 决策 | 推荐值 | 推翻条件 |
+|---|---|---|
+| D-A 传输 | 控制面 `POST /teacher-signal` | 要求走 MCP 工具面 → 需改冻结工具集，升版本 |
+| D-B AffectDelta | 候选裁决后再经效果通道应用 | 只要求记录、不要求应用 |
+| D-C Rebuild | 定义为「重建补偿包的输入」 | 只要求记录 |
+| D-D apply 目标 | 规则/策略版本补丁（与 P3 一致） | 要求直接改 `scripts/*.neko` |
+
+### 32.5 验收（每步一条）
+
+| 步 | 产物 | 验收 |
+|---|---|---|
+| 1 | `/teacher-signal` 端点 + C7 类型 | 合法信号 → uncovered 入队；illegal → 诊断；坏 JSON → 400 且记 missing |
+| 2 | apply 执行器 | approved → 规则版本 vN；回归失败 → 回滚；有测试 |
+| 3 | TTL 配置化 | 可配（默认 7 天） |
+| 4 | nightly 定时器 | 可配，不阻塞主流程 |
+| 5 | 闭环端到端 | teacher-signal → candidate → approved → apply → gate → 上线/回滚 全程有记录 |
+
+### 32.6 下一步
+
+按 D-A 推荐值先实现步 1（教师信号接收 + Judge → 队列），再步 2（apply 执行器）。G6/G7 待真实环境。
+
+### 32.7 实施记录（2026-11-03）
+
+**状态**：步 1–3 完成并通过全量验证；步 4（P3 流水线的进程内定时器）未做，仍由 cron/手工调用 `bin/astrbox-nightly`。apply 目前生成**版本补丁记录**，尚未回写到 `engine` 规则表（D-D 的「规则侧执行」仍待 engine 的 apply API）。
+
+| 文件 | 职责 |
+|---|---|
+| `internal/control/teacherSignal.go` | `POST /teacher-signal`：C7 信号 → 逐候选 `Judge` → uncovered 入候选队列；illegal 记 `teacher_signal_rejected`；坏 JSON 记 `teacher_signal_missing` |
+| `internal/control/repairApply.go` | `POST /candidates/apply`（approved + 快照锚点 → repair 版本 → 回归闸门 → 失败回滚）、`POST /repairs/rollback` |
+| `internal/control/router.go` | 新增 `/teacher-signal`、`/candidates/apply`、`/repairs/rollback` 路由 |
+| `internal/control/server.go` | `Options.CandidatesTTL` + `-candidates-ttl` 接线 |
+| `internal/repair/candidate.go` | 新增 `NewCandidate`（apply 与 triage 共用身份） |
+| `internal/control/nightly.go` | TTL 改用 `s.candidatesTTL` |
+| `cmd/dsh-mcp/main.go`、`cmd/astrbox-nightly/main.go` | `-candidates-ttl` 旗标 |
+
+**实测**：`make test` 全绿（34 个 Go 包 ok + node 48 pass / 0 fail）；`make lint` 296 文件 0 违规 0 告警；新增 8 条 teacher-signal / apply / rollback 测试全过。
+
+**残留**：① 步 4 定时器未接（cron）；② apply 未回写 engine 规则表；③ 真实 DSH 20 轮 + 语义闸门仍缺环境。
+
+### 32.8 步 4 实施记录：流水线定时器（2026-11-03）
+
+**状态**：P3 流水线抽成可复用包 `internal/nightly`，CLI 变薄壳，`bootstrap` 夜间定时器可选择性调用（`-nightly-pipeline`）。
+
+| 文件 | 职责 |
+|---|---|
+| `internal/nightly/nightly.go` | `Run(Options) (Report, error)`：扫描→triage→repair→回归→衰减→报告；`SkipDecay` 让进程内定时器先衰减真值注册表、再只跑流水线，避免双重衰减 |
+| `cmd/astrbox-nightly/main.go` | 薄壳 CLI（只解析旗标、调用 `nightly.Run`、打印） |
+| `internal/bootstrap/nightly.go` | 定时器在进程内衰减后按 `nightlyPipeline` 调用 `nightly.Run` |
+| `internal/bootstrap/bootstrap.go` | `Options.NightlyPipeline` + `Runtime.nightlyPipeline` |
+| `cmd/dsh-mcp/main.go` | `-nightly-pipeline` 旗标 |
+
+**实测**：`make test` 全绿（35 个 Go 包 ok + node 48 pass / 0 fail）；`make lint` 297 文件 0 违规 0 告警；薄壳 CLI 对 20 轮 journal 仍输出 findings=0 / valid=20。
+
+**残留**：apply 仍未回写 engine 规则表；真实 DSH 20 轮 + 语义闸门仍缺环境。
+
+### 32.9 步 2 补全：apply 回写 engine 规则表（2026-11-03）
+
+**状态**：apply 不再只记录版本，而是把修复落成一条**带条件的可回滚 engine 规则**；重启后由 bootstrap 重新加载。
+
+| 文件 | 职责 |
+|---|---|
+| `internal/repair/rules.go` | `<dataDir>/repairs/rules.json` 的 `LoadRules` / `UpsertRule` / `RemoveRule`（原子写） |
+| `internal/control/repairApply.go` | apply 请求新增 `when` / `match`；**`when` 必填**（避免常开规则）；`Machine.AddRule` + 持久化；闸门失败或手动回滚时 `Machine.RemoveRule` + 删文件 |
+| `internal/bootstrap/bootstrap.go` | replay 之后加载 `repairs/rules.json` 并 `AddRules`（修复在重启后仍生效） |
+
+**安全约束**：`when` 必填——apply 产生的规则是带条件的 `set` 补丁，不会成为不过条件的常开写者；`Judge` 仍是只读裁决，覆盖关系不因 apply 而失真。
+
+**实测**：`make test` 全绿（Go 全包 ok + node 48 pass / 0 fail）；`make lint` 299 文件 0 违规 0 告警。新增测试：apply 后 `Machine.Judge` 对目标路径返回 `legal`、rollback 后无残留 `repair` 规则、`rules.json` round-trip。
+
+**残留**：真实 DSH 20 轮 + 语义闸门仍缺环境；规则补丁的**语义**正确性（`when` 是否合适）取决于教师信号质量，本实现只保证机制正确。

@@ -22,6 +22,7 @@ import (
 	"github.com/RuiCat/Neko/internal/journal"
 	"github.com/RuiCat/Neko/internal/mcpserver"
 	"github.com/RuiCat/Neko/internal/registry"
+	"github.com/RuiCat/Neko/internal/repair"
 )
 
 // Options selects the runtime locations. Empty strings follow the historical
@@ -42,6 +43,9 @@ type Options struct {
 	NightlyAt string
 	// NightlyFactor is the decay factor; 0 uses DEFAULT_NIGHTLY_FACTOR.
 	NightlyFactor float64
+	// NightlyPipeline additionally runs the P3 offline pipeline (triage,
+	// repair, regression gate) on every nightly tick.
+	NightlyPipeline bool
 }
 
 // Runtime is the assembled engine shared by astrbox-mcp and dsh-mcp. It owns
@@ -63,12 +67,13 @@ type Runtime struct {
 	Board     *blackboard.Board
 	Experts   *expert.Registry
 	// ExpertsPath is where the expert contexts are persisted.
-	ExpertsPath string
-	Assembler   *compensation.Assembler
-	DataDir     string
-	ScriptsDir  string
-	nightlyStop chan struct{}
-	nightlyDone chan struct{}
+	ExpertsPath     string
+	Assembler       *compensation.Assembler
+	DataDir         string
+	ScriptsDir      string
+	nightlyStop     chan struct{}
+	nightlyDone     chan struct{}
+	nightlyPipeline bool
 }
 
 // New loads config, data and scripts, replays scripts and assembles a Runtime.
@@ -132,6 +137,12 @@ func New(options Options) (*Runtime, error) {
 	}
 	if findings := reg.ScanConsistency(); findings > 0 {
 		log.Printf("astrbox: 脚本一致性检查发现 %d 个问题（可通过 diagnostics_query 查看）", findings)
+	}
+	if repairRules, ruleErr := repair.LoadRules(repair.RulesPath(options.DataDir)); ruleErr != nil {
+		log.Printf("astrbox: 读取修复规则失败: %v", ruleErr)
+	} else if len(repairRules) > 0 {
+		machine.AddRules(repairRules)
+		log.Printf("astrbox: 已加载修复规则 %d 条", len(repairRules))
 	}
 
 	journalDir := filepath.Join(options.DataDir, "journal")

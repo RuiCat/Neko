@@ -72,6 +72,10 @@ func run(args []string) int {
 		"夜间衰减时间（本地 HH:MM；留空禁用）")
 	nightlyFactor := flags.Float64("nightly-factor", 0.5,
 		"夜间衰减系数（0<factor<1）")
+	candidatesTTL := flags.Duration("candidates-ttl", 0,
+		"候选队列 TTL（默认 7 天；0 表示用默认值）")
+	nightlyPipeline := flags.Bool("nightly-pipeline", false,
+		"夜间同时运行 P3 离线流水线（triage/repair/回归闸门）")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return EXIT_OK
@@ -103,6 +107,7 @@ func run(args []string) int {
 	runtime, err := bootstrap.New(bootstrap.Options{
 		DataDir: *dataDir, ScriptsDir: *scriptsDir, ConfigPath: *configPath,
 		Journal: true, NightlyAt: *nightlyAt, NightlyFactor: *nightlyFactor,
+		NightlyPipeline: *nightlyPipeline,
 	})
 	if err != nil {
 		log.Printf("dsh-mcp: 运行时装配失败: %v", err)
@@ -134,7 +139,7 @@ func run(args []string) int {
 	mcpServer := runtime.NewMCPServer()
 	mcpServer.SetContextDriver(contextDriver)
 	mcpServer.EnableContextTools()
-	controlServer := control.New(runtime, mcpServer, control.Options{Driver: contextDriver})
+	controlServer := control.New(runtime, mcpServer, control.Options{Driver: contextDriver, CandidatesTTL: *candidatesTTL})
 	token := config.Current().HttpToken
 	if !auth.ValidTokenCharset(token) {
 		log.Printf("dsh-mcp: http_token 字符集不合法（要求 ^[A-Za-z0-9_-]{16,128}$）")

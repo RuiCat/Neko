@@ -7,6 +7,8 @@ import (
 	"log"
 	"strings"
 	"time"
+
+	"github.com/RuiCat/Neko/internal/nightly"
 )
 
 // DEFAULT_NIGHTLY_FACTOR halves every weight per nightly pass.
@@ -47,6 +49,7 @@ func (r *Runtime) startNightly(options Options) {
 	}
 	r.nightlyStop = make(chan struct{})
 	r.nightlyDone = make(chan struct{})
+	r.nightlyPipeline = options.NightlyPipeline
 	go r.runNightly(hour, minute, factor)
 	log.Printf("astrbox: 夜间衰减已启用：每天 %02d:%02d（factor=%.2f）", hour, minute, factor)
 }
@@ -71,6 +74,13 @@ func (r *Runtime) runNightly(hour, minute int, factor float64) {
 				log.Printf("astrbox: 夜间衰减落盘失败: %v", err)
 			}
 			log.Printf("astrbox: 夜间衰减完成：移除 %d 条（factor=%.2f）", total, factor)
+			if r.nightlyPipeline {
+				if _, err := nightly.Run(nightly.Options{
+					DataDir: r.DataDir, DecayFactor: factor, SkipDecay: true,
+				}); err != nil {
+					log.Printf("astrbox: 夜间流水线失败: %v", err)
+				}
+			}
 		}
 	}
 }

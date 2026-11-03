@@ -46,6 +46,21 @@ func (s *Server) dispatch(r *http.Request) response {
 			return methodNotAllowed(http.MethodPost)
 		}
 		return s.handleResolveCandidate(r)
+	case "/candidates/apply":
+		if r.Method != http.MethodPost {
+			return methodNotAllowed(http.MethodPost)
+		}
+		return s.handleApplyCandidate(r)
+	case "/repairs/rollback":
+		if r.Method != http.MethodPost {
+			return methodNotAllowed(http.MethodPost)
+		}
+		return s.handleRollbackRepair(r)
+	case "/teacher-signal":
+		if r.Method != http.MethodPost {
+			return methodNotAllowed(http.MethodPost)
+		}
+		return s.handleTeacherSignal(r)
 	case "/session-event":
 		if r.Method != http.MethodPost {
 			return methodNotAllowed(http.MethodPost)

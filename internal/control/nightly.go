@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
-
-	"github.com/RuiCat/Neko/internal/candidates"
 )
 
 // DEFAULT_DECAY_FACTOR halves every weight per nightly pass.
@@ -50,7 +48,7 @@ func (s *Server) handleNightly(r *http.Request) response {
 	if err := s.runtime.SaveExperts(); err != nil {
 		return internalError("保存衰减结果失败: " + err.Error())
 	}
-	expired, err := s.candidateStore().Expire(time.Now().Add(-candidates.DEFAULT_TTL))
+	expired, err := s.candidateStore().Expire(time.Now().Add(-s.candidatesTTL))
 	if err != nil {
 		return internalError("候选过期处理失败: " + err.Error())
 	}

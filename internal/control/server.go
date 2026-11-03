@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/RuiCat/Neko/internal/bootstrap"
+	"github.com/RuiCat/Neko/internal/candidates"
 	"github.com/RuiCat/Neko/internal/driver"
 	"github.com/RuiCat/Neko/internal/mcpserver"
 )
@@ -37,36 +38,41 @@ type Options struct {
 	Deadline time.Duration
 	// Driver enables the /contexts and /context-invoke routes when set.
 	Driver *driver.Driver
+	// CandidatesTTL bounds how long a pending candidate waits before the
+	// nightly pass expires it; zero keeps candidates.DEFAULT_TTL.
+	CandidatesTTL time.Duration
 }
 
 // Server answers HTTP/1.1 control-plane requests on a Unix socket.
 type Server struct {
-	runtime      *bootstrap.Runtime
-	mcp          *mcpserver.Server
-	dataDir      string
-	scriptsDir   string
-	entityID     string
-	functionName string
-	deadline     time.Duration
-	driver       *driver.Driver
-	startedAt    time.Time
-	log          *dailyLogger
-	closing      atomic.Bool
-	httpServer   *http.Server
+	runtime       *bootstrap.Runtime
+	mcp           *mcpserver.Server
+	dataDir       string
+	scriptsDir    string
+	entityID      string
+	functionName  string
+	deadline      time.Duration
+	candidatesTTL time.Duration
+	driver        *driver.Driver
+	startedAt     time.Time
+	log           *dailyLogger
+	closing       atomic.Bool
+	httpServer    *http.Server
 }
 
 // New assembles a control-plane server around an initialized runtime.
 func New(runtime *bootstrap.Runtime, mcp *mcpserver.Server, options Options) *Server {
 	server := &Server{
-		runtime:      runtime,
-		mcp:          mcp,
-		dataDir:      runtime.DataDir,
-		scriptsDir:   runtime.ScriptsDir,
-		entityID:     options.Entity,
-		functionName: options.FunctionName,
-		deadline:     options.Deadline,
-		driver:       options.Driver,
-		startedAt:    time.Now(),
+		runtime:       runtime,
+		mcp:           mcp,
+		dataDir:       runtime.DataDir,
+		scriptsDir:    runtime.ScriptsDir,
+		entityID:      options.Entity,
+		functionName:  options.FunctionName,
+		deadline:      options.Deadline,
+		candidatesTTL: options.CandidatesTTL,
+		driver:        options.Driver,
+		startedAt:     time.Now(),
 	}
 	if server.entityID == "" {
 		server.entityID = DEFAULT_ENTITY_ID
@@ -76,6 +82,9 @@ func New(runtime *bootstrap.Runtime, mcp *mcpserver.Server, options Options) *Se
 	}
 	if server.deadline <= 0 {
 		server.deadline = DEFAULT_DEADLINE
+	}
+	if server.candidatesTTL <= 0 {
+		server.candidatesTTL = candidates.DEFAULT_TTL
 	}
 	server.log = newDailyLogger(filepath.Join(server.dataDir, "logs"), CONTROL_LOG_KEEP_DAYS)
 	server.httpServer = &http.Server{Handler: server, ReadHeaderTimeout: DEFAULT_DEADLINE}
