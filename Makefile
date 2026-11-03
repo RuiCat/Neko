@@ -14,6 +14,7 @@ CONTEXT_BIN := bin/neko-context
 METRICS_BIN := bin/astrbox-metrics
 REPLAY_BIN := bin/astrbox-replay
 CHAT_BIN := bin/neko-chat
+NIGHTLY_BIN := bin/astrbox-nightly
 GO_SOURCES := $(shell find cmd internal -name '*.go')
 
 # Design sources and the embedded page tree are build inputs: editing any of
@@ -33,7 +34,7 @@ MODULARITY_LINT ?= $(HOME)/.dsh/skills/code-modularity/scripts/lintCodeModularit
 
 all: build
 
-build: $(ENGINE_BIN) $(DSH_BIN) $(CONTEXT_BIN) $(METRICS_BIN) $(REPLAY_BIN) $(CHAT_BIN)
+build: $(ENGINE_BIN) $(DSH_BIN) $(CONTEXT_BIN) $(METRICS_BIN) $(REPLAY_BIN) $(CHAT_BIN) $(NIGHTLY_BIN)
 
 $(ENGINE_BIN): $(GO_SOURCES) $(DESIGN_SOURCES) $(WEB_SOURCES) $(DESIGN_CSS) go.mod go.sum
 	@mkdir -p bin
@@ -58,6 +59,10 @@ $(REPLAY_BIN): $(GO_SOURCES) go.mod go.sum
 $(CHAT_BIN): $(GO_SOURCES) go.mod go.sum
 	@mkdir -p bin
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(CHAT_BIN) ./cmd/neko-chat
+
+$(NIGHTLY_BIN): $(GO_SOURCES) go.mod go.sum
+	@mkdir -p bin
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(NIGHTLY_BIN) ./cmd/astrbox-nightly
 
 # Regenerate the CSS from design/tokens.json and copy it into the embedded page
 # tree; both outputs are versioned so a clean checkout builds without node.
