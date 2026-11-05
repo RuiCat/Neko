@@ -89,10 +89,10 @@
 
 ### C0 硬状态子集（一切的基础）
 
-- 形态（P1 已实现）：版本化 `Schema{Version, Group, Entities}`——按 `config` 的状态组捕获，`Entities` 为空表示全部实体；字段级清单（entityType/path/kind）留到关系/信任字段真正落地时再加。
+- 形态（P1 已实现，v2 于 2026-11-05 加字段清单）：版本化 `Schema{Version, Group, Paths, Entities}`——按 `config` 的状态组捕获，再加 `Paths` 里的字段级点分路径；`Entities` 为空表示全部实体。
 - 硬约束：快照、补偿包 `state`、`judge` 裁决、夜间比对**只认这份清单**；清单变更必须升版本号并写迁移说明。
 - 违反后果：同一字段两处口径 → 指标 #4 永远算不平。
-- 验收（P1 已实现）：快照只收状态组字段，非状态组字段不泄漏（`internal/hardstate/snapshot_test.go`）；字段存在性差异由指标的分母/不匹配暴露，不静默跳过。
+- 验收（P1 已实现，v2 扩充）：快照收状态组 + 字段清单，清单外字段不泄漏（`internal/hardstate/snapshot_test.go`）；字段存在性差异由指标的分母/不匹配暴露，不静默跳过。
 
 ### C1 快照与快照 ID
 
@@ -1196,3 +1196,11 @@ type TeacherSignal struct {
 **实测**：`make test` 全绿（Go 全包 ok + node 48 pass / 0 fail）；`make lint` 299 文件 0 违规 0 告警。新增测试：apply 后 `Machine.Judge` 对目标路径返回 `legal`、rollback 后无残留 `repair` 规则、`rules.json` round-trip。
 
 **残留**：真实 DSH 20 轮 + 语义闸门仍缺环境；规则补丁的**语义**正确性（`when` 是否合适）取决于教师信号质量，本实现只保证机制正确。
+
+
+## 33 硬状态字段清单 v2（C0 落地，2026-11-05）
+
+- 背景：补偿包按插件 `paths` 解析 `compensation.state`，而 schema 只捕获状态组，导致 8 条 paths 里 7 条显示「缺失」；实测实体本身有值（`entity_state_get 猫猫 身体.体力` → 90、`心情.当前` → 满足），是口径不一致而非数据缺失。
+- 变更：`Schema` 增加 `Paths []string`（实体相对点分路径），`SCHEMA_VERSION` 1→2；`DefaultPaths()` 默认清单：身体.体力 / 心情.当前 / 关系.亲密 / 位置.场景 / 睡眠.疲劳 / 社交.互动需求 / 任务.当前任务；`Capture` 收纳「状态组 + 清单路径」；`Covers` 覆盖两者（D2 写入口守卫随之扩展到这些字段）；`Validate` 校验空路径、非法字符、组内重复与重复声明。
+- 迁移说明：v2 后的快照多出 7 个字段级键；跨 schema 版本混算跨轮一致率会失真，切换窗口的记录（2026-11-05 重启前后）在指标里应单独看待，旧 v1 记录不回填、不重算。
+- 验收：`go test ./internal/hardstate` 覆盖「清单字段进入快照 / 清单外字段不泄漏 / 清单值变化改 digest / 路径校验」；`make test` exit 0、`make lint` 300 文件 0/0；重启后 `/turn-context?entity=猫猫` 的 compensation.state 应含这 7 个键（待真实验证）。

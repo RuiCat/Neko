@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -31,10 +32,11 @@ type IDs struct {
 	TickID     string
 }
 
-// Capture flattens the hard-state group of every selected entity and returns a
-// sorted, digest-stable snapshot. entityData maps entity ID to its full data
-// map (the caller takes a copy of each entity first). Arrays and scalars are
-// kept as values; nested maps are flattened into dotted paths.
+// Capture flattens the hard-state subset of every selected entity and returns a
+// sorted, digest-stable snapshot: the configured state group plus the
+// field-level paths (C0 v2). entityData maps entity ID to its full data map
+// (the caller takes a copy of each entity first). Arrays and scalars are kept
+// as values; nested maps are flattened into dotted paths.
 func Capture(entityData map[string]map[string]any, schema Schema, ids IDs, now time.Time) (Snapshot, error) {
 	if err := schema.Validate(); err != nil {
 		return Snapshot{}, err
@@ -47,11 +49,16 @@ func Capture(entityData map[string]map[string]any, schema Schema, ids IDs, now t
 		if !schema.includes(entityID) {
 			continue
 		}
-		group, ok := data[schema.Group]
-		if !ok {
-			continue
+		if group, ok := data[schema.Group]; ok {
+			flattenInto(state, entityID+"."+schema.Group, group)
 		}
-		flattenInto(state, entityID+"."+schema.Group, group)
+		for _, path := range schema.Paths {
+			value, found := lookupPath(data, path)
+			if !found {
+				continue
+			}
+			flattenInto(state, entityID+"."+path, value)
+		}
 	}
 	digest, err := DigestOf(state)
 	if err != nil {
@@ -85,6 +92,22 @@ func SameValue(a, b any) bool {
 	left, leftErr := json.Marshal(a)
 	right, rightErr := json.Marshal(b)
 	return leftErr == nil && rightErr == nil && string(left) == string(right)
+}
+
+// lookupPath resolves one dotted path inside entity data.
+func lookupPath(data map[string]any, path string) (any, bool) {
+	var current any = data
+	for _, part := range strings.Split(path, ".") {
+		mapping, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current, ok = mapping[part]
+		if !ok {
+			return nil, false
+		}
+	}
+	return current, true
 }
 
 // flattenInto writes value into target under prefix, recursing into nested
