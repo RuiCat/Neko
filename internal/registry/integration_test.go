@@ -10,14 +10,13 @@ import (
 	"github.com/RuiCat/Neko/internal/entity"
 	"github.com/RuiCat/Neko/internal/events"
 	"github.com/RuiCat/Neko/internal/function"
+	"github.com/RuiCat/Neko/internal/testutil"
 )
 
 func TestReplayAllScripts(t *testing.T) {
 	dataDir := t.TempDir()
 	scriptsDir := t.TempDir()
-	if err := os.CopyFS(dataDir, os.DirFS("../../data")); err != nil {
-		t.Fatalf("copy data dir: %v", err)
-	}
+	testutil.CopyDataDir(t, "../../data", dataDir)
 	if err := os.CopyFS(scriptsDir, os.DirFS("../../scripts")); err != nil {
 		t.Fatalf("copy scripts dir: %v", err)
 	}

@@ -5,12 +5,18 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { apply } from './plugin.mjs'
+import { apply, inject } from './plugin.mjs'
 import { DEFAULT_PATHS } from './config.mjs'
 import { TRUNCATION_SUFFIX } from './prompt.mjs'
 import { createStubContext, nextMacroTask, runPreStep, startControlServer, waitFor, writeJson } from './testHarness.mjs'
 
 const R18_TERMS = ['性行为', '器官状态', '外翻', '生殖', '体液追踪', '肉棒']
+
+/** cordis 服务访问必须先在 inject 里声明，否则激活时报 "cannot get property … without inject"。 */
+test('inject 声明覆盖 systemPrompt 与 timer（cordis DI 前置条件）', () => {
+  assert.ok(inject.includes('systemPrompt'), '缺少 systemPrompt 注入')
+  assert.ok(inject.includes('timer'), '缺少 timer 注入（ctx.interval 依赖）')
+})
 
 /** 默认 /state 响应：全部路径有值。 */
 function stateBody(paths) {

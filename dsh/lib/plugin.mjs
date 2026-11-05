@@ -17,8 +17,8 @@ import { createSessionEventSender } from './sessionEvents.mjs'
 
 export const name = 'astrbox-bridge'
 
-/** 必须在 systemPrompt 服务就绪后注册提示段。 */
-export const inject = ['systemPrompt']
+/** 必须等 systemPrompt 与 timer 服务就绪：前者注册提示段，后者提供 ctx.interval。 */
+export const inject = ['systemPrompt', 'timer']
 
 /** 提示段固定元数据（K2）。 */
 const SECTION = Object.freeze({ name: 'astrbox-usage', order: 2500, interpolate: false })

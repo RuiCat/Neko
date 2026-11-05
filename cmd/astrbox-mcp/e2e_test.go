@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/RuiCat/Neko/internal/testutil"
 )
 
 var serverBinary string
@@ -41,9 +43,7 @@ func copyRepoDirs(t *testing.T) (string, string) {
 	t.Helper()
 	dataDir := t.TempDir()
 	scriptsDir := t.TempDir()
-	if err := os.CopyFS(dataDir, os.DirFS(filepath.Join("..", "..", "data"))); err != nil {
-		t.Fatalf("copy data: %v", err)
-	}
+	testutil.CopyDataDir(t, filepath.Join("..", "..", "data"), dataDir)
 	if err := os.CopyFS(scriptsDir, os.DirFS(filepath.Join("..", "..", "scripts"))); err != nil {
 		t.Fatalf("copy scripts: %v", err)
 	}
