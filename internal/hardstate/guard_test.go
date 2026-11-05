@@ -22,10 +22,16 @@ func TestCheckWriteAllowsOnlyStateMachine(t *testing.T) {
 
 func TestCheckWriteIgnoresNonHardStatePaths(t *testing.T) {
 	schema := DefaultSchema()
-	for _, path := range []string{"标签", "状态定义.情绪", "身体.体力"} {
+	for _, path := range []string{"标签", "状态定义.情绪"} {
 		check := CheckWrite(schema, "猫猫", path, SOURCE_MCP)
 		if check.HardState || check.Allowed {
 			t.Fatalf("路径 %q 不应算硬状态：%+v", path, check)
+		}
+	}
+	for _, path := range []string{"身体.体力", "任务.当前任务", "关系.亲密"} {
+		check := CheckWrite(schema, "猫猫", path, SOURCE_MCP)
+		if !check.HardState || check.Allowed {
+			t.Fatalf("字段级硬状态路径 %q 应受守卫：%+v", path, check)
 		}
 	}
 	check := CheckWrite(schema, "猫猫", "状态", SOURCE_MCP)
@@ -49,7 +55,12 @@ func TestSchemaCovers(t *testing.T) {
 	if !schema.Covers("状态.情绪") || !schema.Covers("状态") {
 		t.Fatal("状态组路径应被 Covers 命中")
 	}
-	if schema.Covers("状态定义.情绪") || schema.Covers("身体.体力") {
-		t.Fatal("组外路径不应被 Covers 命中")
+	for _, path := range []string{"身体.体力", "任务.当前任务", "关系.亲密"} {
+		if !schema.Covers(path) {
+			t.Fatalf("字段级硬状态路径 %q 应被 Covers 命中", path)
+		}
+	}
+	if schema.Covers("状态定义.情绪") || schema.Covers("身体.水分") {
+		t.Fatal("清单外路径不应被 Covers 命中")
 	}
 }

@@ -88,6 +88,49 @@ func TestSchemaEntitiesFilterAndValidation(t *testing.T) {
 	}
 }
 
+func TestCaptureIncludesSchemaFieldPaths(t *testing.T) {
+	data := map[string]map[string]any{
+		"猫猫": {
+			"状态": map[string]any{"情绪": "平静"},
+			"身体": map[string]any{"体力": 90, "水分": 50},
+			"任务": map[string]any{"当前任务": "陪主人"},
+		},
+	}
+	first, err := Capture(data, DefaultSchema(), testIDs(), time.Unix(0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"猫猫.状态.情绪", "猫猫.身体.体力", "猫猫.任务.当前任务"} {
+		if _, ok := first.State[key]; !ok {
+			t.Fatalf("缺少字段级硬状态 %q：%v", key, first.State)
+		}
+	}
+	if _, leaked := first.State["猫猫.身体.水分"]; leaked {
+		t.Fatal("未列入清单的字段不应进入快照")
+	}
+	data["猫猫"]["身体"].(map[string]any)["体力"] = 50
+	second, err := Capture(data, DefaultSchema(), testIDs(), time.Unix(0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Digest == first.Digest {
+		t.Fatal("字段级硬状态变化后 digest 必须变化")
+	}
+}
+
+func TestSchemaValidatesFieldPaths(t *testing.T) {
+	valid := Schema{Version: 2, Group: "状态", Paths: []string{"身体.体力", "关系.亲密"}}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("合法字段清单被拒绝: %v", err)
+	}
+	bad := [][]string{{""}, {"  "}, {"状态.情绪"}, {"身体..体力"}, {"身体 体力"}, {"身体.体力", "身体.体力"}}
+	for _, paths := range bad {
+		if err := (Schema{Version: 2, Group: "状态", Paths: paths}).Validate(); err == nil {
+			t.Fatalf("非法字段清单 %v 应被拒绝", paths)
+		}
+	}
+}
+
 func TestCaptureRejectsMissingSnapshotID(t *testing.T) {
 	if _, err := Capture(sampleData(), DefaultSchema(), IDs{}, time.Unix(0, 0)); err == nil {
 		t.Fatal("缺少快照 ID 应被拒绝")
