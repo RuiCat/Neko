@@ -56,6 +56,20 @@ test('summarizeTurn 只取本轮 user/message（真实 payload 无 turn 字段�
   assert.equal(summary.assistantDigest, '本轮回答')
 })
 
+test('summarizeTurn 跳过注入消息，取真实用户输入', () => {
+  const events = [
+    { type: 'turn/start', data: { turn: 2 } },
+    { type: 'user/message', data: { content: [{ type: 'text', text: 'Time sampled while preparing turn 2…' }], source: { kind: 'runtime-context' } } },
+    { type: 'user/message', data: { content: [{ type: 'text', text: '继续' }], source: { kind: 'user' } } },
+    { type: 'user/message', data: { content: [{ type: 'text', text: '[astrbox] 猫猫补偿包' }], source: { kind: 'astrbox' } } },
+    { type: 'user/message', data: { content: [{ type: 'text', text: '[context-guard] 上下文已用 31%' }], source: { kind: 'user' } } },
+    assistantEvent(2, '好'),
+  ]
+  const summary = summarizeTurn(sessionWith(events), 2)
+  assert.equal(summary.userDigest, '继续')
+  assert.equal(summary.assistantDigest, '好')
+})
+
 test('summarizeTurn 无可用事件时返回 undefined', () => {
   assert.equal(summarizeTurn(undefined, 1), undefined)
   assert.equal(summarizeTurn({ id: 's1' }, 1), undefined)
