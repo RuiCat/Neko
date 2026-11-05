@@ -1,6 +1,7 @@
 # local machine state (module caches, go build cache, scratch)
 .local/
 .cache/
+.agent-memory/
 
 # python artifacts (legacy tree)
 __pycache__/
@@ -40,3 +41,7 @@ scripts/*.tmp
 /data/contexts.json
 /data/contexts.json.tmp
 
+
+# learning-loop runtime data (journal records, metric reports)
+/data/journal/
+/data/metrics/
