@@ -19,9 +19,9 @@ function assistantEvent(turn, text) {
   return { type: 'assistant/message', data: { turn, step: 1, message: { content: [{ type: 'text', text }] } } }
 }
 
-/** 造一条 user/message 事件。 */
-function userEvent(turn, text) {
-  return { type: 'user/message', data: { turn, step: 1, message: { content: [{ type: 'text', text }] } } }
+/** 造一条 user/message 事件（真实契约：payload 就是消息本身，没有 turn 字段）。 */
+function userEvent(text) {
+  return { type: 'user/message', data: { content: [{ type: 'text', text }] } }
 }
 
 test('summarizeTurn 取本轮最后一条助手文本，忽略其他轮', () => {
@@ -29,7 +29,7 @@ test('summarizeTurn 取本轮最后一条助手文本，忽略其他轮', () => 
     { type: 'turn/start', data: { turn: 1 } },
     assistantEvent(1, '上一轮'),
     { type: 'turn/start', data: { turn: 2 } },
-    userEvent(2, '用户的问题'),
+    userEvent('用户的问题'),
     assistantEvent(2, '第一句'),
     assistantEvent(2, '最后一句'),
     { type: 'step/start', data: { turn: 2, step: 1 } },
@@ -40,6 +40,20 @@ test('summarizeTurn 取本轮最后一条助手文本，忽略其他轮', () => 
   assert.equal(summary.userDigest, '用户的问题')
   assert.equal(summary.toolCalls, 1)
   assert.equal(summary.steps, 1)
+})
+
+test('summarizeTurn 只取本轮 user/message（真实 payload 无 turn 字段）', () => {
+  const events = [
+    { type: 'turn/start', data: { turn: 1 } },
+    userEvent('上一轮的问题'),
+    assistantEvent(1, '上一轮回答'),
+    { type: 'turn/start', data: { turn: 2 } },
+    userEvent('本轮的问题'),
+    assistantEvent(2, '本轮回答'),
+  ]
+  const summary = summarizeTurn(sessionWith(events), 2)
+  assert.equal(summary.userDigest, '本轮的问题')
+  assert.equal(summary.assistantDigest, '本轮回答')
 })
 
 test('summarizeTurn 无可用事件时返回 undefined', () => {

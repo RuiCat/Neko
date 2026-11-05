@@ -61,6 +61,15 @@ export function summarizeTurn(session, turn) {
     if (!event || typeof event.type !== 'string') continue
     const data = event.data
     if (event.type === 'turn/start' && data?.turn === turn) break
+    // `user/message` 的 payload 就是消息本身，没有 turn 字段；反向扫描停在本轮
+    // turn/start 处，所以此前遇到的用户消息都属于本轮。
+    if (event.type === 'user/message') {
+      if (userDigest === '') {
+        const text = messageText(data)
+        if (text !== '') userDigest = text
+      }
+      continue
+    }
     if (data?.turn !== turn) continue
     if (event.type === 'assistant/message') {
       const text = messageText(data.message)
