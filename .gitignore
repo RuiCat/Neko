@@ -45,3 +45,6 @@ scripts/*.tmp
 # learning-loop runtime data (journal records, metric reports)
 /data/journal/
 /data/metrics/
+/data/experts.json
+/data/candidates.jsonl
+/data/rules.json
