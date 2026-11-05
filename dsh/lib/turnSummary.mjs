@@ -36,11 +36,18 @@ function truncate(text) {
   return chars.slice(0, DIGEST_MAX_CHARS).join('') + '…'
 }
 
+/** 判断一条 user/message 是否为注入内容（不是用户本人输入）。 */
+function injectedUserText(message, text) {
+  const kind = message?.source?.kind
+  if (kind === 'runtime-context' || kind === 'astrbox') return true
+  return text.startsWith('[context-guard]')
+}
+
 /**
  * 汇总一轮的可见结果；没有可用事件时返回 undefined。
  * @param {object|undefined} session Session（带 snapshotEvents）
  * @param {number} turn 轮次
- * @returns {{assistantDigest: string, toolCalls: number, steps: number}|undefined} 摘要
+ * @returns {{assistantDigest: string, toolCalls: number, steps: number, userDigest?: string}|undefined} 摘要
  */
 export function summarizeTurn(session, turn) {
   if (typeof session?.snapshotEvents !== 'function') return undefined
@@ -52,32 +59,37 @@ export function summarizeTurn(session, turn) {
   }
   if (!Array.isArray(events) || events.length === 0) return undefined
   const start = Math.max(0, events.length - SCAN_LIMIT)
+  // 用户消息的 payload 没有 turn 字段，只能先定位本轮 turn/start 再正向扫描。
+  let begin = start
+  for (let index = events.length - 1; index >= start; index -= 1) {
+    const event = events[index]
+    if (event?.type === 'turn/start' && event.data?.turn === turn) {
+      begin = index + 1
+      break
+    }
+  }
   let digest = ''
   let userDigest = ''
   let toolCalls = 0
   let steps = 0
-  for (let index = events.length - 1; index >= start; index -= 1) {
+  for (let index = begin; index < events.length; index += 1) {
     const event = events[index]
     if (!event || typeof event.type !== 'string') continue
     const data = event.data
-    if (event.type === 'turn/start' && data?.turn === turn) break
-    // `user/message` 的 payload 就是消息本身，没有 turn 字段；反向扫描停在本轮
-    // turn/start 处，所以此前遇到的用户消息都属于本轮。
+    if (event.type === 'turn/start' && data?.turn !== turn) break
+    if (event.type === 'turn/end') break
     if (event.type === 'user/message') {
-      if (userDigest === '') {
-        const text = messageText(data)
-        if (text !== '') userDigest = text
-      }
+      if (userDigest !== '') continue
+      const text = messageText(data)
+      if (text === '' || injectedUserText(data, text)) continue
+      userDigest = truncate(text)
       continue
     }
     if (data?.turn !== turn) continue
     if (event.type === 'assistant/message') {
       const text = messageText(data.message)
-      // 反向扫描：第一条命中的就是本轮最后一条助手消息。
-      if (digest === '' && text !== '') digest = text
-    } else if (event.type === 'user/message') {
-      const text = messageText(data.message)
-      if (userDigest === '' && text !== '') userDigest = text
+      // 正向扫描：最后一条命中的就是本轮最后一条助手消息。
+      if (text !== '') digest = text
     } else if (event.type === 'tool/call') {
       toolCalls += 1
     } else if (event.type === 'step/start') {
@@ -86,6 +98,7 @@ export function summarizeTurn(session, turn) {
   }
   if (digest === '' && userDigest === '' && toolCalls === 0 && steps === 0) return undefined
   const summary = { assistantDigest: truncate(digest), toolCalls, steps }
-  if (userDigest !== '') summary.userDigest = truncate(userDigest)
+  if (userDigest !== '') summary.userDigest = userDigest
   return summary
 }
+
