@@ -62,6 +62,59 @@ test('cwd = <prefix>-old 不命中', async () => {
   assert.equal(client.calls.length, 0)
 })
 
+test('entityOfCwd 命中：bot cwd 不被前缀丢弃且事件带 entity（K6/C1）', async () => {
+  const client = fakeClient()
+  const logger = fakeLogger()
+  const sender = createSessionEventSender({
+    client,
+    config: CONFIG,
+    logger,
+    entityOfCwd: (cwd) => (cwd === '/srv/bots/cat' ? '梦梦' : undefined),
+  })
+  const session = { id: 's-bot', header: { cwd: '/srv/bots/cat' } }
+  sender.sessionCreated(session)
+  sender.turnStopping({ agent: { session }, turn: 2 })
+  await nextMacroTask()
+  assert.deepEqual(client.calls, [
+    { kind: 'session-created', sessionId: 's-bot', cwd: '/srv/bots/cat', function: 'dsh_on_event', entity: '梦梦' },
+    { kind: 'turn-end', sessionId: 's-bot', cwd: '/srv/bots/cat', turn: 2, function: 'dsh_on_event', entity: '梦梦' },
+  ])
+  assert.equal(logger.warnings.length, 0)
+})
+
+test('entityOfCwd 未命中：保持旧前缀门控且事件不带 entity（K6）', async () => {
+  const client = fakeClient()
+  const sender = createSessionEventSender({
+    client,
+    config: CONFIG,
+    logger: fakeLogger(),
+    entityOfCwd: () => undefined,
+  })
+  sender.sessionCreated({ id: 'outside', header: { cwd: '/tmp/outside' } })
+  const inside = { id: 'inside', header: { cwd: `${PREFIX}/sub` } }
+  sender.sessionCreated(inside)
+  sender.turnStopping({ agent: { session: inside }, turn: 1 })
+  await nextMacroTask()
+  assert.deepEqual(
+    client.calls.map((call) => call.kind),
+    ['session-created', 'turn-end'],
+  )
+  assert.ok(!('entity' in client.calls[0]))
+  assert.ok(!('entity' in client.calls[1]))
+})
+
+test('entityOfCwd 抛错被吞掉：按未命中处理，不向宿主抛错（K6/C2）', () => {
+  const sender = createSessionEventSender({
+    client: fakeClient(),
+    config: CONFIG,
+    logger: fakeLogger(),
+    entityOfCwd: () => {
+      throw new Error('entity boom')
+    },
+  })
+  assert.doesNotThrow(() => sender.sessionCreated({ id: 's1', header: { cwd: PREFIX } }))
+})
+
 test('重复 session-created 只发一次', async () => {
   const client = fakeClient()
   const sender = createSessionEventSender({ client, config: CONFIG, logger: fakeLogger() })

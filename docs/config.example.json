@@ -13,5 +13,8 @@
   "default_scene": "场景",
   "scene_event_field": "事件",
   "classification_field": "分类",
-  "http_token": ""
+  "http_token": "",
+  "subscriptionEnabled": true,
+  "subscriptionMainIntervalMs": 600000,
+  "subscriptionMaxChars": 2000
 }

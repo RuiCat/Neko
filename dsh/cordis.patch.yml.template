@@ -46,6 +46,12 @@
         promptRefreshMs: 5000
         tickEveryMs: 60000
         tickScope: ''
+        clockStepMinutes: 10
+        clockIdleStepMinutes: 1
+        clockActiveWindowMs: 600000
+        subscriptionEnabled: true
+        subscriptionMainIntervalMs: 600000
+        subscriptionMaxChars: 2000
         workspacePrefix: ${REPO_ROOT}
         functionName: dsh_on_event
         requestTimeoutMs: 2000

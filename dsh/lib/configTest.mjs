@@ -81,3 +81,89 @@ test('自定义合法配置被接受且 paths 被复制', () => {
   assert.notEqual(config.paths, paths)
   assert.ok(Object.isFrozen(config.paths))
 })
+
+test('世界时钟（K12）：新配置键的默认值与校验', () => {
+  const defaults = normalizeConfig({})
+  assert.equal(defaults.clockStepMinutes, 10)
+  assert.equal(defaults.clockIdleStepMinutes, 1)
+  assert.equal(defaults.clockActiveWindowMs, 600000)
+
+  const custom = normalizeConfig({ clockStepMinutes: 0, clockIdleStepMinutes: 2, clockActiveWindowMs: 0 })
+  assert.equal(custom.clockStepMinutes, 0)
+  assert.equal(custom.clockIdleStepMinutes, 2)
+  assert.equal(custom.clockActiveWindowMs, 0)
+
+  for (const key of ['clockStepMinutes', 'clockIdleStepMinutes', 'clockActiveWindowMs']) {
+    assert.throws(
+      () => normalizeConfig({ [key]: -1 }),
+      (error) => error instanceof Error && error.message.includes(`invalid config key ${key}:`),
+      key,
+    )
+  }
+})
+
+test('事件黑板订阅（K4）：3 个新键的默认值、合法覆盖与非法值', () => {
+  const defaults = normalizeConfig({})
+  assert.equal(defaults.subscriptionEnabled, true)
+  assert.equal(defaults.subscriptionMainIntervalMs, 600000)
+  assert.equal(defaults.subscriptionMaxChars, 2000)
+
+  const custom = normalizeConfig({ subscriptionEnabled: false, subscriptionMainIntervalMs: 0, subscriptionMaxChars: 1 })
+  assert.equal(custom.subscriptionEnabled, false)
+  assert.equal(custom.subscriptionMainIntervalMs, 0)
+  assert.equal(custom.subscriptionMaxChars, 1)
+
+  const invalid = [
+    [{ subscriptionEnabled: 'yes' }, 'subscriptionEnabled'],
+    [{ subscriptionEnabled: 1 }, 'subscriptionEnabled'],
+    [{ subscriptionMainIntervalMs: -1 }, 'subscriptionMainIntervalMs'],
+    [{ subscriptionMainIntervalMs: 1.5 }, 'subscriptionMainIntervalMs'],
+    [{ subscriptionMainIntervalMs: '600000' }, 'subscriptionMainIntervalMs'],
+    [{ subscriptionMaxChars: 0 }, 'subscriptionMaxChars'],
+    [{ subscriptionMaxChars: 2000.5 }, 'subscriptionMaxChars'],
+  ]
+  for (const [raw, key] of invalid) {
+    assert.throws(
+      () => normalizeConfig(raw),
+      (error) => error instanceof Error && error.message.includes(`invalid config key ${key}:`),
+      JSON.stringify(raw),
+    )
+  }
+})
+test('对话摘要 Feed（K10）：dialogExcerptChars / dialogFeedSize 默认值、覆盖与非法值', () => {
+  const defaults = normalizeConfig({})
+  assert.equal(defaults.dialogExcerptChars, 160)
+  assert.equal(defaults.dialogFeedSize, 20)
+
+  const custom = normalizeConfig({ dialogExcerptChars: 40, dialogFeedSize: 1 })
+  assert.equal(custom.dialogExcerptChars, 40)
+  assert.equal(custom.dialogFeedSize, 1)
+
+  const invalid = [
+    [{ dialogExcerptChars: 0 }, 'dialogExcerptChars'],
+    [{ dialogExcerptChars: -3 }, 'dialogExcerptChars'],
+    [{ dialogExcerptChars: 1.5 }, 'dialogExcerptChars'],
+    [{ dialogExcerptChars: '160' }, 'dialogExcerptChars'],
+    [{ dialogFeedSize: 0 }, 'dialogFeedSize'],
+    [{ dialogFeedSize: -1 }, 'dialogFeedSize'],
+  ]
+  for (const [raw, key] of invalid) {
+    assert.throws(
+      () => normalizeConfig(raw),
+      (error) => error instanceof Error && error.message.includes(`invalid config key ${key}:`),
+      JSON.stringify(raw),
+    )
+  }
+})
+test('K17 订阅间隔状态路径：默认空串、自定义字符串、非法类型', () => {
+  assert.equal(normalizeConfig({}).subscriptionStatePath, '')
+  assert.equal(normalizeConfig({ subscriptionStatePath: '/tmp/astrbox/sub.json' }).subscriptionStatePath, '/tmp/astrbox/sub.json')
+  assert.equal(normalizeConfig({ subscriptionStatePath: 'relative-sub.json' }).subscriptionStatePath, 'relative-sub.json')
+  for (const value of [3, null, true, {}]) {
+    assert.throws(
+      () => normalizeConfig({ subscriptionStatePath: value }),
+      (error) => error instanceof Error && error.message.includes('invalid config key subscriptionStatePath:'),
+      JSON.stringify(value),
+    )
+  }
+})

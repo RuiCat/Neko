@@ -5,6 +5,9 @@
  * - `cwd` 按目录边界匹配 `workspacePrefix`（`<prefix>-old` 不命中）；
  * - 同一 `(kind, sessionId, turn)` 只发一次，去重表按会话上限 256；
  * - 监听器整体 try/catch，绝不向宿主同步抛错；发送是 fire-and-forget。
+ *
+ * K6 扩展（可选 `entityOfCwd(cwd)`）：绑定实体的 cwd 即使不在 `workspacePrefix` 内也发送，
+ * 并在事件里带 `entity`；未传钩子或未命中时行为与未扩展前一致（默认实体、前缀门控）。
  */
 import { summarizeTurn } from './turnSummary.mjs'
 
@@ -25,14 +28,30 @@ export function matchesWorkspace(cwd, prefix) {
 }
 
 /**
- * 建会话事件发送器。
- * @param {{client: object, config: object, logger: object, isActive?: () => boolean}} options 依赖
+ * 建会话事件发送器。`entityOfCwd` 为 K6 可选钩子：命中返回绑定实体 id（跳过前缀门控并带上 `entity`）。
+ * @param {{client: object, config: object, logger: object, isActive?: () => boolean, entityOfCwd?: (cwd: unknown) => string | undefined}} options
+ *   `entityOfCwd` 返回 undefined 表示未命中（沿用旧前缀门控与默认实体）。
  * @returns {{sessionCreated: Function, turnStopping: Function, dispose: Function, dedupeSize: Function}} 发送器
  */
 export function createSessionEventSender(options) {
-  const { client, config, logger, isActive = () => true } = options
+  const { client, config, logger, isActive = () => true, entityOfCwd } = options
   const seen = new Map()
   let disposed = false
+
+  /**
+   * 解析 cwd 对应的绑定实体；未提供钩子、未命中或钩子抛错都返回 undefined（不打断发送流程）。
+   * @param {unknown} cwd 会话工作目录
+   * @returns {string | undefined} 绑定实体 id
+   */
+  function boundEntity(cwd) {
+    if (typeof entityOfCwd !== 'function') return undefined
+    try {
+      const entity = entityOfCwd(cwd)
+      return typeof entity === 'string' && entity !== '' ? entity : undefined
+    } catch {
+      return undefined
+    }
+  }
 
   /** 记录并判断该事件是否已发送过；超上限时淘汰最早的一条。 */
   function alreadySent(kind, sessionId, turn) {
@@ -72,34 +91,40 @@ export function createSessionEventSender(options) {
   }
 
   return {
-    /** 处理 `session/created`：只上报 cwd 命中前缀的会话。 */
+    /** 处理 `session/created`：绑定命中的会话总是上报（带 entity），否则只上报 cwd 命中前缀的会话。 */
     sessionCreated(session) {
       try {
         const cwd = session?.header?.cwd
-        if (!matchesWorkspace(cwd, config.workspacePrefix)) return
+        const entity = boundEntity(cwd)
+        if (entity === undefined && !matchesWorkspace(cwd, config.workspacePrefix)) return
         const sessionId = session?.id
         if (typeof sessionId !== 'string' || sessionId === '') return
         if (alreadySent('session-created', sessionId, undefined)) return
-        send({ kind: 'session-created', sessionId, cwd })
+        const event = { kind: 'session-created', sessionId, cwd }
+        if (entity !== undefined) event.entity = entity
+        send(event)
       } catch (error) {
         warn(`session/created 处理失败（已忽略）：${error instanceof Error ? error.message : String(error)}`)
       }
     },
 
-    /** 处理 `agent/turn-stopping`：上报 turn-end（带可选轮次摘要），turn 必须是整数。 */
+    /** 处理 `agent/turn-stopping`：绑定命中的会话总是上报（带 entity）；否则沿用前缀门控。 */
     turnStopping(payload) {
       try {
         const session = payload?.agent?.session
         const cwd = session?.header?.cwd
         const turn = payload?.turn
         if (!Number.isInteger(turn)) return
-        if (!matchesWorkspace(cwd, config.workspacePrefix)) return
+        const entity = boundEntity(cwd)
+        if (entity === undefined && !matchesWorkspace(cwd, config.workspacePrefix)) return
         const sessionId = session?.id
         if (typeof sessionId !== 'string' || sessionId === '') return
         if (alreadySent('turn-end', sessionId, turn)) return
         // 摘要只做观测：取不到就省略字段，保持旧请求体兼容。
         const summary = summarizeTurn(session, turn)
         const event = { kind: 'turn-end', sessionId, cwd, turn }
+        if (entity !== undefined) event.entity = entity
+        // 摘要只做观测：取不到就省略字段，保持旧请求体兼容。
         if (summary !== undefined) event.summary = summary
         send(event)
       } catch (error) {

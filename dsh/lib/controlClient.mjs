@@ -143,15 +143,44 @@ export function createControlClient(options) {
     },
 
     /**
+     * `GET /entities`：只读 NPC 实体目录（K3）。
+     * @returns {Promise<any>} 响应体 `{entities: [{id, type}]}`（id 升序，不含 data）
+     */
+    async getEntities() {
+      const response = await send({ method: 'GET', path: '/entities', timeoutMs: requestTimeoutMs })
+      if (response.status !== 200) throw errorFromResponse(response)
+      return response.body
+    },
+
+    /**
+     * `GET /blackboard`：事件黑板（只读，K3 控制面契约）。
+     * @param {{entity?: string}} [query] 实体；缺省时返回全部黑板（`{ok, boards}`）
+     * @returns {Promise<any>} 响应体：`{ok, board}` 或 `{ok, boards}`
+     */
+    async getBlackboard(query = {}) {
+      const entity = typeof query?.entity === 'string' && query.entity !== '' ? query.entity : undefined
+      const path = entity === undefined ? '/blackboard' : `/blackboard?${new URLSearchParams({ entity }).toString()}`
+      const response = await send({ method: 'GET', path, timeoutMs: requestTimeoutMs })
+      if (response.status !== 200) throw errorFromResponse(response)
+      return response.body
+    },
+
+    /**
      * `POST /tick`：单飞由服务端 409 兜底；409 作为“跳过”结果返回而不抛错。
      * @param {{scope?: string}} [request] tick 参数
      * @returns {Promise<{status: number, busy: boolean, body: any}>} 结果
      */
     async postTick(request = {}) {
+      // 可选的世界时钟推进：只有活跃会话期间桥接才会带上（0 不带字段，保持旧协议）。
+      const advanceMinutes = Number.isInteger(request.advanceMinutes) && request.advanceMinutes > 0
+        ? request.advanceMinutes
+        : 0
       const response = await send({
         method: 'POST',
         path: '/tick',
-        body: { scope: request.scope ?? '' },
+        body: advanceMinutes > 0
+          ? { scope: request.scope ?? '', advanceMinutes }
+          : { scope: request.scope ?? '' },
         timeoutMs: tickTimeoutMs,
       })
       if (response.status === 409) return { status: 409, busy: true, body: response.body }

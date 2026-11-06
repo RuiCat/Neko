@@ -2,19 +2,39 @@
   "name": "dsh-astrbox",
   "version": "0.0.0",
   "private": true,
-  "description": "DSH bundle for astrbox: static usage prompt, per-turn state snapshot, tick and session-event bridge",
+  "description": "DSH bundle for astrbox: Neko panel entry (embedded Neko status view + DSH session chat), static usage prompt, per-turn state snapshot, tick and session-event bridge",
   "type": "module",
   "main": "./lib/plugin.mjs",
+  "icon": "icon.svg",
   "exports": {
     ".": "./lib/plugin.mjs",
+    "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
     "./package.json": "./package.json"
   },
+  "files": [
+    "lib/**/*.mjs",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-remotes"
+      ]
     }
   }
 }

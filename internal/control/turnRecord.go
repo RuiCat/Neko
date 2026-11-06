@@ -14,9 +14,11 @@ import (
 	"github.com/RuiCat/Neko/internal/journal"
 )
 
-// recordDSHTurn persists one complete DSH turn. It is a no-op for other event
-// kinds, turns without an assistant digest, or runtimes without a journal.
-func (s *Server) recordDSHTurn(request sessionEventRequest) {
+// recordDSHTurn persists one complete DSH turn for the effective entity the
+// request was applied to (the server default when the request carried none). It
+// is a no-op for other event kinds, turns without an assistant digest, or
+// runtimes without a journal.
+func (s *Server) recordDSHTurn(request sessionEventRequest, entityID string) {
 	if request.Kind != KIND_TURN_END || request.Summary == nil {
 		return
 	}
@@ -29,7 +31,7 @@ func (s *Server) recordDSHTurn(request sessionEventRequest) {
 	}
 	now := time.Now()
 	turnID := s.runtime.JournalSequence.Next(now)
-	snapshot, pkg, active, err := s.buildTurnContext(context.Background(), turnID, s.entityID, now)
+	snapshot, pkg, active, err := s.buildTurnContext(context.Background(), turnID, entityID, now)
 	if err != nil {
 		log.Printf("astrbox: DSH 轮记录失败: %v", err)
 		return

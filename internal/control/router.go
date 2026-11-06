@@ -16,6 +16,16 @@ func (s *Server) dispatch(r *http.Request) response {
 			return methodNotAllowed(http.MethodGet)
 		}
 		return s.handleState(r)
+	case "/entities":
+		if r.Method != http.MethodGet {
+			return methodNotAllowed(http.MethodGet)
+		}
+		return s.handleEntities()
+	case "/blackboard":
+		if r.Method != http.MethodGet {
+			return methodNotAllowed(http.MethodGet)
+		}
+		return s.handleBlackboard(r)
 	case "/tick":
 		if r.Method != http.MethodPost {
 			return methodNotAllowed(http.MethodPost)

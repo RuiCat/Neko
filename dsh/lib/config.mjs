@@ -22,15 +22,46 @@ export const DEFAULT_PATHS = Object.freeze([
   '任务.当前任务',
 ])
 
+/** 默认人设路径（K5；4 项基础人设 + `人格` 子集，默认不含 R18 字段）。 */
+export const DEFAULT_PERSONA_PATHS = Object.freeze([
+  '种族',
+  '体型',
+  '毛色',
+  '自称',
+  '对主人称呼',
+  '人格.MBTI',
+  '人格.气质类型',
+])
+
 /** K2 冻结的默认配置。 */
 export const DEFAULT_CONFIG = Object.freeze({
   socketPath: resolve(REPO_ROOT, 'data', 'dsh-control.sock'),
   entity: '猫猫',
   paths: DEFAULT_PATHS,
+  personaPaths: DEFAULT_PERSONA_PATHS,
+  personaMaxChars: 600,
   promptMaxChars: 1200,
   promptRefreshMs: 5000,
   tickEveryMs: 60000,
   tickScope: '',
+  /** 活跃窗口内每 tick 推进的世界时钟分钟数（0 = 关闭时钟）。 */
+  clockStepMinutes: 10,
+  /** 空闲时每 tick 推进的世界时钟分钟数（默认 1 = 空闲也慢速周期推进；0 = 暂停）。 */
+  clockIdleStepMinutes: 1,
+  /** 最近多久内有会话活动算「活跃」（毫秒）。 */
+  clockActiveWindowMs: 600000,
+  /** 事件黑板订阅总开关（K4）：false = 不推主会话、不注入子会话。 */
+  subscriptionEnabled: true,
+  /** 主会话主动读取黑板的最小间隔（毫秒，K5）。 */
+  subscriptionMainIntervalMs: 600000,
+  /** 单条订阅文本上限（字符，超限截断并追加 `…（截断）`，K4）。 */
+  subscriptionMaxChars: 2000,
+  /** 对话摘要每条 user/assistant 文本的字符上限（K10）。 */
+  dialogExcerptChars: 160,
+  /** 每实体保留的最近对话条数（K10）。 */
+  dialogFeedSize: 20,
+  /** 订阅间隔覆盖持久化路径（K17）；空串 = `~/.dsh-astrbox/subscription.json`。 */
+  subscriptionStatePath: '',
   workspacePrefix: REPO_ROOT,
   functionName: 'dsh_on_event',
   requestTimeoutMs: 2000,
@@ -41,15 +72,29 @@ export const DEFAULT_CONFIG = Object.freeze({
 /** 整数键 → 允许的最小值（0 表示允许 0，如 tickEveryMs=0 关闭定时器）。 */
 const INTEGER_KEYS = Object.freeze({
   promptMaxChars: 1,
+  personaMaxChars: 1,
   promptRefreshMs: 0,
   tickEveryMs: 0,
+  clockStepMinutes: 0,
+  clockIdleStepMinutes: 0,
+  clockActiveWindowMs: 0,
+  subscriptionMainIntervalMs: 0,
+  subscriptionMaxChars: 1,
+  dialogExcerptChars: 1,
+  dialogFeedSize: 1,
   requestTimeoutMs: 1,
   tickTimeoutMs: 1,
   warningAfterMs: 0,
 })
 
-/** 必须为非空字符串的键（tickScope 允许空串，单独处理）。 */
+/** 布尔键（K4 订阅开关）。 */
+const BOOLEAN_KEYS = Object.freeze(['subscriptionEnabled'])
+
+/** 必须为非空字符串的键。 */
 const NON_EMPTY_STRING_KEYS = Object.freeze(['entity', 'functionName'])
+
+/** 允许空串的字符串键（空串有特殊语义：tickScope=全量；subscriptionStatePath=默认路径）。 */
+const STRING_KEYS = Object.freeze(['tickScope', 'subscriptionStatePath'])
 
 /** 必须是绝对或相对路径且含分隔符的键。 */
 const PATH_KEYS = Object.freeze(['socketPath', 'workspacePrefix'])
@@ -106,16 +151,16 @@ function checkInteger(key, value, min) {
 }
 
 /**
- * 校验并规范化 `paths`：字符串数组，每个元素是点分路径。
+ * 校验并规范化点分路径数组：元素必须是非空字符串；空数组合法（`personaPaths=[]` 关闭人设）。
+ * @param {string} key 配置键名（错误信息与元素下标都用它）
  * @param {unknown} value 原始值
  * @returns {string[]} 冻结的路径数组
  */
-function checkPaths(value) {
-  if (!Array.isArray(value)) invalid('paths', `expected an array of dot paths, got ${describeValue(value)}`)
+function checkDotPaths(key, value) {
+  if (!Array.isArray(value)) invalid(key, `expected an array of dot paths, got ${describeValue(value)}`)
   const paths = value.map((item, index) => {
-    const key = `paths[${index}]`
     if (typeof item !== 'string' || item.trim() === '') {
-      invalid(key, `expected a non-empty dot path, got ${describeValue(item)}`)
+      invalid(`${key}[${index}]`, `expected a non-empty dot path, got ${describeValue(item)}`)
     }
     return item
   })
@@ -136,20 +181,26 @@ export function normalizeConfig(raw = {}) {
     if (!KNOWN_KEYS.has(key)) invalid(key, 'unknown key')
   }
 
-  const config = { ...DEFAULT_CONFIG, paths: [...DEFAULT_PATHS] }
+  const config = { ...DEFAULT_CONFIG, paths: [...DEFAULT_PATHS], personaPaths: [...DEFAULT_PERSONA_PATHS] }
   for (const key of PATH_KEYS) {
     if (source[key] !== undefined) config[key] = checkPath(key, source[key])
   }
   for (const key of NON_EMPTY_STRING_KEYS) {
     if (source[key] !== undefined) config[key] = checkNonEmptyString(key, source[key])
   }
-  if (source.tickScope !== undefined) {
-    if (typeof source.tickScope !== 'string') {
-      invalid('tickScope', `expected a string, got ${describeValue(source.tickScope)}`)
-    }
-    config.tickScope = source.tickScope
+  for (const key of STRING_KEYS) {
+    if (source[key] === undefined) continue
+    if (typeof source[key] !== 'string') invalid(key, `expected a string, got ${describeValue(source[key])}`)
+    config[key] = source[key]
   }
-  if (source.paths !== undefined) config.paths = checkPaths(source.paths)
+  if (source.paths !== undefined) config.paths = checkDotPaths('paths', source.paths)
+  if (source.personaPaths !== undefined) config.personaPaths = checkDotPaths('personaPaths', source.personaPaths)
+  for (const key of BOOLEAN_KEYS) {
+    if (source[key] !== undefined && typeof source[key] !== 'boolean') {
+      invalid(key, `expected a boolean, got ${describeValue(source[key])}`)
+    }
+    if (source[key] !== undefined) config[key] = source[key]
+  }
   for (const [key, min] of Object.entries(INTEGER_KEYS)) {
     if (source[key] !== undefined) config[key] = checkInteger(key, source[key], min)
   }
