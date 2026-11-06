@@ -14,6 +14,7 @@ import (
 	"github.com/RuiCat/Neko/internal/diagnostics"
 	"github.com/RuiCat/Neko/internal/engine"
 	"github.com/RuiCat/Neko/internal/entity"
+	"github.com/RuiCat/Neko/internal/eventboard"
 	"github.com/RuiCat/Neko/internal/events"
 	"github.com/RuiCat/Neko/internal/expert"
 	"github.com/RuiCat/Neko/internal/function"
@@ -65,7 +66,10 @@ type Runtime struct {
 	// HardState defines which fields the snapshot captures.
 	HardState hardstate.Schema
 	Board     *blackboard.Board
-	Experts   *expert.Registry
+	// EventBoards keeps every entity's change board (K1); the tick writes it and
+	// the control plane serves it.
+	EventBoards *eventboard.Registry
+	Experts     *expert.Registry
 	// ExpertsPath is where the expert contexts are persisted.
 	ExpertsPath     string
 	Assembler       *compensation.Assembler
@@ -157,6 +161,13 @@ func New(options Options) (*Runtime, error) {
 		journalWriter = journal.NewWriter(journalDir)
 	}
 	board := blackboard.New()
+	eventBoards := eventboard.New(filepath.Join(options.DataDir, eventboard.FILE_NAME))
+	if err := eventBoards.Load(); err != nil {
+		log.Printf("astrbox: 加载事件黑板失败（按空黑板继续）: %v", err)
+	}
+	// The first observation of an existing entity only fixes its baseline: no
+	// entries and no version until a tick actually changes its state.
+	eventBoards.Observe(storeIDs(store))
 	experts := expert.NewDefaultRegistry(expert.DEFAULT_CONTEXT_CAPACITY)
 	expertsPath := filepath.Join(options.DataDir, "experts.json")
 	if err := expert.LoadFile(expertsPath, experts); err != nil {
@@ -177,6 +188,7 @@ func New(options Options) (*Runtime, error) {
 		JournalSequence: sequence,
 		HardState:       hardstate.DefaultSchema(),
 		Board:           board,
+		EventBoards:     eventBoards,
 		Experts:         experts,
 		ExpertsPath:     expertsPath,
 		Assembler:       assembler,
@@ -224,7 +236,20 @@ func (r *Runtime) NewMCPServer() *mcpserver.Server {
 	if r.Assembler != nil {
 		server.SetLearningLoop(r.Board, r.Assembler)
 	}
+	if r.EventBoards != nil {
+		server.SetEventBoards(r.EventBoards)
+	}
 	return server
+}
+
+// storeIDs lists the entity ids of a loaded store, for baseline observation.
+func storeIDs(store *entity.Store) []string {
+	all := store.ListAll()
+	ids := make([]string, 0, len(all))
+	for _, ent := range all {
+		ids = append(ids, ent.ID)
+	}
+	return ids
 }
 
 func loadRules(path string) ([]engine.Rule, error) {

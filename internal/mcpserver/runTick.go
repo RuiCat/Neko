@@ -25,6 +25,10 @@ type TickOptions struct {
 	// SkipJournal suppresses the per-tick TurnRecord. The chat loop sets it
 	// because it writes one complete record (input + answer) for the turn.
 	SkipJournal bool
+	// AdvanceMinutes advances the in-world clock before the tick runs (0 keeps
+	// the clock frozen). The DSH bridge sets it only while a session has recent
+	// activity, so the world clock follows interaction instead of wall time.
+	AdvanceMinutes int
 }
 
 // RunTick executes one state-machine tick, blocking until the shared gate is
@@ -59,6 +63,10 @@ func (s *Server) runTickLocked(scope string, options TickOptions) (engine.TickRe
 	if scope == "" {
 		scope = "*"
 	}
+	if options.AdvanceMinutes > 0 {
+		// In-world clock: only the tick path advances it, before rules evaluate.
+		s.AdvanceWorldClock(options.AdvanceMinutes)
+	}
 	result := s.machine.Tick(scope)
 	s.recordTick(result)
 	if s.logger != nil {
@@ -67,6 +75,9 @@ func (s *Server) runTickLocked(scope string, options TickOptions) (engine.TickRe
 	if !options.SkipJournal {
 		s.appendTurnRecord(result)
 	}
+	// Record this tick's changes on the per-entity boards before the store save;
+	// a board failure only logs and never fails the tick (K2).
+	s.applyEventBoards(result)
 	if options.SkipSaveWhenUnchanged && len(result.Transitions) == 0 && len(result.Conflicts) == 0 {
 		return result, nil
 	}

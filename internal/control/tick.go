@@ -14,6 +14,10 @@ import (
 // tickRequest is the POST /tick body; an absent body means an empty scope.
 type tickRequest struct {
 	Scope string `json:"scope"`
+	// AdvanceMinutes asks the tick to advance the in-world clock first. The DSH
+	// bridge sets it only while a session had recent activity ("active clock").
+	// 0 (absent) keeps the clock frozen; 1..1440 minutes is accepted.
+	AdvanceMinutes int `json:"advanceMinutes"`
 }
 
 // handleTick runs one tick through the shared TryRunTick implementation so a
@@ -31,8 +35,11 @@ func (s *Server) handleTick(r *http.Request) response {
 			return badRequest("请求体不是合法 JSON: " + err.Error())
 		}
 	}
+	if request.AdvanceMinutes < 0 || request.AdvanceMinutes > mcpserver.MAX_CLOCK_ADVANCE_MINUTES {
+		return badRequest(fmt.Sprintf("advanceMinutes 必须在 0..%d 之间", mcpserver.MAX_CLOCK_ADVANCE_MINUTES))
+	}
 	result, acquired, err := s.mcp.TryRunTick(request.Scope,
-		mcpserver.TickOptions{SkipSaveWhenUnchanged: true})
+		mcpserver.TickOptions{SkipSaveWhenUnchanged: true, AdvanceMinutes: request.AdvanceMinutes})
 	if !acquired {
 		return tickBusy()
 	}
@@ -45,9 +52,15 @@ func (s *Server) handleTick(r *http.Request) response {
 			note: fmt.Sprintf("tickId=%s status=%s save_failed", result.TickID, result.Status)}
 	}
 	body["ok"] = true
-	return response{status: http.StatusOK, body: body,
-		note: fmt.Sprintf("tickId=%s status=%s transitions=%d conflicts=%d",
-			result.TickID, result.Status, len(result.Transitions), len(result.Conflicts))}
+	note := fmt.Sprintf("tickId=%s status=%s transitions=%d conflicts=%d",
+		result.TickID, result.Status, len(result.Transitions), len(result.Conflicts))
+	if request.AdvanceMinutes > 0 {
+		worldTime := s.mcp.WorldTime()
+		body["advanceMinutes"] = request.AdvanceMinutes
+		body["worldTime"] = worldTime
+		note += fmt.Sprintf(" clock=+%dm worldTime=%s", request.AdvanceMinutes, worldTime)
+	}
+	return response{status: http.StatusOK, body: body, note: note}
 }
 
 // tickBody turns a TickResult into the K1 payload (tickId plus the unchanged

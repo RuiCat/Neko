@@ -48,3 +48,5 @@ scripts/*.tmp
 /data/experts.json
 /data/candidates.jsonl
 /data/rules.json
+runs
+/data/blackboard.json

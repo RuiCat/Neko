@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Neko panel">
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#2b2f3a"/>
+  <path d="M14 26 11 13l12 7M50 26l3-13-12 7" fill="#f4c95d" stroke="#f4c95d" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M32 22c11 0 19 7.5 19 17S43 56 32 56 13 48.3 13 39s8-17 19-17Z" fill="#f4c95d"/>
+  <ellipse cx="24" cy="38" rx="3.4" ry="4.6" fill="#2b2f3a"/>
+  <ellipse cx="40" cy="38" rx="3.4" ry="4.6" fill="#2b2f3a"/>
+  <path d="M28 47c2.6 2 5.4 2 8 0" fill="none" stroke="#2b2f3a" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M24 52h-16M40 52h16" stroke="#2b2f3a" stroke-width="2.4" stroke-linecap="round" opacity="0"/>
+</svg>

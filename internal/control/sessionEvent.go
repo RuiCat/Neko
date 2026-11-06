@@ -13,6 +13,9 @@ const (
 	KIND_SESSION_CREATED = "session-created"
 	// KIND_TURN_END marks the end of one agent turn.
 	KIND_TURN_END = "turn-end"
+	// CODE_ENTITY_NOT_FOUND marks a session-event entity that does not exist;
+	// the event is rejected before any session or state side effect.
+	CODE_ENTITY_NOT_FOUND = "entity_not_found"
 )
 
 // sessionEventRequest is the POST /session-event body (K1).
@@ -24,6 +27,10 @@ type sessionEventRequest struct {
 	// Function optionally overrides the configured callback name; empty keeps
 	// the server default (dsh_on_event by default).
 	Function string `json:"function"`
+	// Entity optionally selects the entity the event is applied to; empty or
+	// blank keeps the server default entity, so old clients keep the old
+	// behaviour (K3).
+	Entity string `json:"entity"`
 	// Summary is the optional turn digest the bridge reports with turn-end.
 	Summary *sessionEventSummary `json:"summary"`
 }
@@ -72,6 +79,26 @@ func (request sessionEventRequest) validate() error {
 	return nil
 }
 
+// effectiveEntityID resolves the entity one event applies to. An explicit id
+// must exist, so an unknown one is rejected here — after request validation,
+// before the callback-missing early return and before any session or driver
+// side effect — because the event must not reach callbacks or disk for an
+// entity that cannot be resolved (K3). An absent or blank id keeps the server
+// default and its legacy existence check at the callback path, so old clients
+// keep the old behaviour.
+func (s *Server) effectiveEntityID(request sessionEventRequest) (string, *response) {
+	requested := strings.TrimSpace(request.Entity)
+	if requested == "" {
+		return s.entityID, nil
+	}
+	if s.runtime.Store.Get(requested) == nil {
+		rejected := failure(http.StatusNotFound, CODE_ENTITY_NOT_FOUND,
+			fmt.Sprintf("实体 '%s' 不存在", requested))
+		return "", &rejected
+	}
+	return requested, nil
+}
+
 // handleSessionEvent calls the registered .neko callback and saves under
 // Server.WithStateWrite so it serializes with ticks and state sets. When the
 // callback is not registered the event is only logged.
@@ -86,6 +113,10 @@ func (s *Server) handleSessionEvent(r *http.Request) response {
 	}
 	if err := request.validate(); err != nil {
 		return badRequest(err.Error())
+	}
+	effectiveEntity, rejected := s.effectiveEntityID(request)
+	if rejected != nil {
+		return *rejected
 	}
 	// Remember the session so turn records written by later ticks carry it.
 	s.mcp.SetSessionID(request.SessionID)
@@ -111,15 +142,15 @@ func (s *Server) handleSessionEvent(r *http.Request) response {
 		}
 	}
 	if !s.runtime.Funcs.Has(functionName) {
-		s.recordDSHTurn(request)
+		s.recordDSHTurn(request, effectiveEntity)
 		return response{status: http.StatusOK, body: map[string]any{
 			"ok": true, "applied": "logged",
 		}, note: note + " callback=missing"}
 	}
 
-	entity := s.runtime.Store.Get(s.entityID)
+	entity := s.runtime.Store.Get(effectiveEntity)
 	if entity == nil {
-		return notFound(fmt.Sprintf("实体 '%s' 不存在", s.entityID))
+		return notFound(fmt.Sprintf("实体 '%s' 不存在", effectiveEntity))
 	}
 	writeErr := s.mcp.WithStateWrite(func() error {
 		args := []any{request.Kind, request.SessionID, request.Cwd, turn}
@@ -141,7 +172,7 @@ func (s *Server) handleSessionEvent(r *http.Request) response {
 				"error": map[string]any{"code": CODE_INTERNAL, "message": writeErr.Error()}},
 			note: note + " callback=failed"}
 	}
-	s.recordDSHTurn(request)
+	s.recordDSHTurn(request, effectiveEntity)
 	return response{status: http.StatusOK, body: map[string]any{
 		"ok": true, "applied": "function",
 	}, note: note + " callback=ok"}

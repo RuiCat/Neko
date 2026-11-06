@@ -17,6 +17,7 @@ import (
 	"github.com/RuiCat/Neko/internal/driver"
 	"github.com/RuiCat/Neko/internal/engine"
 	"github.com/RuiCat/Neko/internal/entity"
+	"github.com/RuiCat/Neko/internal/eventboard"
 	"github.com/RuiCat/Neko/internal/events"
 	"github.com/RuiCat/Neko/internal/hardstate"
 	"github.com/RuiCat/Neko/internal/journal"
@@ -56,6 +57,9 @@ type Server struct {
 	// board and assembler enable the compensation dry-run per tick.
 	board     *blackboard.Board
 	assembler *compensation.Assembler
+	// eventBoards records every tick's per-entity changes (K1/K2); nil disables
+	// the board side effect without changing tick behavior.
+	eventBoards *eventboard.Registry
 }
 
 // New builds an MCP server over an initialized store, engine and registry.

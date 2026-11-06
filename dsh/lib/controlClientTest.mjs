@@ -26,6 +26,44 @@ test('/state 使用 socketPath 发出实体与重复 path 参数', async (t) => 
   assert.deepEqual(url.searchParams.getAll('path'), ['状态.情绪', '任务.当前任务'])
 })
 
+test('/entities 走 GET 并返回实体目录（K3）', async (t) => {
+  const server = await startControlServer((req, res) => {
+    writeJson(res, 200, {
+      entities: [
+        { id: 'helper', type: 'NPC' },
+        { id: '猫猫', type: 'NPC猫' },
+        { id: '场景', type: '场景' },
+      ],
+    })
+  })
+  t.after(() => server.close())
+  const client = createControlClient({ socketPath: server.socketPath, requestTimeoutMs: 2000 })
+  t.after(() => client.dispose())
+
+  const body = await client.getEntities()
+  assert.equal(server.requests.length, 1)
+  assert.equal(server.requests[0].method, 'GET')
+  assert.equal(server.requests[0].url, '/entities')
+  assert.deepEqual(
+    body.entities.map((entity) => entity.id),
+    ['helper', '猫猫', '场景'],
+  )
+})
+
+test('/entities 非 200 响应映射为带 K1 错误码的 ControlError', async (t) => {
+  const server = await startControlServer((req, res) => {
+    writeJson(res, 405, { ok: false, error: { code: 'method_not_allowed', message: '只支持 GET' } })
+  })
+  t.after(() => server.close())
+  const client = createControlClient({ socketPath: server.socketPath, requestTimeoutMs: 2000 })
+  t.after(() => client.dispose())
+
+  await assert.rejects(
+    () => client.getEntities(),
+    (error) => error instanceof ControlError && error.code === 'method_not_allowed',
+  )
+})
+
 test('/tick 200 与 409 跳过语义', async (t) => {
   let status = 200
   const server = await startControlServer((req, res) => {
@@ -110,5 +148,64 @@ test('非 JSON 响应报 bad_response', async (t) => {
   await assert.rejects(
     () => client.getState({ entity: '猫猫', paths: [] }),
     (error) => error instanceof ControlError && error.code === 'bad_response',
+  )
+})
+
+test('/tick 只在 advanceMinutes>0 时带该字段（旧协议兼容）', async (t) => {
+  const server = await startControlServer((req, res) => {
+    writeJson(res, 200, { ok: true, tickId: 't', status: 'ok', transitions: 0, conflicts: 0, errors: [] })
+  })
+  t.after(() => server.close())
+  const client = createControlClient({ socketPath: server.socketPath, requestTimeoutMs: 2000 })
+  t.after(() => client.dispose())
+
+  await client.postTick({ scope: '' })
+  await client.postTick({ scope: '', advanceMinutes: 10 })
+  await client.postTick({ scope: '', advanceMinutes: 0 })
+
+  const bodies = server.requests.filter((request) => request.url === '/tick').map((request) => request.body)
+  assert.equal(bodies[0].advanceMinutes, undefined)
+  assert.equal(bodies[1].advanceMinutes, 10)
+  assert.equal(bodies[2].advanceMinutes, undefined)
+})
+
+test('/blackboard 无参数走 GET 且返回 boards；?entity= 只带实体参数（K3/K7）', async (t) => {
+  const server = await startControlServer((req, res) => {
+    const entity = new URL(req.url, 'http://localhost').searchParams.get('entity')
+    if (entity === null) {
+      writeJson(res, 200, { ok: true, boards: [{ entity: '梦梦', version: 2, entries: [] }] })
+      return
+    }
+    writeJson(res, 200, { ok: true, board: entity === '梦梦' ? { entity, version: 2, entries: [] } : null })
+  })
+  t.after(() => server.close())
+  const client = createControlClient({ socketPath: server.socketPath, requestTimeoutMs: 2000 })
+  t.after(() => client.dispose())
+
+  const all = await client.getBlackboard()
+  assert.equal(all.ok, true)
+  assert.equal(all.boards.length, 1)
+  assert.equal(server.requests[0].method, 'GET')
+  assert.equal(server.requests[0].url, '/blackboard')
+
+  const one = await client.getBlackboard({ entity: '梦梦' })
+  assert.equal(one.board.version, 2)
+  assert.deepEqual(server.requests[1].url, `/blackboard?entity=${encodeURIComponent('梦梦')}`)
+
+  const missing = await client.getBlackboard({ entity: 'unknown' })
+  assert.equal(missing.board, null)
+})
+
+test('/blackboard 非 200 映射为带 K1 错误码的 ControlError', async (t) => {
+  const server = await startControlServer((req, res) => {
+    writeJson(res, 405, { ok: false, error: { code: 'method_not_allowed', message: '只支持 GET' } })
+  })
+  t.after(() => server.close())
+  const client = createControlClient({ socketPath: server.socketPath, requestTimeoutMs: 2000 })
+  t.after(() => client.dispose())
+
+  await assert.rejects(
+    () => client.getBlackboard({ entity: '梦梦' }),
+    (error) => error instanceof ControlError && error.code === 'method_not_allowed',
   )
 })

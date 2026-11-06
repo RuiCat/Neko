@@ -155,3 +155,45 @@ func TestTickUsesSharedRunTick(t *testing.T) {
 		t.Fatalf("state = %v (%v)", value, err)
 	}
 }
+
+// TestTickAdvancesWorldClock covers the DSH bridge's active-clock request:
+// advanceMinutes moves 世界.环境.当前时间 before rules run and is echoed back;
+// out-of-range values are rejected without touching the clock.
+func TestTickAdvancesWorldClock(t *testing.T) {
+	env := newTestEnv(t, Options{})
+	if _, err := env.runtime.Store.Create("世界", "世界", map[string]any{
+		"环境": map[string]any{"当前时间": "2026-08-05T17:00:00+08:00", "当前月份": 8},
+		"状态": map[string]any{"阶段": "下午"},
+	}, nil); err != nil {
+		t.Fatalf("create world: %v", err)
+	}
+
+	recorder := env.call(t, http.MethodPost, "/tick", []byte(`{"scope":"","advanceMinutes":10}`))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	payload := decodeBody(t, recorder)
+	if got := payload["worldTime"]; got != "2026-08-05T17:10:00+08:00" {
+		t.Fatalf("worldTime = %v", got)
+	}
+	if got := payload["advanceMinutes"]; got != float64(10) {
+		t.Fatalf("advanceMinutes = %v", got)
+	}
+	world := env.runtime.Store.Get("世界")
+	phase, err := world.Get("状态.阶段")
+	if err != nil || phase != "下午" {
+		t.Fatalf("phase = %v (%v)", phase, err)
+	}
+
+	bad := env.call(t, http.MethodPost, "/tick", []byte(`{"scope":"","advanceMinutes":-1}`))
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("negative advance status = %d, want 400", bad.Code)
+	}
+	tooBig := env.call(t, http.MethodPost, "/tick", []byte(`{"scope":"","advanceMinutes":2000}`))
+	if tooBig.Code != http.StatusBadRequest {
+		t.Fatalf("too-large advance status = %d, want 400", tooBig.Code)
+	}
+	if time, _ := world.Get("环境.当前时间"); time != "2026-08-05T17:10:00+08:00" {
+		t.Fatalf("clock changed by a rejected request: %v", time)
+	}
+}

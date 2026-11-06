@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Neko 面板",
+    "description": "左侧栏入口：内嵌 Neko Monitor 状态界面，并可在一个 DSH 会话里与猫猫聊天。"
+  }
+}

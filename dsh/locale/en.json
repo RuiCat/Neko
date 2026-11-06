@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Neko panel",
+    "description": "Sidebar entry with the embedded Neko Monitor status view and a chat pane bound to a DSH session."
+  }
+}

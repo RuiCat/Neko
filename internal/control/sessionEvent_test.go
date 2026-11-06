@@ -1,13 +1,17 @@
 package control
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/RuiCat/Neko/internal/journal"
 	"github.com/RuiCat/Neko/internal/neko"
 )
 
@@ -215,6 +219,200 @@ func TestSessionEventValidation(t *testing.T) {
 	}
 	if allow := wrongMethod.Header().Get("Allow"); allow != http.MethodPost {
 		t.Fatalf("allow = %q", allow)
+	}
+}
+
+// TestSessionEventExplicitEntity covers K3: an explicit request entity makes
+// the callback and the following Save act on that entity, not on the server
+// default.
+func TestSessionEventExplicitEntity(t *testing.T) {
+	env := newTestEnv(t, Options{})
+	env.registerSessionFunction(t, DEFAULT_FUNCTION_NAME)
+	if _, err := env.runtime.Store.Create("梦梦", "NPC", nil, nil); err != nil {
+		t.Fatalf("create entity: %v", err)
+	}
+	body := []byte(`{"kind":"turn-end","sessionId":"s-entity","cwd":"/tmp/work","turn":4,"entity":"梦梦"}`)
+	recorder := env.call(t, http.MethodPost, "/session-event", body)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	if payload := decodeBody(t, recorder); payload["applied"] != "function" {
+		t.Fatalf("applied = %v", payload["applied"])
+	}
+	entity := env.runtime.Store.Get("梦梦")
+	if value, err := entity.Get("状态.最后会话"); err != nil || value != "s-entity" {
+		t.Fatalf("梦梦.状态.最后会话 = %v (%v)", value, err)
+	}
+	if value, err := entity.Get("状态.最后轮次"); err != nil || value != 4 {
+		t.Fatalf("梦梦.状态.最后轮次 = %v (%v)", value, err)
+	}
+	if _, err := env.runtime.Store.Get("猫猫").Get("状态.最后事件"); err == nil {
+		t.Fatalf("默认实体不应被回写")
+	}
+	raw, err := os.ReadFile(filepath.Join(env.dataDir, "user", "entities.json"))
+	if err != nil || !strings.Contains(string(raw), "s-entity") {
+		t.Fatalf("保存文件未包含绑定实体回写: %v (%s)", err, raw)
+	}
+}
+
+// TestSessionEventUnknownEntityRejected covers K3: an explicit unknown entity
+// answers 404 entity_not_found and never reaches the callback or the disk.
+func TestSessionEventUnknownEntityRejected(t *testing.T) {
+	env := newTestEnv(t, Options{})
+	env.registerSessionFunction(t, DEFAULT_FUNCTION_NAME)
+	body := []byte(`{"kind":"turn-end","sessionId":"s-ghost","cwd":"/tmp/work","turn":1,"entity":"不存在"}`)
+	recorder := env.call(t, http.MethodPost, "/session-event", body)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	payload := decodeBody(t, recorder)
+	if code := errorCode(t, payload); code != CODE_ENTITY_NOT_FOUND {
+		t.Fatalf("code = %s", code)
+	}
+	errorObject, _ := payload["error"].(map[string]any)
+	if message, _ := errorObject["message"].(string); !strings.Contains(message, "不存在") {
+		t.Fatalf("message = %q", message)
+	}
+	if _, err := env.runtime.Store.Get("猫猫").Get("状态.最后事件"); err == nil {
+		t.Fatalf("未知实体不应触发回调")
+	}
+	env.assertEntityFilesDoNotContain(t, "s-ghost")
+}
+
+// TestSessionEventUnknownEntityBeforeCallbackMissing is the ordering
+// regression: entity validation runs before the callback-missing early return,
+// so an unknown entity is still 404 when no .neko callback is registered.
+func TestSessionEventUnknownEntityBeforeCallbackMissing(t *testing.T) {
+	env := newTestEnv(t, Options{})
+	body := []byte(`{"kind":"session-created","sessionId":"s-order","cwd":"/tmp/work","entity":"幽灵"}`)
+	recorder := env.call(t, http.MethodPost, "/session-event", body)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	if code := errorCode(t, decodeBody(t, recorder)); code != CODE_ENTITY_NOT_FOUND {
+		t.Fatalf("code = %s", code)
+	}
+	logText := env.controlLogText(t)
+	if !strings.Contains(logText, "POST /session-event 404") {
+		t.Fatalf("控制日志未记录 404: %s", logText)
+	}
+	if strings.Contains(logText, "callback=missing") {
+		t.Fatalf("未知实体不应走到 callback=missing 早退: %s", logText)
+	}
+	env.assertEntityFilesDoNotContain(t, "s-order")
+}
+
+// TestSessionEventDefaultEntityFallback covers K3's compatibility half: an
+// absent or blank entity keeps the server default entity and the legacy
+// applied=function behaviour.
+func TestSessionEventDefaultEntityFallback(t *testing.T) {
+	env := newTestEnv(t, Options{Entity: "梦梦"})
+	env.registerSessionFunction(t, DEFAULT_FUNCTION_NAME)
+	if _, err := env.runtime.Store.Create("梦梦", "NPC", nil, nil); err != nil {
+		t.Fatalf("create entity: %v", err)
+	}
+	cases := []struct {
+		name      string
+		sessionID string
+		body      string
+	}{
+		{"absent", "s-default", `{"kind":"turn-end","sessionId":"s-default","cwd":"/tmp/work","turn":2}`},
+		{"blank", "s-blank", `{"kind":"turn-end","sessionId":"s-blank","cwd":"/tmp/work","turn":3,"entity":""}`},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			recorder := env.call(t, http.MethodPost, "/session-event", []byte(testCase.body))
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d (%s)", recorder.Code, recorder.Body.String())
+			}
+			if payload := decodeBody(t, recorder); payload["applied"] != "function" {
+				t.Fatalf("applied = %v", payload["applied"])
+			}
+			entity := env.runtime.Store.Get("梦梦")
+			if value, err := entity.Get("状态.最后会话"); err != nil || value != testCase.sessionID {
+				t.Fatalf("默认实体.状态.最后会话 = %v (%v)", value, err)
+			}
+		})
+	}
+	if _, err := env.runtime.Store.Get("猫猫").Get("状态.最后事件"); err == nil {
+		t.Fatalf("非默认实体不应被回写")
+	}
+}
+
+// TestSessionEventExplicitEntityDrivesTurnRecord covers the recordDSHTurn half
+// of K3: the journaled snapshot belongs to the request entity, not the default.
+func TestSessionEventExplicitEntityDrivesTurnRecord(t *testing.T) {
+	runtime, server := newJournalEnv(t)
+	if _, err := runtime.Store.Create("梦梦", "NPC", nil, nil); err != nil {
+		t.Fatalf("create entity: %v", err)
+	}
+	body, err := json.Marshal(map[string]any{
+		"kind": "turn-end", "sessionId": "s-record", "cwd": "/tmp/x", "turn": 2,
+		"entity":  "梦梦",
+		"summary": map[string]any{"assistantDigest": "喵，我在。", "userDigest": "在吗？"},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/session-event", bytes.NewReader(body))
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	if err := runtime.Close(); err != nil {
+		t.Fatalf("close runtime: %v", err)
+	}
+	records, err := journal.ReadDir(filepath.Join(runtime.DataDir, "journal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, record := range records {
+		if record.Source != journal.SOURCE_DSH_TURN {
+			continue
+		}
+		found = true
+		if record.Compensation.StateSource != "state_machine_snapshot" {
+			t.Fatalf("补偿包来源 %q", record.Compensation.StateSource)
+		}
+		hasEntity := false
+		for key := range record.Snapshot.State {
+			if strings.HasPrefix(key, "梦梦.") {
+				hasEntity = true
+			}
+			if strings.HasPrefix(key, "猫猫.") {
+				t.Fatalf("快照应属于 梦梦，却出现 %s", key)
+			}
+		}
+		if !hasEntity {
+			t.Fatalf("快照缺少 梦梦 状态: %v", record.Snapshot.State)
+		}
+	}
+	if !found {
+		t.Fatalf("缺少 DSH 轮记录（全部 %d 条）", len(records))
+	}
+}
+
+// assertEntityFilesDoNotContain fails when either persisted entities file
+// carries needle; it is how "the rejected event never reached Save" is checked
+// without depending on whether bootstrap pre-created the files.
+func (env *testEnv) assertEntityFilesDoNotContain(t *testing.T, needle string) {
+	t.Helper()
+	for _, path := range []string{
+		filepath.Join(env.dataDir, "entities.json"),
+		filepath.Join(env.dataDir, "user", "entities.json"),
+	} {
+		raw, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatalf("读取 %s: %v", path, err)
+		}
+		if strings.Contains(string(raw), needle) {
+			t.Fatalf("%s 不应包含 %q: %s", path, needle, raw)
+		}
 	}
 }
 
