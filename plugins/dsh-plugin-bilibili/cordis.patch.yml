@@ -1,0 +1,7 @@
+# dsh-plugin-bilibili bundle patch：把 B 站工具挂进 profile 组合树。
+#
+# 字幕常需要登录态：把 cookie 写进 config.cookie（或用环境变量 DSH_BILIBILI_COOKIE），
+# 本包不读取任何凭据文件，也不主动登录。
+- insert:
+    - id: bilibili
+      name: 'dsh-plugin-bilibili'

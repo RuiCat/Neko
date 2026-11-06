@@ -50,3 +50,5 @@ scripts/*.tmp
 /data/rules.json
 runs
 /data/blackboard.json
+/plugins/dsh-qqbot/
+/plugins/*/node_modules/

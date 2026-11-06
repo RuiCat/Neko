@@ -1,0 +1,20 @@
+# dsh-plugin-qq bundle patch：把 QQ 工具挂进 profile 组合树。
+#
+# 安全默认：enabled=false、dryRun=true —— 不改这里只用工具看状态，不会发出任何消息。
+# 要真发消息，必须同时显式配置 enabled: true 与 dryRun: false，并列出白名单会话：
+#
+#   - insert:
+#       - id: qq
+#         name: 'dsh-plugin-qq'
+#         config:
+#           enabled: true
+#           dryRun: false
+#           apiBase: 'http://127.0.0.1:3000'
+#           token: ''            # 令牌留空则不带 Authorization 头
+#           watchGroups: ['123456']
+#           watchUsers: ['10001']
+#
+# 后端（NapCat / go-cqhttp / LLOneBot）需自行启动并开启 OneBot 11 HTTP 服务。
+- insert:
+    - id: qq
+      name: 'dsh-plugin-qq'
