@@ -1,0 +1,8 @@
+# dsh-plugin-diary bundle patch：把日记工具挂进 profile 组合树。
+#
+# `dsh plugin --profile <name> add <本目录>` 会把本包加入 profile 的
+# dsh.profile.bundles；启动时 app-boot 按 bundle 顺序应用各包的 patch 列表，
+# 下面这条 insert 就是真正挂载插件的那一行。config 可覆盖默认目录与上限。
+- insert:
+    - id: diary
+      name: 'dsh-plugin-diary'
