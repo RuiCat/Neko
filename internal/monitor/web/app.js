@@ -9,8 +9,6 @@ const viewApi = createView(layout.refs);
 const actions = createActions({ viewApi, inputs: layout.inputs });
 
 Object.assign(handlers, {
-  onTick: actions.runTick,
-  onRefresh: actions.refreshAll,
   onWrite: actions.submitWrite,
   onSelect: actions.selectEntity,
   onFilter: (value) => {

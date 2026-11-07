@@ -8,11 +8,10 @@ export const createLayout = (handlers) => {
   root.appendChild(app);
 
   const statusPill = P.createStatusPill("连接中…", "info");
-  const tickButton = P.createButton({ text: "运行 Tick", type: "primary", onClick: () => handlers.onTick?.() });
-  const refreshButton = P.createButton({ text: "刷新", type: "secondary", onClick: () => handlers.onRefresh?.() });
   const navbar = P.createNavbar({ items: ["Neko Monitor"] });
+  // 手动 tick / 刷新已移到 Neko 面板控制区（K22），监控页只保留状态与数据视图。
   app.body.appendChild(P.createPanel({
-    tag: "div", bare: true, className: "monitor-header", body: [navbar, statusPill, tickButton, refreshButton],
+    tag: "div", bare: true, className: "monitor-header", body: [navbar, statusPill],
   }));
 
   const splitHost = P.createPanel({ tag: "div", bare: true, className: "monitor-split" });
