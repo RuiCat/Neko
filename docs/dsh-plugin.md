@@ -17,6 +17,8 @@
   或经 QQ bot 直发私聊/群聊。
   订阅间隔工具（K17）：`astrbox_subscription` 让主会话读取/设置自己的订阅推送间隔（1..1440 分钟，
   持久化到 `<subscriptionStatePath 或 ~/.dsh-astrbox/subscription.json>`），reset 回到全局默认。
+  控制工具与面板控制（K21/K22）：桥接把 `/astrbox/control/*` 代理到控制面（手动 tick、世界时钟设定、
+  实体目录/状态读写、实体删除），面板新增「控制」区（时钟 +15/+60/设定、手动 tick、实体状态编辑）。
   `turn-end` 携带的助手摘要会被控制面回写成一条 `source=dsh-turn` 的 complete TurnRecord
   （`answer` = 摘要、`user_input` = 用户摘要），并写入专家隔离上下文，供下一轮补偿包召回；
   引擎的周期 tick 记录标 `source=tick`，指标/回放会跳过它们。
@@ -391,6 +393,48 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
 > 调大间隔可减少主体被订阅消息打断；调小（最小 1 分钟）适合联调验证。间隔只影响主会话推送，
 > 子会话的 pre-step 注入（K13）不受影响。
 
+## 控制工具与面板控制（K21/K22）
+
+桥接在同一个 `webServer` 注入路径上注册 `/astrbox/control/*` 代理路由（`webServer` 缺失时整段跳过），
+转发到本地控制面（Unix socket）的 K19 写/时钟/删除路由。桥接只做输入校验与错误映射，不缓存、
+不改写控制面语义。
+
+### 代理路由（K21）
+
+| 面板请求 | 转发到控制面 | 说明 |
+|---|---|---|
+| `POST /astrbox/control/tick` `{advanceMinutes?}` | `POST /tick` | 手动推进状态机；`advanceMinutes` 透传；控制面 409（单飞占用）原样 409 回面板 |
+| `POST /astrbox/control/clock` `{minutes?}` 或 `{time?}` | `POST /clock` | `minutes` 1..1440 或 RFC3339 `time`（二选一） |
+| `GET /astrbox/control/entities` | `GET /entities` | 实体目录 |
+| `GET /astrbox/control/state?entity=&path=…` | `GET /state` | `path` 可重复 |
+| `POST /astrbox/control/state` `{entity,path?,value?,values?}` | `POST /state` | `path/value` 与 `values` 二选一 |
+| `POST /astrbox/control/entity-delete` `{entity}` | `POST /entities/delete` | 删除实体（控制面同时清该实体黑板） |
+
+- 语义：非 GET/POST → `405`；JSON/字段非法 → `400 {ok:false,error:{code:'invalid_request'}}`；
+  控制面不可达或返回错误 → `500 {ok:false,error}`；成功原样透传控制面 body。
+- `controlClient.mjs` 新增 `setState(body)` / `setClock(body)` / `deleteEntity(entity)`（`getEntities` 已有），
+  复用现有 `send`/`ControlError` 语义。
+- 实现：`dsh/lib/controlRoutes.mjs`（路由代理）+ `dsh/lib/controlClient.mjs`（控制面客户端）。
+- 信任边界与黑板路由一致：只在 DSH Web 同源下由面板调用；写路由直接改引擎状态，**不要**把 Web
+  端口暴露到局域网。
+
+### 面板控制区（K22）
+
+面板右栏在黑板卡片下方新增「控制」区（不恢复会话聊天）：
+
+| 控件 | 行为 |
+|---|---|
+| 世界时钟徽标 | 显示 `世界.环境.当前时间` 与 `阶段`（读 `GET /astrbox/control/state`，实体 `世界`） |
+| `+15 分钟` / `+60 分钟` | `POST /astrbox/control/clock {minutes}`，成功后刷新时钟与黑板 |
+| `datetime-local` + `设定` | 本地时间转 RFC3339（带本地时区偏移）→ `POST /astrbox/control/clock {time}` |
+| `手动 tick` | `POST /astrbox/control/tick`，显示 `已执行`；409 时显示可读错误 |
+| 实体状态编辑 | 实体下拉（`GET /astrbox/control/entities`）+ path + value（JSON 文本框）+ `写入` → `POST /astrbox/control/state` |
+
+- value 按 JSON 解析：`"开心"`、`92`、`{"a":1}` 均可；解析失败/缺字段就地提示，不发送请求。
+- 所有请求失败显示可读错误，面板不崩；操作进行中按钮禁用；成功后自动刷新时钟与黑板。
+- 单文件约束：`client.js` 不能 import，纯函数（`toRfc3339`/`parseJsonValue`/`statePayload`）经
+  `__test` 出口单测；本功能后 `client.js` 有效代码 498 行（上限 <500）。
+
 ## Neko 面板（左侧栏入口）
 
 bundle 同时提供浏览器半 `dsh/lib/client.js`（`package.json` 的 `dsh.client` 声明 +
@@ -402,6 +446,7 @@ order 50，图标是猫脸），并把页面挂到主列 `main` 槽位的同名 
 |---|---|---|
 | 左侧状态 | iframe 内嵌 Neko Monitor 页面，带地址输入、刷新、新标签打开 | `http://127.0.0.1:8765/monitor/`（默认值；面板内改后存浏览器 localStorage） |
 | 右侧事件黑板 | 每个实体一块卡片：`entity`、`版本 N`、`更新时间 HH:MM:SS`、变化行 `path：from → to`（规则以小字展示）；无变化显示「暂无变化（等待状态机事件）」 | 同源 `GET /astrbox/blackboard`（桥接路由，K7） |
+| 右侧控制区 | 世界时钟显示 + `+15/+60 分钟`/`datetime-local` 设定、手动 tick、实体状态编辑 | 同源 `/astrbox/control/*`（桥接代理，K21/K22） |
 
 面板**不再有会话列表/聊天**（会话选择、消息气泡、输入框与 prompt 发送逻辑已删除，K8）：
 会话上下文的阅读与发送走 DSH 自己的会话界面，面板只负责 Neko 状态与事件黑板。
@@ -554,5 +599,6 @@ make clean                                      # 只删 bin/，不动 data/
 - `dsh/cordis.patch.yml.template`：占位符模板（版本库内，不含机器绝对路径）
 - `dsh/lib/`：插件运行时（`blackboardText.mjs` 订阅文本、`blackboardRoute.mjs` 面板黑板路由、
   `dialogFeed.mjs` 对话摘要 Feed、`relayTool.mjs` 跨会话转达工具、
-  `subscriptionInterval.mjs` 间隔覆盖存储、`subscriptionTool.mjs` 间隔工具）；
+  `subscriptionInterval.mjs` 间隔覆盖存储、`subscriptionTool.mjs` 间隔工具、
+  `controlRoutes.mjs` 控制面代理路由）；
   `docs/mcp-tools.md`：19 个 MCP 工具的参考

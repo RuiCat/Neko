@@ -4,8 +4,8 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -13,6 +13,7 @@ import (
 	"github.com/RuiCat/Neko/internal/blackboard"
 	"github.com/RuiCat/Neko/internal/compensation"
 	"github.com/RuiCat/Neko/internal/config"
+	"github.com/RuiCat/Neko/internal/control/ops"
 	"github.com/RuiCat/Neko/internal/diagnostics"
 	"github.com/RuiCat/Neko/internal/driver"
 	"github.com/RuiCat/Neko/internal/engine"
@@ -60,6 +61,9 @@ type Server struct {
 	// eventBoards records every tick's per-entity changes (K1/K2); nil disables
 	// the board side effect without changing tick behavior.
 	eventBoards *eventboard.Registry
+	// opsDeps backs the operational tools (nightly/judge/candidates/repair);
+	// bootstrap wires it from the runtime.
+	opsDeps ops.Deps
 }
 
 // New builds an MCP server over an initialized store, engine and registry.
@@ -140,6 +144,9 @@ func (s *Server) MCPServer() *mcp.Server {
 	s.addStatsTool(server)
 	s.addSnapshotTool(server)
 	s.addEventLogTool(server)
+	s.addBlackboardTool(server)
+	s.addWorldClockTool(server)
+	s.addOpsTools(server)
 	if s.contextTools {
 		s.addContextTools(server)
 	}
@@ -174,9 +181,10 @@ type entityGetArgs struct {
 }
 
 type entitySetArgs struct {
-	Entity string `json:"entity" jsonschema:"实体ID"`
-	Path   string `json:"path" jsonschema:"点分路径"`
-	Value  string `json:"value" jsonschema:"值（JSON 或纯文本）"`
+	Entity string         `json:"entity" jsonschema:"实体ID"`
+	Path   string         `json:"path,omitempty" jsonschema:"点分路径；与 values 二选一"`
+	Value  string         `json:"value,omitempty" jsonschema:"值（JSON 或纯文本）；与 path 配对"`
+	Values map[string]any `json:"values,omitempty" jsonschema:"批量写入：path → 值（JSON 或纯文本）；与 path/value 二选一"`
 }
 
 type entityQueryArgs struct {
@@ -187,6 +195,10 @@ type entityCreateArgs struct {
 	Type string `json:"type" jsonschema:"实体类型（需存在模板）"`
 	Name string `json:"name" jsonschema:"实体ID（唯一）"`
 	Data string `json:"data,omitempty" jsonschema:"初始数据（JSON）"`
+}
+
+type entityDeleteArgs struct {
+	Entity string `json:"entity" jsonschema:"实体ID（不可撤销：同时删除该实体的事件黑板）"`
 }
 
 func (s *Server) addEntityTools(server *mcp.Server) {
@@ -212,28 +224,20 @@ func (s *Server) addEntityTools(server *mcp.Server) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "entity_state_set",
-		Description: "写入实体状态值并落盘。",
+		Description: "写入实体状态值并落盘：path/value 单条，或 values 批量（path → 值）。",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args entitySetArgs) (*mcp.CallToolResult, any, error) {
-		value := parseValue(args.Value)
-		if err := s.WithStateWrite(func() error {
-			ent := s.store.Get(args.Entity)
-			if ent == nil {
-				return fmt.Errorf("实体 '%s' 不存在", args.Entity)
-			}
-			if check := hardstate.CheckWrite(s.hardStateSchema, args.Entity, args.Path, hardstate.SOURCE_MCP); check.HardState && !check.Allowed {
-				log.Printf("astrbox: 硬状态写入告警: %s", check.Reason)
-			}
-			if err := ent.Set(args.Path, value); err != nil {
-				return fmt.Errorf("写入失败: %s", err)
-			}
-			if err := s.store.Save(); err != nil {
-				return fmt.Errorf("保存失败: %s", err)
-			}
-			return nil
-		}); err != nil {
+		values, err := args.setValues()
+		if err != nil {
 			return fail("%s", err)
 		}
-		return textResult(fmt.Sprintf("✅ 已设置 %s.%s = %s", args.Entity, args.Path, jsonString(value)))
+		paths, err := s.WriteEntityPaths(args.Entity, values, hardstate.SOURCE_MCP)
+		if err != nil {
+			if errors.Is(err, ErrEntityMissing) {
+				return fail("实体 '%s' 不存在。可用: %s", args.Entity, jsonString(s.entityIDs()))
+			}
+			return fail("%s", err)
+		}
+		return jsonResult(map[string]any{"ok": true, "entity": args.Entity, "paths": paths})
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -281,6 +285,23 @@ func (s *Server) addEntityTools(server *mcp.Server) {
 			return fail("%s", err)
 		}
 		return textResult(fmt.Sprintf("✅ 已创建实体 %s (类型: %s)", args.Name, args.Type))
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "entity_delete",
+		Description: "删除实体及其事件黑板并落盘（不可撤销）。实体不存在时返回错误。",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args entityDeleteArgs) (*mcp.CallToolResult, any, error) {
+		entityID := strings.TrimSpace(args.Entity)
+		if entityID == "" {
+			return fail("缺少 entity")
+		}
+		if err := s.DeleteEntity(entityID); err != nil {
+			if errors.Is(err, ErrEntityMissing) {
+				return fail("实体 '%s' 不存在。可用: %s", entityID, jsonString(s.entityIDs()))
+			}
+			return fail("%s", err)
+		}
+		return jsonResult(map[string]any{"ok": true, "deleted": entityID})
 	})
 }
 

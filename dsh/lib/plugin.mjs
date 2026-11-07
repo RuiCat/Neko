@@ -16,6 +16,7 @@
 import { randomUUID } from 'node:crypto'
 import { createHostBridge } from './astrboxService.mjs'
 import { registerBlackboardRoute } from './blackboardRoute.mjs'
+import { registerControlRoutes } from './controlRoutes.mjs'
 import { formatSubscriptionText } from './blackboardText.mjs'
 import { createDialogFeed, dialogKind, turnDialogExcerpt } from './dialogFeed.mjs'
 import { createRelayTool } from './relayTool.mjs'
@@ -108,6 +109,7 @@ function createRuntime(options) {
   /** 每实体黑板缓存：entity → { board, checkedAt, failures, inflight }（K7）。 */
   const boardCache = new Map()
   let disposeBlackboardRoute
+  let disposeControlRoutes
   let relayTool
   let disposeRelay
   let subscriptionTool
@@ -564,6 +566,30 @@ function createRuntime(options) {
   }
 
   /**
+   * K21：把 `/astrbox/control/*` 挂到同一个 webServer（缺失时整段跳过，插件照常工作）。
+   * 控制面写语义由 Go 侧实现；桥接只做转发与输入校验。
+   */
+  function installControlRoutes() {
+    if (typeof ctx.inject !== 'function') return
+    try {
+      ctx.inject(['webServer'], (scoped) => {
+        if (disposed) return
+        const webServer = scoped?.webServer ?? (typeof scoped?.get === 'function' ? scoped.get('webServer') : undefined)
+        if (webServer === undefined || typeof webServer.register !== 'function') return
+        const disposeRoutes = registerControlRoutes(webServer, { client, logger })
+        disposeControlRoutes = disposeRoutes
+        try {
+          if (typeof scoped?.effect === 'function') scoped.effect(() => disposeRoutes, 'astrbox-bridge.control-routes')
+        } catch (error) {
+          logger.warnOnce('control-route', `控制路由生命周期注册失败（只记日志）：${errorMessage(error)}`)
+        }
+      })
+    } catch (error) {
+      logger.warnOnce('control-route', `控制路由注入失败（面板控制不可用）：${errorMessage(error)}`)
+    }
+  }
+
+  /**
    * K10：会话标题作为对话行标记（qqbot 已把 `私聊(…)`/`群聊(…)` 写进 sessionTitle，K14）。
    * 服务缺失/会话未 live/抛错都返回 `''`（只影响标记，不影响记录）。
    * @param {object|undefined} session Session
@@ -773,6 +799,7 @@ function createRuntime(options) {
     }
   }
   installBlackboardRoute()
+  installControlRoutes()
   installTools()
 
   return {
@@ -797,6 +824,11 @@ function createRuntime(options) {
       }
       try {
         disposeBlackboardRoute?.()
+      } catch {
+        // 路由可能已随 webServer fiber 释放：忽略。
+      }
+      try {
+        disposeControlRoutes?.()
       } catch {
         // 路由可能已随 webServer fiber 释放：忽略。
       }

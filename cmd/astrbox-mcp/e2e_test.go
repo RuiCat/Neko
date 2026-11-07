@@ -109,8 +109,8 @@ func TestMCPStdioEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if len(tools.Tools) != 17 {
-		t.Fatalf("tools = %d, want 17", len(tools.Tools))
+	if len(tools.Tools) != 26 {
+		t.Fatalf("tools = %d, want 26", len(tools.Tools))
 	}
 
 	var inventory map[string]any

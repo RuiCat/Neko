@@ -11,6 +11,7 @@ import (
 	"github.com/RuiCat/Neko/internal/blackboard"
 	"github.com/RuiCat/Neko/internal/compensation"
 	"github.com/RuiCat/Neko/internal/config"
+	"github.com/RuiCat/Neko/internal/control/ops"
 	"github.com/RuiCat/Neko/internal/diagnostics"
 	"github.com/RuiCat/Neko/internal/engine"
 	"github.com/RuiCat/Neko/internal/entity"
@@ -239,6 +240,9 @@ func (r *Runtime) NewMCPServer() *mcpserver.Server {
 	if r.EventBoards != nil {
 		server.SetEventBoards(r.EventBoards)
 	}
+	server.SetOpsDeps(ops.Deps{
+		Store: r.Store, Machine: r.Machine, Experts: r.Experts, DataDir: r.DataDir,
+	})
 	return server
 }
 

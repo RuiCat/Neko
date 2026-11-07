@@ -19,6 +19,8 @@ const (
 	CODE_TICK_BUSY = "tick_busy"
 	// CODE_INTERNAL marks a failed write or save.
 	CODE_INTERNAL = "internal"
+	// CODE_CONFLICT marks an operation refused by a gate (repair regression).
+	CODE_CONFLICT = "conflict"
 	// CODE_SHUTTING_DOWN marks requests that arrive while the server exits.
 	CODE_SHUTTING_DOWN = "shutting_down"
 	// CODE_DEADLINE_EXCEEDED marks a request past the server-side deadline.

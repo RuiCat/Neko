@@ -418,9 +418,11 @@ test('K7 路由挂载：webServer 可用时注册 GET /astrbox/blackboard；缺�
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, promptRefreshMs: 0 })
   t.after(() => runtime.dispose())
 
-  assert.equal(routes.length, 1)
-  assert.equal(routes[0].kind, 'exact')
-  assert.equal(routes[0].path, '/astrbox/blackboard')
+  // K21 之后同一 webServer 还注册控制路由；这里按 path 精确取黑板路由。
+  const blackboardRoute = routes.find((route) => route.path === '/astrbox/blackboard')
+  assert.ok(blackboardRoute, '应注册 GET /astrbox/blackboard')
+  assert.equal(blackboardRoute.kind, 'exact')
+  assert.ok(routes.some((route) => route.path === '/astrbox/control/tick'), '应注册控制路由（K21）')
 
   const res = {
     statusCode: 0,
@@ -434,7 +436,7 @@ test('K7 路由挂载：webServer 可用时注册 GET /astrbox/blackboard；缺�
       this.body = JSON.parse(text)
     },
   }
-  routes[0].handler({ method: 'GET', url: '/astrbox/blackboard?entity=%E6%A2%A6%E6%A2%A6' }, res)
+  blackboardRoute.handler({ method: 'GET', url: '/astrbox/blackboard?entity=%E6%A2%A6%E6%A2%A6' }, res)
   assert.equal(res.statusCode, 200)
   assert.deepEqual(res.body, { ok: true, entity: '梦梦', board: null })
 
@@ -452,11 +454,11 @@ test('K7 路由挂载：webServer 可用时注册 GET /astrbox/blackboard；缺�
         this.body = JSON.parse(text)
       },
     }
-    routes[0].handler({ method: 'GET', url: '/astrbox/blackboard?entity=%E6%A2%A6%E6%A2%A6' }, probe)
+    blackboardRoute.handler({ method: 'GET', url: '/astrbox/blackboard?entity=%E6%A2%A6%E6%A2%A6' }, probe)
     return probe.body.board !== null
   })
   const final = { statusCode: 0, headers: {}, writeHead(status) { this.statusCode = status }, end(text) { this.body = JSON.parse(text) } }
-  routes[0].handler({ method: 'GET', url: '/astrbox/blackboard' }, final)
+  blackboardRoute.handler({ method: 'GET', url: '/astrbox/blackboard' }, final)
   assert.equal(final.body.ok, true)
   assert.ok(final.body.boards.some((item) => item.entity === '梦梦' && item.board.version === 5))
 

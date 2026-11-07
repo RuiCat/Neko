@@ -1,15 +1,14 @@
-// judge.go exposes the read-only C3 verdict and queues uncovered candidates
-// for later review instead of blocking the turn.
+// judge.go wires the C3 judge endpoints to the shared candidate operations:
+// legal verdicts stay read-only, uncovered ones are queued for review.
 package control
 
 import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
-	"strings"
 
 	"github.com/RuiCat/Neko/internal/candidates"
-	"github.com/RuiCat/Neko/internal/engine"
+	"github.com/RuiCat/Neko/internal/control/ops"
 )
 
 // judgeRequest is the POST /judge body.
@@ -22,6 +21,7 @@ type judgeRequest struct {
 }
 
 // candidateStore returns the shared candidate file under the data directory.
+// The teacher-signal path appends directly; judge/candidates go through ops.
 func (s *Server) candidateStore() *candidates.Store {
 	return candidates.NewStore(filepath.Join(s.dataDir, "candidates.jsonl"))
 }
@@ -37,55 +37,18 @@ func (s *Server) handleJudge(r *http.Request) response {
 	if err := json.Unmarshal(raw, &request); err != nil {
 		return badRequest("请求体不是合法 JSON: " + err.Error())
 	}
-	if strings.TrimSpace(request.EntityID) == "" {
-		return badRequest("缺少 entity_id")
-	}
-	if strings.TrimSpace(request.Path) == "" {
-		return badRequest("缺少 path")
-	}
-	verdict, err := s.runtime.Machine.Judge(engine.Candidate{
+	body, err := ops.Judge(s.opsDeps(), ops.JudgeRequest{
 		EntityID: request.EntityID,
 		Path:     request.Path,
 		Proposed: request.Proposed,
 		Source:   request.Source,
 		Evidence: request.Evidence,
 	})
-	if err != nil {
-		return internalError("裁决失败: " + err.Error())
-	}
-	responseBody := map[string]any{
-		"ok":      true,
-		"verdict": verdict,
-		"queued":  false,
-	}
-	if verdict.Status != engine.VERDICT_UNCOVERED {
-		return response{status: http.StatusOK, body: responseBody}
-	}
-	record, err := s.candidateStore().Append(candidates.Record{
-		EntityID: request.EntityID,
-		Path:     request.Path,
-		Proposed: request.Proposed,
-		Source:   request.Source,
-		Evidence: request.Evidence,
-		Reason:   verdict.Reason,
-	})
-	if err != nil {
-		return internalError("候选入队失败: " + err.Error())
-	}
-	responseBody["queued"] = true
-	responseBody["candidate_id"] = record.ID
-	return response{status: http.StatusOK, body: responseBody}
+	return opsResponse(body, err)
 }
 
 // handleCandidates lists pending candidates for review.
 func (s *Server) handleCandidates(r *http.Request) response {
-	records, err := s.candidateStore().List(candidates.STATUS_PENDING)
-	if err != nil {
-		return internalError("读取候选失败: " + err.Error())
-	}
-	return response{status: http.StatusOK, body: map[string]any{
-		"ok":    true,
-		"count": len(records),
-		"items": records,
-	}}
+	body, err := ops.Candidates(s.opsDeps())
+	return opsResponse(body, err)
 }

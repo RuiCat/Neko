@@ -35,6 +35,8 @@ window.__ModuleLoader__.load({
     const BOARDS_REFRESH_MS = 10000
     /** 同源黑板数据路由（桥接注册，K7）。 */
     const BOARDS_PATH = '/astrbox/blackboard'
+    /** 同源控制面代理路由（桥接注册，K21）；世界时钟实体（K22）内联在 ControlPane。 */
+    const CONTROL_BASE = '/astrbox/control'
 
     /** 中文文案（键集真源）。 */
     const ZH = {
@@ -55,6 +57,8 @@ window.__ModuleLoader__.load({
       'board.version': '版本 {version}',
       'board.updated': '更新 {time}',
       'board.rules': '规则 {rules}',
+      'control.title': '控制', 'control.tick': '手动 tick', 'control.add15': '+15 分钟', 'control.add60': '+60 分钟', 'control.time': '世界时间', 'control.setTime': '设定',
+      'control.unknown': '时间未知', 'control.entity': '实体', 'control.path': '路径', 'control.value': '值（JSON）', 'control.write': '写入', 'control.pick': '选择实体', 'control.done': '已执行', 'control.badJson': '值不是合法 JSON：{error}', 'control.badTime': '时间格式无效', 'control.needFields': '请选择实体并填写路径',
     }
 
     /** 英文文案：与 ZH 同键集。 */
@@ -76,6 +80,8 @@ window.__ModuleLoader__.load({
       'board.version': 'Version {version}',
       'board.updated': 'Updated {time}',
       'board.rules': 'Rules {rules}',
+      'control.title': 'Control', 'control.tick': 'Manual tick', 'control.add15': '+15 min', 'control.add60': '+60 min', 'control.time': 'World time', 'control.setTime': 'Set',
+      'control.unknown': 'Unknown time', 'control.entity': 'Entity', 'control.path': 'Path', 'control.value': 'Value (JSON)', 'control.write': 'Write', 'control.pick': 'Pick entity', 'control.done': 'Done', 'control.badJson': 'Not valid JSON: {error}', 'control.badTime': 'Invalid time', 'control.needFields': 'Pick an entity and fill the path',
     }
 
     /**
@@ -239,6 +245,47 @@ window.__ModuleLoader__.load({
       return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
     }
 
+    /** datetime-local → 本地时区 RFC3339；非法输入返回 `''`（K22）。 */
+    function toRfc3339(localValue) {
+      const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(localValue ?? '').trim())
+      if (match === null) return ''
+      const [, year, month, day, hour, minute, second = '00'] = match
+      const date = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`)
+      if (Number.isNaN(date.getTime())) return ''
+      const offset = -date.getTimezoneOffset()
+      const pad = (value) => String(value).padStart(2, '0')
+      const abs = Math.abs(offset)
+      return `${year}-${month}-${day}T${hour}:${minute}:${second}${offset >= 0 ? '+' : '-'}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+    }
+
+    /** 文本框 → JSON 值；空文本/非法 JSON 返回 `{ok:false,error}`（K22）。 */
+    function parseJsonValue(text) {
+      const source = typeof text === 'string' ? text.trim() : ''
+      if (source === '') return { ok: false, value: undefined, error: 'empty' }
+      try { return { ok: true, value: JSON.parse(source), error: '' } }
+      catch (error) { return { ok: false, value: undefined, error: errorText(error) } }
+    }
+
+    /** 组装 `POST /astrbox/control/state` 请求体；字段缺失返回 null（K19/K22）。 */
+    function statePayload(entity, path, value) {
+      if (typeof entity !== 'string' || entity.trim() === '' || typeof path !== 'string' || path.trim() === '') return null
+      return { entity: entity.trim(), path: path.trim(), value }
+    }
+
+    /** 调一次控制代理；返回 `{ok, body, error}`，不抛错（K21/K22）。 */
+    async function controlCall(path, init) {
+      if (typeof fetch !== 'function') return { ok: false, body: undefined, error: 'fetch unavailable' }
+      try {
+        const response = await fetch(`${CONTROL_BASE}${path}`, { cache: 'no-store', ...init })
+        const body = await response.json().catch(() => ({}))
+        if (response.status >= 200 && response.status < 300) return { ok: true, body, error: '' }
+        return { ok: false, body, error: errorText(body?.error?.message ?? `HTTP ${response.status}`) }
+      } catch (error) { return { ok: false, body: undefined, error: errorText(error) } }
+    }
+
+    /** POST JSON 到控制代理。 */
+    const postJson = (path, payload) => controlCall(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+
     /**
      * 同源拉取全部实体黑板；任何失败都回成结果对象，不抛错。
      * @returns {Promise<{ok: boolean, boards: Array<object>, error: string}>} 拉取结果。
@@ -261,7 +308,7 @@ window.__ModuleLoader__.load({
      * 接口不可用只置为 unavailable（面板显示「黑板不可用」），不抛错、不崩溃。
      * @returns {{status: string, boards: Array<object>, error: string, refresh: Function}} 黑板状态。
      */
-    function useBoards() {
+    function useBoards(epoch = 0) {
       const [state, setState] = useState({ status: 'loading', boards: [], error: '' })
       const [reload, setReload] = useState(0)
       useEffect(() => {
@@ -300,7 +347,7 @@ window.__ModuleLoader__.load({
           stop()
           if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
         }
-      }, [reload])
+      }, [reload, epoch])
       const refresh = useCallback(() => setReload((value) => value + 1), [])
       return { ...state, refresh }
     }
@@ -414,12 +461,65 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * 控制区（K22）：世界时钟显示/推进/设定、手动 tick、实体状态写入；失败可读不崩。
+     * @param {{t: Function, onChanged: Function}} props 组件份额
+     * @returns {React.ReactElement} 控制区。
+     */
+    function ControlPane({ t, onChanged }) {
+      const [clock, setClock] = useState({ time: '', phase: '' })
+      const [entities, setEntities] = useState([])
+      const [form, setForm] = useState({ entity: '', path: '', value: '', when: '' })
+      const [ui, setUi] = useState({ busy: false, error: '', note: '' })
+      const field = (name) => (event) => setForm((p) => ({ ...p, [name]: event.target.value })); const setUiField = (name, value) => setUi((p) => ({ ...p, [name]: value }))
+      const reload = useCallback(async () => {
+        const query = new URLSearchParams({ entity: '世界' })
+        query.append('path', '世界.环境.当前时间'); query.append('path', '世界.状态.阶段')
+        const [clockResult, entitiesResult] = await Promise.all([controlCall(`/state?${query.toString()}`), controlCall('/entities')])
+        if (clockResult.ok) setClock({ time: String(clockResult.body?.values?.['世界.环境.当前时间'] ?? ''), phase: String(clockResult.body?.values?.['世界.状态.阶段'] ?? '') })
+        else setUiField('error', clockResult.error)
+        if (entitiesResult.ok && Array.isArray(entitiesResult.body?.entities)) setEntities(entitiesResult.body.entities)
+      }, [])
+      useEffect(() => { void reload() }, [reload])
+      const run = useCallback(async (work) => {
+        setUi({ busy: true, error: '', note: '' })
+        try {
+          const result = await work()
+          if (!result.ok) setUiField('error', result.error)
+          else { setUi({ busy: true, error: '', note: t('control.done') }); await reload(); if (typeof onChanged === 'function') onChanged() }
+        } finally { setUi((previous) => ({ ...previous, busy: false })) }
+      }, [reload, onChanged, t])
+      const act = (route, payload) => { if (!ui.busy) void run(() => postJson(route, payload)) }
+      const submit = (kind) => {
+        if (kind === 'time') {
+          const time = toRfc3339(form.when)
+          return time === '' ? setUiField('error', t('control.badTime')) : act('/clock', { time })
+        }
+        const parsed = parseJsonValue(form.value)
+        if (!parsed.ok) return setUiField('error', t('control.badJson', { error: parsed.error }))
+        const payload = statePayload(form.entity, form.path, parsed.value)
+        return payload === null ? setUiField('error', t('control.needFields')) : act('/state', payload)
+      }
+      const row = (...children) => h('div', { className: 'dsh-neko-controlRow' }, ...children)
+      const input = (props) => h('input', { className: 'dsh-neko-input', spellCheck: false, ...props })
+      const button = (label, onClick) => h('button', { type: 'button', className: 'dsh-neko-button', disabled: ui.busy, onClick }, label)
+      const options = [h('option', { key: '', value: '' }, t('control.pick'))].concat(entities.map((item) => h('option', { key: String(item?.id ?? ''), value: String(item?.id ?? '') }, String(item?.id ?? ''))))
+      return h('section', { className: 'dsh-neko-control', 'data-dsh-neko-pane': 'control' },
+        h('header', { className: 'dsh-neko-paneHead' }, h('strong', { className: 'dsh-neko-paneTitle' }, t('control.title')),
+          h('span', { className: 'dsh-neko-badge', title: t('control.time') }, clock.time === '' ? t('control.unknown') : `${clock.time}${clock.phase === '' ? '' : ` · ${clock.phase}`}`),
+          button(t('control.tick'), () => act('/tick', {}))),
+        row(button(t('control.add15'), () => act('/clock', { minutes: 15 })), button(t('control.add60'), () => act('/clock', { minutes: 60 })), input({ type: 'datetime-local', value: form.when, 'aria-label': t('control.time'), onChange: field('when') }), button(t('control.setTime'), () => submit('time'))),
+        row(h('select', { className: 'dsh-neko-select', value: form.entity, 'aria-label': t('control.entity'), onChange: field('entity') }, ...options),
+          input({ value: form.path, placeholder: '状态.情绪', 'aria-label': t('control.path'), onChange: field('path') }), input({ value: form.value, placeholder: '"开心"', 'aria-label': t('control.value'), onChange: field('value') }), button(t('control.write'), () => submit('state'))),
+        ui.note === '' ? null : h('p', { className: 'dsh-neko-hint' }, ui.note), ui.error === '' ? null : h('p', { className: 'dsh-neko-error' }, ui.error))
+    }
+
+    /**
      * 事件黑板区：标题/状态/刷新 + 每实体一张卡片；接口失败显示「黑板不可用」。
      * @param {{t: Function}} props 组件份额。
      * @returns {React.ReactElement} 黑板区。
      */
-    function BoardPane({ t }) {
-      const state = useBoards()
+    function BoardPane({ t, epoch }) {
+      const state = useBoards(epoch)
       const head = h('header', { className: 'dsh-neko-paneHead' },
         h('strong', { className: 'dsh-neko-paneTitle' }, t('board.title')),
         h('span', { className: 'dsh-neko-badge', 'data-dsh-neko-boards': state.status },
@@ -450,18 +550,26 @@ window.__ModuleLoader__.load({
      * @returns {React.ReactElement} 面板。
      */
     function NekoPanel({ t }) {
+      const [epoch, setEpoch] = useState(0)
+      const changed = useCallback(() => setEpoch((value) => value + 1), [])
       return h('div', { className: 'dsh-neko-panel', 'data-dsh-plugin': 'astrbox' },
         h(StatusPane, { t }),
-        h(BoardPane, { t }),
+        h('div', { className: 'dsh-neko-side' },
+          h(BoardPane, { t, epoch }),
+          h(ControlPane, { t, onChanged: changed }),
+        ),
       )
     }
 
     /** 面板样式：颜色只引用 DSH 主题令牌，其余按主列既有页面的密度取值。 */
     const PANEL_CSS = `
 .dsh-neko-panel { display:flex; height:100%; min-height:0; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); }
-.dsh-neko-status, .dsh-neko-board { display:flex; flex-direction:column; min-width:0; min-height:0; }
-.dsh-neko-status { flex:1 1 58%; }
-.dsh-neko-board { flex:1 1 42%; min-width:300px; border-left:1px solid var(--dsw-alias-border-l1); background:var(--dsw-alias-bg-layer-1); }
+.dsh-neko-status, .dsh-neko-board, .dsh-neko-control { display:flex; flex-direction:column; min-width:0; min-height:0; }
+.dsh-neko-status { flex:1 1 52%; }
+.dsh-neko-side { flex:1 1 48%; display:flex; flex-direction:column; min-width:300px; min-height:0; border-left:1px solid var(--dsw-alias-border-l1); } .dsh-neko-board { flex:1 1 auto; background:var(--dsw-alias-bg-layer-1); }
+.dsh-neko-control { flex:0 0 auto; max-height:46%; overflow-y:auto; border-top:1px solid var(--dsw-alias-border-l1); background:var(--dsw-alias-bg-base); }
+.dsh-neko-controlRow { display:flex; align-items:center; gap:6px; padding:6px 10px; flex-wrap:wrap; }
+.dsh-neko-select { border:1px solid var(--dsw-alias-border-l1); border-radius:6px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); font:inherit; font-size:12px; padding:4px 8px; max-width:120px; }
 .dsh-neko-paneHead { display:flex; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid var(--dsw-alias-border-l1); }
 .dsh-neko-paneTitle { font-size:13px; font-weight:600; white-space:nowrap; }
 .dsh-neko-input { flex:1 1 auto; min-width:0; border:1px solid var(--dsw-alias-border-l1); border-radius:6px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); font:inherit; font-size:12px; padding:4px 8px; }
@@ -482,7 +590,7 @@ window.__ModuleLoader__.load({
 .dsh-neko-boardRow { display:flex; flex-direction:column; gap:1px; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .dsh-neko-boardChange { color:var(--dsw-alias-label-primary); }
 .dsh-neko-boardRule { font-size:11px; color:var(--dsw-alias-label-secondary); }
-@media (max-width:880px) { .dsh-neko-panel { flex-direction:column; } .dsh-neko-board { border-left:0; border-top:1px solid var(--dsw-alias-border-l1); min-width:0; } }
+@media (max-width:880px) { .dsh-neko-panel { flex-direction:column; } .dsh-neko-side { border-left:0; border-top:1px solid var(--dsw-alias-border-l1); min-width:0; } }
 `
 
     /**
@@ -562,6 +670,9 @@ window.__ModuleLoader__.load({
         entryRules,
         valueText,
         formatClockTime,
+        toRfc3339,
+        parseJsonValue,
+        statePayload,
         dictionaries: { zh: ZH, en: EN },
       },
     }

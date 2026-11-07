@@ -1,7 +1,7 @@
 # MCP 工具参考
 
-服务以 MCP（Model Context Protocol）暴露工具。`astrbox-mcp` 暴露 17 个引擎工具；
-`dsh-mcp` 在此基础上增加 `context_list` / `context_send`（共 19 个，用于角色上下文驱动）。
+服务以 MCP（Model Context Protocol）暴露工具。`astrbox-mcp` 暴露 26 个引擎工具；
+`dsh-mcp` 在此基础上增加 `context_list` / `context_send`（共 28 个，用于角色上下文驱动）。
 默认 stdio；`-transport http` 时使用 Streamable HTTP。
 
 ## 启动
@@ -48,13 +48,48 @@
 
 ### `entity_state_set`
 
-写入实体状态并落盘 `entities.json`。
+写入实体状态并落盘 `entities.json`。单路径（`path`+`value`）与批量（`values`）二选一。
 
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `entity` | string | 是 | 实体 ID |
-| `path` | string | 是 | 点分路径 |
-| `value` | string | 是 | JSON 或纯文本；能解析为 JSON 就按 JSON 存 |
+| `path` | string | 否 | 点分路径（与 `values` 二选一） |
+| `value` | string | 否 | JSON 或纯文本；能解析为 JSON 就按 JSON 存 |
+| `values` | object | 否 | 批量 `{点分路径: 值}`（与 `path/value` 二选一） |
+
+返回 `{"ok":true,"entity":"…","paths":["…"]}`（K20 起由文本改为 JSON；旧 CLI 侧无消费者）。
+
+### `entity_delete`
+
+删除实体并同步删除其事件黑板，落盘 `entities.json` / `blackboard.json`。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `entity` | string | 是 | 实体 ID |
+
+返回 `{"ok":true,"deleted":"实体 ID"}`；不存在返回 `❌`。
+
+### `blackboard_get`
+
+读取事件黑板（每实体「当前/上一次状态」变化记录）。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `entity` | string | 否 | 实体 ID；留空返回全部实体黑板 |
+
+返回 `{"ok":true,"board":{...}|null}` 或 `{"ok":true,"boards":[...]}`，形状与 `GET /blackboard` 一致
+（`entity`/`version`/`updated_at`/`tick_id`/`entries[{path,from,to,rule_ids,updated_at}]`）。
+
+### `world_clock`
+
+读取 / 推进 / 设定世界时钟（`世界.环境.当前时间`、`当前月份`、`状态.阶段`）。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `minutes` | integer | 否 | 推进分钟数（1..1440），与 `time` 二选一 |
+| `time` | string | 否 | RFC3339 时间（如 `2026-08-10T09:00:00+08:00`），与 `minutes` 二选一 |
+
+无参读取 `{"ok":true,"worldTime","month","phase"}`；写入后落盘并返回同一形状。
 
 ### `entity_query`
 
@@ -196,6 +231,19 @@ dry-run：解析 + 安全 + 编译，**不注册、不落盘**。返回
 | `name` | string | 否 | 快照文件名（不含路径/扩展名），缺省用 UTC 时间戳 |
 
 把当前全部实体写入 `<dataDir>/archives/<name>.json`，返回 `{"path","entities","bytes"}`。名称不允许包含路径分隔符、点或空格。
+
+## 运维（K20 工具化）
+
+以下工具是控制面运维路由的薄封装，行为与对应 HTTP 端点一致；失败返回 `❌` 文本。
+
+| 工具 | 参数 | 说明 |
+|---|---|---|
+| `nightly_run` | `factor?`（number） | 专家上下文夜间衰减并清理过期项 |
+| `judge_run` | `entity_id`、`path`、`proposed?`、`source?`、`evidence?` | 对一条状态变更做裁决，写入候选 |
+| `candidates_list` | — | 列出待处置候选 |
+| `candidate_resolve` | `id`、`status`、`note?` | 处置候选（accept/reject 等） |
+| `candidate_apply` | 与 `POST /candidates/apply` 请求体一致 | 应用已接受候选（含快照/回归闸门；409 body 冲突） |
+| `repair_rollback` | 与 `POST /repairs/rollback` 请求体一致 | 回滚修复历史 |
 
 ## 上下文（跨角色，仅 `dsh-mcp`）
 

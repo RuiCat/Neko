@@ -117,11 +117,11 @@ func TestStateErrors(t *testing.T) {
 		t.Fatalf("unknown entity code = %s", code)
 	}
 
-	wrongMethod := env.call(t, http.MethodPost, "/state?entity=猫猫", []byte(`{}`))
+	wrongMethod := env.call(t, http.MethodDelete, "/state?entity=猫猫", nil)
 	if wrongMethod.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("wrong method status = %d", wrongMethod.Code)
 	}
-	if allow := wrongMethod.Header().Get("Allow"); allow != http.MethodGet {
+	if allow := wrongMethod.Header().Get("Allow"); allow != "GET, POST" {
 		t.Fatalf("allow = %q", allow)
 	}
 	if code := errorCode(t, decodeBody(t, wrongMethod)); code != CODE_METHOD_NOT_ALLOWED {

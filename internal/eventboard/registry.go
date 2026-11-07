@@ -91,6 +91,21 @@ func (r *Registry) Apply(result engine.TickResult) error {
 	return nil
 }
 
+// Delete removes one entity's board and persists the removal. A missing board
+// is a no-op, so deleting the same entity twice still succeeds.
+func (r *Registry) Delete(entityID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.boards[entityID]; !exists {
+		return nil
+	}
+	delete(r.boards, entityID)
+	if err := saveBoards(r.path, r.boards); err != nil {
+		return fmt.Errorf("保存事件黑板失败: %w", err)
+	}
+	return nil
+}
+
 // Board returns a copy of one entity's board, or nil when the entity has none.
 // The copy keeps readers independent from the next tick's in-place update.
 func (r *Registry) Board(entityID string) *Board {

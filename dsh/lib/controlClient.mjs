@@ -166,6 +166,44 @@ export function createControlClient(options) {
     },
 
     /**
+     * `POST /state`：写实体状态（K19；`path+value` 与 `values` 二选一，由控制面校验）。
+     * @param {{entity: string, path?: string, value?: unknown, values?: object}} body 写请求
+     * @returns {Promise<any>} 响应体 `{ok, entity, paths}`
+     */
+    async setState(body) {
+      const response = await send({ method: 'POST', path: '/state', body, timeoutMs: requestTimeoutMs })
+      if (response.status !== 200) throw errorFromResponse(response)
+      return response.body
+    },
+
+    /**
+     * `POST /clock`：设定/推进世界时钟（K19；`minutes` 与 `time` 二选一）。
+     * @param {{minutes?: number, time?: string}} body 时钟请求
+     * @returns {Promise<any>} 响应体 `{ok, worldTime, month, phase}`
+     */
+    async setClock(body) {
+      const response = await send({ method: 'POST', path: '/clock', body, timeoutMs: requestTimeoutMs })
+      if (response.status !== 200) throw errorFromResponse(response)
+      return response.body
+    },
+
+    /**
+     * `POST /entities/delete`：删除实体（K19；控制面同时清该实体黑板）。
+     * @param {string} entity 实体 id
+     * @returns {Promise<any>} 响应体 `{ok, deleted}`
+     */
+    async deleteEntity(entity) {
+      const response = await send({
+        method: 'POST',
+        path: '/entities/delete',
+        body: { entity },
+        timeoutMs: requestTimeoutMs,
+      })
+      if (response.status !== 200) throw errorFromResponse(response)
+      return response.body
+    },
+
+    /**
      * `POST /tick`：单飞由服务端 409 兜底；409 作为“跳过”结果返回而不抛错。
      * @param {{scope?: string}} [request] tick 参数
      * @returns {Promise<{status: number, busy: boolean, body: any}>} 结果

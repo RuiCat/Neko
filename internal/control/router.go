@@ -12,10 +12,24 @@ func (s *Server) dispatch(r *http.Request) response {
 		}
 		return s.handleHealth()
 	case "/state":
-		if r.Method != http.MethodGet {
-			return methodNotAllowed(http.MethodGet)
+		switch r.Method {
+		case http.MethodGet:
+			return s.handleState(r)
+		case http.MethodPost:
+			return s.handleStateWrite(r)
+		default:
+			return methodNotAllowed(http.MethodGet + ", " + http.MethodPost)
 		}
-		return s.handleState(r)
+	case "/clock":
+		if r.Method != http.MethodPost {
+			return methodNotAllowed(http.MethodPost)
+		}
+		return s.handleClock(r)
+	case "/entities/delete":
+		if r.Method != http.MethodPost {
+			return methodNotAllowed(http.MethodPost)
+		}
+		return s.handleEntityDelete(r)
 	case "/entities":
 		if r.Method != http.MethodGet {
 			return methodNotAllowed(http.MethodGet)

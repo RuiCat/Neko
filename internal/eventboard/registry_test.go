@@ -238,3 +238,46 @@ func TestRegistryObserveKeepsChangedBoard(t *testing.T) {
 		t.Fatalf("observe reset a changed board: %+v", board)
 	}
 }
+
+// TestRegistryDeleteRemovesBoardAndPersists covers entity deletion: the board
+// disappears in memory and on disk, and deleting it twice stays a no-op.
+func TestRegistryDeleteRemovesBoardAndPersists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FILE_NAME)
+	registry := New(path)
+	if err := registry.Apply(setTick("tick-1", "猫猫", "状态.身体", "健康", "疲惫")); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	registry.Observe([]string{"梦梦"})
+	if err := registry.Delete("猫猫"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if board := registry.Board("猫猫"); board != nil {
+		t.Fatalf("deleted board survives: %+v", board)
+	}
+	reloaded := New(path)
+	if err := reloaded.Load(); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if board := reloaded.Board("猫猫"); board != nil {
+		t.Fatalf("deleted board persisted: %+v", board)
+	}
+	if err := registry.Delete("猫猫"); err != nil {
+		t.Fatalf("second delete must be a no-op: %v", err)
+	}
+}
+
+// TestRegistryDeleteReportsSaveFailure covers a failed board save on delete.
+func TestRegistryDeleteReportsSaveFailure(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatalf("seed blocker: %v", err)
+	}
+	registry := New(filepath.Join(blocker, FILE_NAME))
+	registry.Observe([]string{"猫猫"})
+	if err := registry.Delete("猫猫"); err == nil {
+		t.Fatal("delete must report the save failure")
+	}
+	if board := registry.Board("猫猫"); board != nil {
+		t.Fatalf("board must be removed in memory despite the save failure: %+v", board)
+	}
+}

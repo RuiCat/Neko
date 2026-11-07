@@ -144,3 +144,45 @@ test('字典：ZH/EN 同键集，黑板文案与空态/不可用态齐全', () =
   // 面板不再有聊天文案（K8：删除会话聊天）。
   for (const key of Object.keys(zh)) assert.ok(!key.startsWith('chat.'), key)
 })
+test('K22 toRfc3339：datetime-local → 本地时区 RFC3339；非法返回空串', () => {
+  const date = new Date(2026, 10, 7, 18, 0, 0)
+  const pad = (value) => String(value).padStart(2, '0')
+  const offset = -date.getTimezoneOffset()
+  const suffix = `${offset >= 0 ? '+' : '-'}${pad(Math.floor(Math.abs(offset) / 60))}:${pad(Math.abs(offset) % 60)}`
+  assert.equal(api.toRfc3339('2026-11-07T18:00'), `2026-11-07T18:00:00${suffix}`)
+  assert.equal(api.toRfc3339('2026-11-07T18:00:30'), `2026-11-07T18:00:30${suffix}`)
+  for (const bad of [undefined, null, '', 'not-a-time', '2026-13-01T00:00', 42]) {
+    assert.equal(api.toRfc3339(bad), '', String(bad))
+  }
+})
+
+test('K22 parseJsonValue：JSON 解析与可读错误', () => {
+  assert.deepEqual(api.parseJsonValue('"开心"'), { ok: true, value: '开心', error: '' })
+  assert.deepEqual(api.parseJsonValue('92'), { ok: true, value: 92, error: '' })
+  assert.deepEqual(api.parseJsonValue('{"a":1}'), { ok: true, value: { a: 1 }, error: '' })
+  assert.equal(api.parseJsonValue('').ok, false)
+  assert.equal(api.parseJsonValue('  ').ok, false)
+  const broken = api.parseJsonValue('{bad json')
+  assert.equal(broken.ok, false)
+  assert.notEqual(broken.error, '')
+})
+
+test('K22 statePayload：组装 POST /astrbox/control/state 请求体', () => {
+  assert.deepEqual(api.statePayload(' 猫猫 ', ' 状态.情绪 ', '开心'), { entity: '猫猫', path: '状态.情绪', value: '开心' })
+  assert.deepEqual(api.statePayload('猫猫', '身体.体力', 92), { entity: '猫猫', path: '身体.体力', value: 92 })
+  for (const [entity, path] of [['', 'a'], ['猫猫', ''], [null, 'a'], ['猫猫', null]]) {
+    assert.equal(api.statePayload(entity, path, 1), null)
+  }
+})
+
+test('K22 控制区文案：ZH/EN 同键且齐全（含错误提示）', () => {
+  const zh = api.dictionaries.zh
+  const en = api.dictionaries.en
+  assert.deepEqual(Object.keys(zh).sort(), Object.keys(en).sort())
+  for (const key of ['control.title', 'control.tick', 'control.add15', 'control.add60', 'control.time', 'control.setTime', 'control.entity', 'control.path', 'control.value', 'control.write', 'control.done', 'control.badJson', 'control.badTime', 'control.needFields']) {
+    assert.equal(typeof zh[key], 'string', key)
+    assert.notEqual(zh[key], '', key)
+    assert.equal(typeof en[key], 'string', key)
+  }
+  assert.ok(zh['control.badJson'].includes('{error}'))
+})

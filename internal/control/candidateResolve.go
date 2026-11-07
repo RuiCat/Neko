@@ -1,14 +1,12 @@
 // candidateResolve.go lets a reviewer approve or reject a queued transition
-// candidate. The store is append-only, so a resolution is a new line with the
-// same ID and the new status.
+// candidate; the shared operation appends the resolution line.
 package control
 
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 
-	"github.com/RuiCat/Neko/internal/candidates"
+	"github.com/RuiCat/Neko/internal/control/ops"
 )
 
 // resolveCandidateRequest is the POST /candidates/resolve body.
@@ -28,15 +26,8 @@ func (s *Server) handleResolveCandidate(r *http.Request) response {
 	if err := json.Unmarshal(raw, &request); err != nil {
 		return badRequest("请求体不是合法 JSON: " + err.Error())
 	}
-	if strings.TrimSpace(request.ID) == "" {
-		return badRequest("缺少 id")
-	}
-	if request.Status != candidates.STATUS_APPROVED && request.Status != candidates.STATUS_REJECTED {
-		return badRequest("status 必须是 approved 或 rejected")
-	}
-	record, err := s.candidateStore().Resolve(request.ID, request.Status, request.Note)
-	if err != nil {
-		return notFound(err.Error())
-	}
-	return response{status: http.StatusOK, body: map[string]any{"ok": true, "item": record}}
+	body, err := ops.ResolveCandidate(s.opsDeps(), ops.ResolveRequest{
+		ID: request.ID, Status: request.Status, Note: request.Note,
+	})
+	return opsResponse(body, err)
 }

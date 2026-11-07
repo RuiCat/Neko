@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // dsh-mcp doctor: spawn bin/dsh-mcp, complete the MCP handshake, assert the
-// frozen 19-tool list, the 0600 control socket, and SIGTERM cleanup. It uses a
+// frozen 28-tool list, the 0600 control socket, and SIGTERM cleanup. It uses a
 // throwaway data directory and never touches data/ or a DSH profile.
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -13,14 +13,17 @@ const REQUEST_TIMEOUT_MS = 20000;
 const EXIT_TIMEOUT_MS = 15000;
 const SOCKET_WAIT_MS = 10000;
 
-// K6 frozen tool set (alphabetical).
+// K6 frozen tool set (alphabetical); K20 appended the control tools.
 const FROZEN_TOOLS = [
+  'blackboard_get', 'candidate_apply', 'candidate_resolve', 'candidates_list',
   'context_list', 'context_send',
-  'diagnostics_query', 'entity_create', 'entity_query', 'entity_snapshot',
-  'entity_state_get', 'entity_state_set', 'event_log', 'inventory',
+  'diagnostics_query', 'entity_create', 'entity_delete', 'entity_query',
+  'entity_snapshot', 'entity_state_get', 'entity_state_set', 'event_log',
+  'inventory', 'judge_run',
   'neko_script_apply', 'neko_script_list', 'neko_script_read',
   'neko_script_remove', 'neko_script_validate', 'neko_script_write',
-  'state_machine_resolve', 'state_machine_tick', 'stats',
+  'nightly_run', 'repair_rollback',
+  'state_machine_resolve', 'state_machine_tick', 'stats', 'world_clock',
 ];
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -235,7 +238,7 @@ async function run() {
     await waitGone(socketPath);
 
     console.log(
-      `OK: doctor 通过（19 tools, socket 0600, SIGTERM 清理；data=${session.dataDir}）`,
+      `OK: doctor 通过（${FROZEN_TOOLS.length} tools, socket 0600, SIGTERM 清理；data=${session.dataDir}）`,
     );
   } finally {
     if (session && session.child.exitCode === null) session.child.kill('SIGKILL');
