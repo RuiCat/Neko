@@ -319,9 +319,19 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
 
 | 目标 | 投递方式 | 成功返回 |
 |---|---|---|
-| 实体 id / `对方主体` | `followup` 到该实体 `bindings.mainSessionId`，正文前缀 `[astrbox-relay] <来源实体或会话> 对你说：` | `{delivered:true, kind:'main', entity, sessionId}` |
-| `主体` | 同上，目标 = 调用方 cwd 命中绑定的主会话 | 同上 |
-| `私聊` / `群聊` | `qqbotBots.say({botId, scope, text})`，`scope` 为 `c2c` 或 `group`（K15；不触发模型回合） | `{delivered:true, kind:'qq', scope, botId, targetId}` |
+| 实体 id / `对方主体` | `followup` 到该实体 `bindings.mainSessionId`，正文前缀 `[astrbox-relay] <来源标签> 对你说：` | `{delivered:true, kind:'main', entity, sessionId, source}` |
+| `主体` | 同上，目标 = 调用方实体（含 `defaultEntity` 回退）的主会话 | 同上 |
+| `私聊` / `群聊` | `qqbotBots.say({botId, scope, text})`，`scope` 为 `c2c` 或 `group`（K15；不触发模型回合） | `{delivered:true, kind:'qq', scope, botId, targetId, source}` |
+
+**来源会话信息（K18）**：`<来源实体>·<会话标题>（<会话 id 去掉 `session-` 前缀后的前 8 位>）`，例如
+`梦梦·主体（qqbot:ca）` / `梦梦·私聊(85D47757)（qqbot:ca）`。
+
+- 来源实体：调用方 `cwd` 命中绑定的 `entity`；**未命中写 `未绑定会话`、不回落 `defaultEntity`**
+  （只有 `target=主体` 的目标解析仍用 `defaultEntity` 回退）。
+- 会话标题：宿主 `sessionTitle.get(session)?.title`（qqbot 写成 `主体` / `私聊(…)` / `群聊(…)`）；
+  取不到回退 `会话`。
+- 所有结果（成功与失败）都带 `source: {sessionId, entity, label}`，便于调用方判断来源；
+  `entity` 未绑定时为空串，`label` 即上面的来源标签。
 
 - **限流**：同一调用方（会话 id）每分钟最多 6 次，超限返回 `{delivered:false, reason:'rate_limited'}`
   （不抛异常）；不同会话各自独立。
@@ -330,8 +340,8 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
   （如 `no_session`）或 `qq_send_failed`。工具永不因投递失败抛异常。
 - **无自动回传**：被转达的一方只是正常处理一条 user 消息；想回话需自己再调用 `astrbox_relay`
   （不自动把回复转发回来）。
-- 来源标签：调用方 cwd 命中绑定时用实体 id，否则用会话 id。
 - 工具定义/实现：`dsh/lib/relayTool.mjs`；`text` 超限/空白时先于限流校验被拒绝。
+- 来源标签依赖宿主的 `sessionTitle` 服务；服务缺失/抛错时只回退标题为 `会话`，不影响转达。
 
 示例（主会话里让猫猫转告梦梦）：
 

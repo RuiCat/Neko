@@ -630,6 +630,8 @@ function createRuntime(options) {
       relayTool = createRelayTool({
         getBindings: currentBindings,
         agentOf,
+        // K18：来源标签需要会话标题（主体 / 私聊(…) / 群聊(…)），缺失时工具内部回退「会话」。
+        sessionTitleOf,
         defaultEntity: config.entity,
         logger,
         qqbotService: () => {

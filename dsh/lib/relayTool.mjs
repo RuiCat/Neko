@@ -2,7 +2,7 @@
  * K14 `astrbox_relay` 工具：把一句话转达给另一个 Neko 实体/会话（跨会话交互）。
  *
  * - `target` = 实体 id（梦梦/猫猫）→ `followup` 到该实体主会话，正文前缀
- *   `[astrbox-relay] <来源> 对你说：`；
+ *   `[astrbox-relay] <来源实体>·<会话标题>（<sessionId 前 8>） 对你说：`（K18）；
  * - `target` = `私聊`/`群聊` → 用 qqbot 服务 `say({botId, scope, text})` 直发 QQ（K15，不触发模型回合）；
  * - `target` = `主体` → 调用方所属 bot 的主会话。
  *
@@ -58,9 +58,9 @@ function renderRelayResult(value) {
 }
 
 /**
- * 建 `astrbox_relay` 工具（K14；注册形状参考 qqbot 的 send-file-tool）。
+ * 建 `astrbox_relay` 工具（K14/K18；注册形状参考 qqbot 的 send-file-tool）。
  * @param {{getBindings: Function, agentOf: Function, qqbotService?: Function,
- *   defaultEntity?: string, logger?: object, now?: Function}} options 依赖
+ *   sessionTitleOf?: Function, defaultEntity?: string, logger?: object, now?: Function}} options 依赖
  * @returns {{definition: object, execute: Function, dispose: Function}} 工具
  */
 export function createRelayTool(options) {
@@ -68,6 +68,7 @@ export function createRelayTool(options) {
     getBindings = () => [],
     agentOf = () => undefined,
     qqbotService = () => undefined,
+    sessionTitleOf = () => '',
     defaultEntity = '',
     logger,
     now = Date.now,
@@ -86,9 +87,12 @@ export function createRelayTool(options) {
   }
 
   /**
-   * 调用方上下文：会话 id + cwd 命中的绑定 + 来源实体。
+   * 调用方上下文：会话 id、cwd 命中的绑定、来源实体（严格）与 `target=主体` 用的回退实体。
+   * K18：来源实体**不**回落 defaultEntity（未命中即空，标签写「未绑定会话」）；
+   * `target=主体` 仍用 `targetEntity`（含 defaultEntity 回退，K14 语义不变）。
    * @param {object|undefined} exec 工具执行上下文（exec.agent）
-   * @returns {{sessionId: string, binding: object|undefined, entity: string}} 调用方
+   * @returns {{sessionId: string, binding: object|undefined, entity: string,
+   *   targetEntity: string, title: string}} 调用方
    */
   function callerOf(exec) {
     const agent = exec?.agent
@@ -99,20 +103,56 @@ export function createRelayTool(options) {
     } catch {
       binding = undefined
     }
-    const entity = typeof binding?.entity === 'string' && binding.entity !== ''
-      ? binding.entity
-      : typeof defaultEntity === 'string' ? defaultEntity : ''
-    return { sessionId, binding, entity }
+    const boundEntity = typeof binding?.entity === 'string' && binding.entity !== '' ? binding.entity : ''
+    const fallback = typeof defaultEntity === 'string' ? defaultEntity : ''
+    let title
+    try {
+      const resolved = sessionTitleOf(agent?.session)
+      title = typeof resolved === 'string' ? resolved.trim() : ''
+    } catch {
+      title = ''
+    }
+    return { sessionId, binding, entity: boundEntity, targetEntity: boundEntity !== '' ? boundEntity : fallback, title }
   }
 
   /**
-   * 转达来源标签：`<来源实体或会话>`（K14）——命中绑定用实体 id，未命中用会话 id。
-   * @param {{sessionId: string, binding: object|undefined, entity: string}} caller 调用方
+   * K18 来源标签：`<来源实体>·<会话标题>（<sessionId 前 8>）`；
+   * 实体未命中写「未绑定会话」，标题缺失回退「会话」。
+   * @param {{sessionId: string, entity: string, title: string}} caller 调用方
    * @returns {string} 来源标签
    */
   function sourceLabel(caller) {
-    if (caller.entity !== '') return caller.entity
-    return caller.sessionId === '' ? '未知会话' : caller.sessionId
+    const entity = caller.entity !== '' ? caller.entity : '未绑定会话'
+    const title = caller.title !== '' ? caller.title : '会话'
+    return `${entity}·${title}（${shortSessionId(caller.sessionId)}）`
+  }
+
+  /**
+   * 会话 id 短标识：去掉宿主固定的 `session-` 前缀后取前 8 位（否则前 8 位恒为 `session-`）。
+   * @param {string} sessionId 会话 id
+   * @returns {string} 短标识（空/非法回退「未知」）
+   */
+  function shortSessionId(sessionId) {
+    if (typeof sessionId !== 'string' || sessionId === '') return '未知'
+    const stripped = sessionId.startsWith('session-') ? sessionId.slice('session-'.length) : sessionId
+    return stripped.slice(0, 8) || '未知'
+  }
+
+  /**
+   * 给工具结果附加来源信息（K18：成功/失败都带）。
+   * @param {object} result 工具结果
+   * @param {object} caller 调用方
+   * @returns {object} 带 source 的结果
+   */
+  function withSource(result, caller) {
+    return {
+      ...result,
+      source: {
+        sessionId: caller.sessionId,
+        entity: caller.entity,
+        label: sourceLabel(caller),
+      },
+    }
   }
 
   /**
@@ -237,27 +277,29 @@ export function createRelayTool(options) {
     const args = rawArgs !== null && typeof rawArgs === 'object' ? rawArgs : {}
     const target = typeof args.target === 'string' ? args.target.trim() : ''
     const text = typeof args.text === 'string' ? args.text.trim() : ''
-    if (text === '' || Array.from(text).length > RELAY_TEXT_MAX_CHARS) return { delivered: false, reason: 'invalid_text' }
-    if (target === '') return { delivered: false, reason: 'unknown_target' }
     const caller = callerOf(exec)
-    if (!allowCaller(caller.sessionId)) return { delivered: false, reason: 'rate_limited' }
-    if (target === '私聊') return deliverToQq('c2c', text, caller)
-    if (target === '群聊') return deliverToQq('group', text, caller)
+    if (text === '' || Array.from(text).length > RELAY_TEXT_MAX_CHARS) {
+      return withSource({ delivered: false, reason: 'invalid_text' }, caller)
+    }
+    if (target === '') return withSource({ delivered: false, reason: 'unknown_target' }, caller)
+    if (!allowCaller(caller.sessionId)) return withSource({ delivered: false, reason: 'rate_limited' }, caller)
+    if (target === '私聊') return withSource(await deliverToQq('c2c', text, caller), caller)
+    if (target === '群聊') return withSource(await deliverToQq('group', text, caller), caller)
     if (target === '主体') {
-      const entity = caller.entity
-      if (entity === '') return { delivered: false, reason: 'unknown_target' }
-      return deliverToMain(entity, text, caller)
+      const entity = caller.targetEntity
+      if (entity === '') return withSource({ delivered: false, reason: 'unknown_target' }, caller)
+      return withSource(deliverToMain(entity, text, caller), caller)
     }
     if (target === '对方主体') {
       // 兼容写法：唯一「另一个实体」的主会话（多实体时无法判定，返回 unknown_target）。
       const others = new Set()
       for (const binding of bindings()) {
-        if (typeof binding?.entity === 'string' && binding.entity !== '' && binding.entity !== caller.entity) others.add(binding.entity)
+        if (typeof binding?.entity === 'string' && binding.entity !== '' && binding.entity !== caller.targetEntity) others.add(binding.entity)
       }
-      if (others.size !== 1) return { delivered: false, reason: 'unknown_target' }
-      return deliverToMain([...others][0], text, caller)
+      if (others.size !== 1) return withSource({ delivered: false, reason: 'unknown_target' }, caller)
+      return withSource(deliverToMain([...others][0], text, caller), caller)
     }
-    return deliverToMain(target, text, caller)
+    return withSource(deliverToMain(target, text, caller), caller)
   }
 
   const definition = {
@@ -293,6 +335,16 @@ export function createRelayTool(options) {
           botId: { type: 'string' },
           targetId: { type: 'string' },
           reason: { type: 'string' },
+          source: {
+            type: 'object',
+            properties: {
+              sessionId: { type: 'string' },
+              entity: { type: 'string' },
+              label: { type: 'string' },
+            },
+            required: ['sessionId', 'entity', 'label'],
+            additionalProperties: false,
+          },
         },
         required: ['delivered'],
         additionalProperties: false,

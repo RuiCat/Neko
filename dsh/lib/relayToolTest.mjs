@@ -11,6 +11,24 @@ import {
   createRelayTool,
 } from './relayTool.mjs'
 
+/** 测试用会话标题（K18：来源标签里的 `<会话标题>`）。 */
+const TITLES = {
+  'qqbot:cat:main': '主体',
+  'qqbot:helper:main': '主体',
+  'qqbot:cat:group:g1': '群聊(1EC36362)',
+  'qqbot:cat:c2c:u1': '私聊(85D47757)',
+}
+
+/**
+ * 去掉结果里的 source 字段（现有断言只看投递结果；source 由 K18 用例单独断言）。
+ * @param {object} result 工具结果
+ * @returns {object} 去掉 source 的结果
+ */
+function rest(result) {
+  const { source: _source, ...others } = result
+  return others
+}
+
 /** K1 形状的两条绑定（猫猫/梦梦各一个 bot）。 */
 const BINDINGS = [
   { botId: 'cat', label: 'cat', cwd: '/srv/bots/cat', entity: '梦梦', mainSessionId: 'qqbot:cat:main' },
@@ -50,6 +68,7 @@ function setup(options = {}) {
     getBindings: () => bindings,
     agentOf: (sessionId) => agents.get(sessionId),
     qqbotService: () => qqbot,
+    sessionTitleOf: options.sessionTitleOf ?? ((session) => TITLES[session?.id] ?? ''),
     defaultEntity: '猫猫',
     now: options.now ?? (() => 1000),
   })
@@ -87,19 +106,19 @@ test('工具定义：名称/参数/输出 schema 与 render（K14）', () => {
 test('target=实体 id：followup 到该实体主会话，前缀带来源实体', async () => {
   const { relay, calls } = setup()
   const result = await relay.execute({ target: '梦梦', text: '在吗' }, execOf('qqbot:helper:main', '/srv/bots/helper'))
-  assert.deepEqual(result, { delivered: true, kind: 'main', entity: '梦梦', sessionId: 'qqbot:cat:main' })
+  assert.deepEqual(rest(result), { delivered: true, kind: 'main', entity: '梦梦', sessionId: 'qqbot:cat:main' })
   assert.equal(calls.length, 1)
   assert.equal(calls[0].sessionId, 'qqbot:cat:main')
   assert.equal(calls[0].message.role, 'user')
   assert.deepEqual(calls[0].message.source, { kind: 'user' })
-  assert.equal(calls[0].message.content[0].text, '[astrbox-relay] 猫猫 对你说：在吗')
+  assert.equal(calls[0].message.content[0].text, '[astrbox-relay] 猫猫·主体（qqbot:he） 对你说：在吗')
 })
 
 test('target=主体：投到调用方自己 bot 的主会话（QQ 子会话 → 主会话）', async () => {
   const { relay, calls } = setup()
   const result = await relay.execute({ target: '主体', text: '我回来了' }, execOf('qqbot:cat:group:g1', '/srv/bots/cat'))
-  assert.deepEqual(result, { delivered: true, kind: 'main', entity: '梦梦', sessionId: 'qqbot:cat:main' })
-  assert.equal(calls[0].message.content[0].text, '[astrbox-relay] 梦梦 对你说：我回来了')
+  assert.deepEqual(rest(result), { delivered: true, kind: 'main', entity: '梦梦', sessionId: 'qqbot:cat:main' })
+  assert.equal(calls[0].message.content[0].text, '[astrbox-relay] 梦梦·群聊(1EC36362)（qqbot:ca） 对你说：我回来了')
 })
 
 test('target=私聊/群聊：调 qqbot say 直发（带 botId/scope），映射返回值', async () => {
@@ -111,9 +130,9 @@ test('target=私聊/群聊：调 qqbot say 直发（带 botId/scope），映射�
     },
   })
   const c2c = await relay.execute({ target: '私聊', text: '私聊一句' }, execOf('qqbot:cat:main', '/srv/bots/cat'))
-  assert.deepEqual(c2c, { delivered: true, kind: 'qq', scope: 'c2c', botId: 'cat', targetId: 'openid-1' })
+  assert.deepEqual(rest(c2c), { delivered: true, kind: 'qq', scope: 'c2c', botId: 'cat', targetId: 'openid-1' })
   const group = await relay.execute({ target: '群聊', text: '群聊一句' }, execOf('qqbot:cat:group:g1', '/srv/bots/cat'))
-  assert.deepEqual(group, { delivered: true, kind: 'qq', scope: 'group', botId: 'cat', targetId: 'openid-1' })
+  assert.deepEqual(rest(group), { delivered: true, kind: 'qq', scope: 'group', botId: 'cat', targetId: 'openid-1' })
   assert.deepEqual(sayCalls.map((request) => request.scope), ['c2c', 'group'])
   assert.deepEqual(sayCalls.map((request) => request.botId), ['cat', 'cat'])
   assert.deepEqual(sayCalls.map((request) => request.text), ['私聊一句', '群聊一句'])
@@ -133,14 +152,14 @@ test('target=私聊：调用方未命中绑定 → 唯一 bot 回退；qqbot 缺
   assert.equal(sayCalls[0].botId, 'cat')
 
   const missing = await single.relay.execute({ target: '私聊', text: 'hi' }, execOf('qqbot:cat:main', '/elsewhere'))
-  assert.deepEqual(missing, { delivered: false, reason: 'qqbot_unavailable' })
+  assert.deepEqual(rest(missing), { delivered: false, reason: 'qqbot_unavailable' })
 
   const failing = setup({ qqbot: { say: async () => ({ ok: false, reason: 'no_session' }) } })
   const failed = await failing.relay.execute({ target: '群聊', text: 'hi' }, execOf('qqbot:cat:main', '/srv/bots/cat'))
-  assert.deepEqual(failed, { delivered: false, reason: 'no_session' })
+  assert.deepEqual(rest(failed), { delivered: false, reason: 'no_session' })
   const throwing = setup({ qqbot: { say: async () => { throw new Error('boom') } } })
   const thrown = await throwing.relay.execute({ target: '群聊', text: 'hi' }, execOf('qqbot:cat:main', '/srv/bots/cat'))
-  assert.deepEqual(thrown, { delivered: false, reason: 'qq_send_failed' })
+  assert.deepEqual(rest(thrown), { delivered: false, reason: 'qq_send_failed' })
 })
 
 test('限流：同一调用方每分钟最多 6 次，超限 rate_limited，窗口后恢复', async () => {
@@ -153,7 +172,7 @@ test('限流：同一调用方每分钟最多 6 次，超限 rate_limited，窗�
   }
   assert.equal(calls.length, 6)
   const limited = await relay.execute({ target: '梦梦', text: '第7次' }, exec)
-  assert.deepEqual(limited, { delivered: false, reason: 'rate_limited' })
+  assert.deepEqual(rest(limited), { delivered: false, reason: 'rate_limited' })
   // 另一个调用方不受影响。
   const other = await relay.execute({ target: '梦梦', text: '别人' }, execOf('qqbot:cat:main', '/srv/bots/cat'))
   assert.equal(other.delivered, true)
@@ -170,20 +189,20 @@ test('限流：同一调用方每分钟最多 6 次，超限 rate_limited，窗�
 test('文本校验：空白/超 1000 字 → invalid_text；1000 字可送达', async () => {
   const { relay, calls } = setup()
   const exec = execOf('qqbot:helper:main', '/srv/bots/helper')
-  assert.deepEqual(await relay.execute({ target: '梦梦', text: '   ' }, exec), { delivered: false, reason: 'invalid_text' })
-  assert.deepEqual(await relay.execute({ target: '梦梦', text: 'x'.repeat(RELAY_TEXT_MAX_CHARS + 1) }, exec), { delivered: false, reason: 'invalid_text' })
-  assert.deepEqual(await relay.execute({ target: '', text: 'hi' }, exec), { delivered: false, reason: 'unknown_target' })
-  assert.deepEqual(await relay.execute({ target: '梦梦', text: 42 }, exec), { delivered: false, reason: 'invalid_text' })
+  assert.deepEqual(rest(await relay.execute({ target: '梦梦', text: '   ' }, exec)), { delivered: false, reason: 'invalid_text' })
+  assert.deepEqual(rest(await relay.execute({ target: '梦梦', text: 'x'.repeat(RELAY_TEXT_MAX_CHARS + 1) }, exec)), { delivered: false, reason: 'invalid_text' })
+  assert.deepEqual(rest(await relay.execute({ target: '', text: 'hi' }, exec)), { delivered: false, reason: 'unknown_target' })
+  assert.deepEqual(rest(await relay.execute({ target: '梦梦', text: 42 }, exec)), { delivered: false, reason: 'invalid_text' })
   const edge = await relay.execute({ target: '梦梦', text: 'x'.repeat(RELAY_TEXT_MAX_CHARS) }, exec)
   assert.equal(edge.delivered, true)
-  assert.equal(calls[0].message.content[0].text.length, '[astrbox-relay] 猫猫 对你说：'.length + RELAY_TEXT_MAX_CHARS)
+  assert.equal(calls[0].message.content[0].text.length, '[astrbox-relay] 猫猫·主体（qqbot:he） 对你说：'.length + RELAY_TEXT_MAX_CHARS)
 })
 
 test('target=对方主体：唯一另一个实体的主会话；多实体时 unknown_target', async () => {
   const { relay, calls } = setup()
   const result = await relay.execute({ target: '对方主体', text: '你好呀' }, execOf('qqbot:helper:main', '/srv/bots/helper'))
-  assert.deepEqual(result, { delivered: true, kind: 'main', entity: '梦梦', sessionId: 'qqbot:cat:main' })
-  assert.equal(calls[0].message.content[0].text, '[astrbox-relay] 猫猫 对你说：你好呀')
+  assert.deepEqual(rest(result), { delivered: true, kind: 'main', entity: '梦梦', sessionId: 'qqbot:cat:main' })
+  assert.equal(calls[0].message.content[0].text, '[astrbox-relay] 猫猫·主体（qqbot:he） 对你说：你好呀')
 
   const three = setup({
     bindings: [
@@ -192,13 +211,87 @@ test('target=对方主体：唯一另一个实体的主会话；多实体时 unk
     ],
   })
   const ambiguous = await three.relay.execute({ target: '对方主体', text: 'hi' }, execOf('qqbot:helper:main', '/srv/bots/helper'))
-  assert.deepEqual(ambiguous, { delivered: false, reason: 'unknown_target' })
+  assert.deepEqual(rest(ambiguous), { delivered: false, reason: 'unknown_target' })
 })
 
 test('目标不可达：未知实体 / 主会话 agent 不在线 → delivered:false 不抛', async () => {
   const { relay } = setup()
   const exec = execOf('qqbot:helper:main', '/srv/bots/helper')
-  assert.deepEqual(await relay.execute({ target: '不存在的猫', text: 'hi' }, exec), { delivered: false, reason: 'unknown_target' })
+  assert.deepEqual(rest(await relay.execute({ target: '不存在的猫', text: 'hi' }, exec)), { delivered: false, reason: 'unknown_target' })
   const offline = createRelayTool({ getBindings: () => BINDINGS, agentOf: () => undefined, defaultEntity: '猫猫' })
-  assert.deepEqual(await offline.execute({ target: '梦梦', text: 'hi' }, exec), { delivered: false, reason: 'agent_unavailable' })
+  assert.deepEqual(rest(await offline.execute({ target: '梦梦', text: 'hi' }, exec)), { delivered: false, reason: 'agent_unavailable' })
+})
+test('K18 来源标签：`实体·标题（前 8 位）`，成功与失败结果都带 source', async () => {
+  const { relay, calls } = setup()
+  const mainExec = execOf('qqbot:helper:main', '/srv/bots/helper')
+  const ok = await relay.execute({ target: '梦梦', text: '嗨' }, mainExec)
+  assert.equal(ok.delivered, true)
+  assert.deepEqual(ok.source, { sessionId: 'qqbot:helper:main', entity: '猫猫', label: '猫猫·主体（qqbot:he）' })
+  assert.equal(calls[0].message.content[0].text, '[astrbox-relay] 猫猫·主体（qqbot:he） 对你说：嗨')
+
+  const invalid = await relay.execute({ target: '梦梦', text: '' }, mainExec)
+  assert.deepEqual(rest(invalid), { delivered: false, reason: 'invalid_text' })
+  assert.deepEqual(invalid.source, { sessionId: 'qqbot:helper:main', entity: '猫猫', label: '猫猫·主体（qqbot:he）' })
+
+  const unknown = await relay.execute({ target: '不存在的猫', text: '哈' }, mainExec)
+  assert.deepEqual(rest(unknown), { delivered: false, reason: 'unknown_target' })
+  assert.deepEqual(unknown.source, { sessionId: 'qqbot:helper:main', entity: '猫猫', label: '猫猫·主体（qqbot:he）' })
+})
+
+test('K18 标题：主体 / 群聊(…) / 私聊(…) 分别进入来源标签', async () => {
+  const { relay, calls } = setup()
+  await relay.execute({ target: '猫猫', text: 'a' }, execOf('qqbot:cat:main', '/srv/bots/cat'))
+  await relay.execute({ target: '猫猫', text: 'b' }, execOf('qqbot:cat:group:g1', '/srv/bots/cat'))
+  await relay.execute({ target: '主体', text: 'c' }, execOf('qqbot:cat:c2c:u1', '/srv/bots/cat'))
+  assert.equal(calls[0].message.content[0].text, '[astrbox-relay] 梦梦·主体（qqbot:ca） 对你说：a')
+  assert.equal(calls[1].message.content[0].text, '[astrbox-relay] 梦梦·群聊(1EC36362)（qqbot:ca） 对你说：b')
+  assert.equal(calls[2].message.content[0].text, '[astrbox-relay] 梦梦·私聊(85D47757)（qqbot:ca） 对你说：c')
+})
+
+test('K18 无标题回退「会话」；sessionTitleOf 缺失/抛错都不影响转达', async () => {
+  const noTitle = setup({ sessionTitleOf: () => '' })
+  const first = await noTitle.relay.execute({ target: '梦梦', text: 'x' }, execOf('qqbot:helper:main', '/srv/bots/helper'))
+  assert.equal(first.source.label, '猫猫·会话（qqbot:he）')
+  assert.equal(noTitle.calls[0].message.content[0].text, '[astrbox-relay] 猫猫·会话（qqbot:he） 对你说：x')
+
+  const thrown = setup({
+    sessionTitleOf: () => {
+      throw new Error('title service boom')
+    },
+  })
+  const second = await thrown.relay.execute({ target: '梦梦', text: 'y' }, execOf('qqbot:helper:main', '/srv/bots/helper'))
+  assert.equal(second.delivered, true)
+  assert.equal(second.source.label, '猫猫·会话（qqbot:he）')
+
+  // 未注入 sessionTitleOf（工具可独立使用）：回退「会话」。
+  const calls = []
+  const bare = createRelayTool({
+    getBindings: () => BINDINGS,
+    agentOf: (sessionId) => ({ id: sessionId, session: { id: sessionId }, followup: (message) => calls.push(message) }),
+    defaultEntity: '猫猫',
+  })
+  const third = await bare.execute({ target: '梦梦', text: 'z' }, execOf('qqbot:helper:main', '/srv/bots/helper'))
+  assert.equal(third.delivered, true)
+  assert.equal(third.source.label, '猫猫·会话（qqbot:he）')
+  assert.equal(calls[0].content[0].text, '[astrbox-relay] 猫猫·会话（qqbot:he） 对你说：z')
+})
+
+test('K18 未绑定会话：来源写「未绑定会话」、不回落 defaultEntity；target=主体 仍可回退', async () => {
+  const { relay, calls } = setup()
+  const unbound = execOf('coding-1', '/elsewhere/project')
+  const result = await relay.execute({ target: '主体', text: 'hi' }, unbound)
+  assert.equal(result.delivered, true)
+  assert.deepEqual(result.source, { sessionId: 'coding-1', entity: '', label: '未绑定会话·会话（coding-1）' })
+  assert.equal(calls[0].message.content[0].text, '[astrbox-relay] 未绑定会话·会话（coding-1） 对你说：hi')
+})
+
+test('K18 会话 id 短标识：去掉宿主 session- 前缀后取前 8 位', async () => {
+  const { relay, calls } = setup({ sessionTitleOf: () => '主体' })
+  const result = await relay.execute(
+    { target: '猫猫', text: 'hi' },
+    execOf('session-abcdef12-3456-7890', '/elsewhere/project'),
+  )
+  assert.equal(result.delivered, true)
+  assert.equal(result.source.label, '未绑定会话·主体（abcdef12）')
+  assert.equal(calls[0].message.content[0].text, '[astrbox-relay] 未绑定会话·主体（abcdef12） 对你说：hi')
 })

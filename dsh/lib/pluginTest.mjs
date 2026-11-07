@@ -864,6 +864,8 @@ test('astrbox_relay（K14）：tools 服务可用时注册，execute 转达到�
     bindings: () => [botBinding('/srv/bots/cat', '梦梦', catMain), botBinding('/srv/bots/helper', '猫猫', helperMain)],
   })
   stub.setService('agents', { get: (id) => (id === catMain ? fakeAgent(catMain, followups) : undefined) })
+  // K18：来源标签读宿主 sessionTitle（主体 / 私聊(…) / 群聊(…)）。
+  stub.setService('sessionTitle', { get: () => ({ title: '主体' }) })
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, tickEveryMs: 0 })
   t.after(() => runtime.dispose())
 
@@ -876,9 +878,14 @@ test('astrbox_relay（K14）：tools 服务可用时注册，execute 转达到�
     { target: '梦梦', text: '转达一句' },
     { agent: { session: { id: helperMain, header: { cwd: '/srv/bots/helper' } } } },
   )
-  assert.deepEqual(result, { delivered: true, kind: 'main', entity: '梦梦', sessionId: catMain })
+  assert.equal(result.delivered, true)
+  assert.equal(result.kind, 'main')
+  assert.equal(result.entity, '梦梦')
+  assert.equal(result.sessionId, catMain)
+  // K18：成功结果带来源会话信息，正文前缀含「实体·标题（会话 id 前 8）」。
+  assert.deepEqual(result.source, { sessionId: helperMain, entity: '猫猫', label: '猫猫·主体（qqbot:he）' })
   assert.equal(followups.length, 1)
-  assert.equal(followups[0].content[0].text, '[astrbox-relay] 猫猫 对你说：转达一句')
+  assert.equal(followups[0].content[0].text, '[astrbox-relay] 猫猫·主体（qqbot:he） 对你说：转达一句')
 
   // dispose 时注销工具（tools.register 返回的释放函数被调用）。
   runtime.dispose()
