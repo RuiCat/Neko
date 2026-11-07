@@ -473,9 +473,10 @@ window.__ModuleLoader__.load({
       const field = (name) => (event) => setForm((p) => ({ ...p, [name]: event.target.value })); const setUiField = (name, value) => setUi((p) => ({ ...p, [name]: value }))
       const reload = useCallback(async () => {
         const query = new URLSearchParams({ entity: '世界' })
-        query.append('path', '世界.环境.当前时间'); query.append('path', '世界.状态.阶段')
+        // /state 的 path 相对实体：世界时钟字段是 环境.当前时间 / 状态.阶段（不是 世界.xxx）。
+        query.append('path', '环境.当前时间'); query.append('path', '状态.阶段')
         const [clockResult, entitiesResult] = await Promise.all([controlCall(`/state?${query.toString()}`), controlCall('/entities')])
-        if (clockResult.ok) setClock({ time: String(clockResult.body?.values?.['世界.环境.当前时间'] ?? ''), phase: String(clockResult.body?.values?.['世界.状态.阶段'] ?? '') })
+        if (clockResult.ok) setClock({ time: String(clockResult.body?.values?.['环境.当前时间'] ?? ''), phase: String(clockResult.body?.values?.['状态.阶段'] ?? '') })
         else setUiField('error', clockResult.error)
         if (entitiesResult.ok && Array.isArray(entitiesResult.body?.entities)) setEntities(entitiesResult.body.entities)
       }, [])
