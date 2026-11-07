@@ -295,3 +295,27 @@ test('K18 会话 id 短标识：去掉宿主 session- 前缀后取前 8 位', as
   assert.equal(result.source.label, '未绑定会话·主体（abcdef12）')
   assert.equal(calls[0].message.content[0].text, '[astrbox-relay] 未绑定会话·主体（abcdef12） 对你说：hi')
 })
+
+test('K24 target=会话 ID：直接投递并触发 followup；不可用/发给自己会拒绝', async () => {
+  const calls = []
+  const relay = createRelayTool({
+    getBindings: () => BINDINGS,
+    agentOf: (sessionId) => (sessionId === 'session-target-1' ? { id: sessionId, session: { id: sessionId }, followup: (message) => calls.push(message) } : undefined),
+    sessionTitleOf: () => '主体',
+    defaultEntity: '猫猫',
+  })
+  const callerExec = execOf('session-caller-1', '/elsewhere/project')
+
+  const result = await relay.execute({ target: 'session-target-1', text: 'hello' }, callerExec)
+  assert.equal(result.delivered, true)
+  assert.equal(result.kind, 'session')
+  assert.equal(result.sessionId, 'session-target-1')
+  assert.equal(calls.length, 1)
+  assert.match(calls[0].content[0].text, /^\[astrbox-relay\] 未绑定会话·主体（caller-1） 对你说：hello$/)
+
+  const missing = await relay.execute({ target: 'session-missing', text: 'x' }, callerExec)
+  assert.deepEqual(rest(missing), { delivered: false, reason: 'session_unavailable' })
+
+  const self = await relay.execute({ target: 'session-caller-1', text: 'x' }, callerExec)
+  assert.deepEqual(rest(self), { delivered: false, reason: 'self_target' })
+})

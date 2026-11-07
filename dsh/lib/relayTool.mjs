@@ -52,7 +52,9 @@ function createRelayMessage(text) {
 function renderRelayResult(value) {
   const result = value !== null && typeof value === 'object' ? value : {}
   if (result.delivered === true) {
-    return result.kind === 'qq' ? `已转达到 QQ ${String(result.scope ?? '')}` : `已转达到 ${String(result.entity ?? '')} 主会话`
+    if (result.kind === 'qq') return `已转达到 QQ ${String(result.scope ?? '')}`
+    if (result.kind === 'session') return `已发送到会话 ${String(result.sessionId ?? '')}（触发该会话模型）`
+    return `已转达到 ${String(result.entity ?? '')} 主会话`
   }
   return `未送达：${String(result.reason ?? 'unknown')}`
 }
@@ -268,6 +270,32 @@ export function createRelayTool(options) {
   }
 
   /**
+   * 按会话 ID 直接投递（K24）：followup 到指定 live 会话，触发该会话自己的模型上下文。
+   * 不自动回传；拒绝发给调用方自己（防自触发循环）。
+   * @param {string} sessionId 目标会话 id（`session-…`）
+   * @param {string} text 正文
+   * @param {{sessionId: string, binding: object|undefined, entity: string}} caller 调用方
+   * @returns {object} 规范结果
+   */
+  function deliverToSession(sessionId, text, caller) {
+    if (typeof sessionId !== 'string' || sessionId === '') return { delivered: false, reason: 'unknown_target' }
+    if (sessionId === caller.sessionId) return { delivered: false, reason: 'self_target' }
+    const agent = agentOf(sessionId)
+    if (agent === undefined || typeof agent.followup !== 'function') return { delivered: false, reason: 'session_unavailable' }
+    try {
+      agent.followup(createRelayMessage(`${RELAY_PREFIX} ${sourceLabel(caller)} 对你说：${text}`))
+    } catch (error) {
+      try {
+        logger?.warnOnce?.('relay-tool', `astrbox_relay 会话投递失败：${error instanceof Error ? error.message : String(error)}`)
+      } catch {
+        // 日志失败不影响返回值。
+      }
+      return { delivered: false, reason: 'session_unavailable' }
+    }
+    return { delivered: true, kind: 'session', sessionId }
+  }
+
+  /**
    * 执行一次转达。
    * @param {unknown} rawArgs 模型参数 `{target, text}`
    * @param {{agent?: object, signal?: AbortSignal}} [exec] 执行上下文
@@ -283,6 +311,8 @@ export function createRelayTool(options) {
     }
     if (target === '') return withSource({ delivered: false, reason: 'unknown_target' }, caller)
     if (!allowCaller(caller.sessionId)) return withSource({ delivered: false, reason: 'rate_limited' }, caller)
+    // K24：target 直接给会话 ID 时按会话投递（触发该会话自己的模型上下文）。
+    if (target.startsWith('session-')) return withSource(deliverToSession(target, text, caller), caller)
     if (target === '私聊') return withSource(await deliverToQq('c2c', text, caller), caller)
     if (target === '群聊') return withSource(await deliverToQq('group', text, caller), caller)
     if (target === '主体') {
@@ -306,14 +336,15 @@ export function createRelayTool(options) {
     name: RELAY_TOOL_NAME,
     description:
       '把一句话转达给另一个 Neko 实体或会话（跨会话交互）。target 可为实体 id（如 梦梦/猫猫）、'
-      + '主体（自己所属 bot 的主会话）、私聊/群聊（经 QQ 机器人直发）。不会自动收到对方回复，'
-      + '需要回话时再调用一次。正文最多 1000 字，同一会话每分钟最多 6 次。',
+      + '主体（自己所属 bot 的主会话）、私聊/群聊（经 QQ 机器人直发），或会话 ID（session-…，'
+      + '直接投递到该会话并触发其模型上下文）。不会自动收到对方回复，需要回话时再调用一次。'
+      + '正文最多 1000 字，同一会话每分钟最多 6 次；不能发给自己所属会话。',
     parameters: {
       type: 'object',
       properties: {
         target: {
           type: 'string',
-          description: '目标：实体 id（梦梦/猫猫）、对方主体、主体、私聊、群聊。',
+          description: '目标：实体 id（梦梦/猫猫）、对方主体、主体、私聊、群聊，或会话 ID（session-…）。',
         },
         text: {
           type: 'string',

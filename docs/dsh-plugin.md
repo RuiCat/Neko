@@ -307,6 +307,8 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
   subscriptionStatePath: ""             # K17 间隔覆盖持久化路径；空串=~/.dsh-astrbox/subscription.json
 ```
 
+
+> K24：`target` 也接受会话 ID（`session-…`）——直接 followup 到该 live 会话并触发其模型上下文；发给自己返回 `self_target`，会话不在线返回 `session_unavailable`。
 ## 跨会话转达：`astrbox_relay`（K14）
 
 桥接向 `tools` 服务注册一个工具 `astrbox_relay`（`ctx.get('tools')` 惰性读取；服务缺失只 warn
