@@ -910,6 +910,32 @@ test('astrbox_relay（K14）：无 tools 服务只 warn 一次且插件照常工
   assert.equal(result.messages.length, 1, '插件照常注入快照')
 })
 
+test('工具注册：冷启动 tools 尚未就绪时经 ctx.inject 延迟注册（不重复、dispose 注销）', async (t) => {
+  const { server } = await startBridgeServer(DEFAULT_PATHS)
+  t.after(() => server.close())
+  const stub = createStubContext()
+  stub.setService('qqbotBots', { bindings: () => [] })
+  let deferred
+  let scopeDisposed = false
+  stub.ctx.inject = (deps, callback) => {
+    deferred = callback
+    return () => { scopeDisposed = true }
+  }
+  const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, tickEveryMs: 0 })
+  t.after(() => runtime.dispose())
+
+  const registered = []
+  const tools = { register: (definition) => { registered.push(definition); return () => {} } }
+  assert.equal(registered.length, 0, 'tools 未就绪时不应立即注册')
+  deferred({ tools })
+  assert.deepEqual(registered.map((definition) => definition.name).sort(), ['astrbox_relay', 'astrbox_subscription'])
+  deferred({ tools })
+  assert.equal(registered.length, 2, '重复回调不得重复注册')
+
+  runtime.dispose()
+  assert.equal(scopeDisposed, true, 'dispose 应释放 inject 作用域')
+})
+
 test('K10/K11：assistant-only 轮次不记 feed；对话行带 sessionTitle label（私聊/群聊）', async (t) => {
   const { server, control } = await startBridgeServer(DEFAULT_PATHS)
   t.after(() => server.close())

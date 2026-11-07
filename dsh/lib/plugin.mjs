@@ -112,6 +112,7 @@ function createRuntime(options) {
   let disposeControlRoutes
   let relayTool
   let disposeRelay
+  let disposeToolsScope
   let subscriptionTool
   let disposeSubscription
   /** K17：订阅间隔覆盖（内存 + 持久化，路径由 `subscriptionStatePath` 决定）。 */
@@ -639,19 +640,49 @@ function createRuntime(options) {
 
   /**
    * K14/K17：把 `astrbox_relay` 与 `astrbox_subscription` 注册到 tools 服务。
-   * 服务缺失只 warn 一次，插件照常工作；两个工具各自注册失败互不影响。
+   *
+   * 冷启动时插件 apply 可能早于 tools 服务就绪：先走 `ctx.inject(['tools'], …)`
+   * 等它可用（服务已就绪则立即回调）；ctx.inject 不可用（单测替身/旧宿主）时
+   * 按 `ctx.get('tools')` 立即注册一次。注册只做一次；服务缺失只 warn。
    */
   function installTools() {
-    let tools
+    let registered = false
+    const register = (tools) => {
+      if (registered || disposed) return
+      if (tools === undefined || tools === null || typeof tools.register !== 'function') return
+      registered = true
+      registerToolDefinitions(tools)
+    }
+    // 1) 立即尝试（插件热重载时 tools 通常已就绪）。
+    let immediate
     try {
-      tools = typeof ctx.get === 'function' ? ctx.get('tools') : undefined
+      immediate = typeof ctx.get === 'function' ? ctx.get('tools') : undefined
     } catch {
-      tools = undefined
+      immediate = undefined
     }
-    if (tools === undefined || tools === null || typeof tools.register !== 'function') {
+    register(immediate)
+    if (registered) return
+    // 2) 冷启动：tools 尚未就绪时等它出现再注册（只注册一次）。
+    if (typeof ctx.inject === 'function') {
+      try {
+        disposeToolsScope = ctx.inject(['tools'], (scoped) => {
+          const tools = scoped?.tools ?? (typeof scoped?.get === 'function' ? scoped.get('tools') : undefined)
+          register(tools)
+        })
+      } catch (error) {
+        logger.warnOnce('tools', `tools 服务注入失败：${errorMessage(error)}`)
+      }
+    }
+    if (!registered) {
       logger.warnOnce('tools', 'tools 服务不可用，astrbox_relay/astrbox_subscription 未注册（插件继续工作）')
-      return
     }
+  }
+
+  /**
+   * 实际注册两个工具（K14 relay / K17 subscription）；各自失败互不影响。
+   * @param {object} tools `tools` 服务（需有 `register`）
+   */
+  function registerToolDefinitions(tools) {
     try {
       relayTool = createRelayTool({
         getBindings: currentBindings,
@@ -833,6 +864,7 @@ function createRuntime(options) {
         // 路由可能已随 webServer fiber 释放：忽略。
       }
       try {
+        disposeToolsScope?.()
         disposeRelay?.()
         relayTool?.dispose()
       } catch {
