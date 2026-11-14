@@ -14,6 +14,11 @@ type Change struct {
 	From    any
 	To      any
 	RuleIDs []string
+	// FromKnown 标记 From 真的来自上一状态。状态组之外的路径在 transition 的
+	// FromState 里查不到，此时 From 为 nil、FromKnown=false，board 会改用该条目
+	// 上一次的 To 作为 from，避免每次都显示 "null → 值"。直接写入（MCP/控制面）
+	// 能读到写入前的真实值，因此总是 FromKnown=true。
+	FromKnown bool
 }
 
 // entityChanges is one entity's ordered changes from a tick.
@@ -59,15 +64,71 @@ func aggregateTransitions(transitions []engine.Transition) []entityChanges {
 				continue
 			}
 			indexes[path] = len(*changes)
+			from, fromKnown := lookupFrom(transition.FromState, path)
 			*changes = append(*changes, Change{
-				Path:    path,
-				From:    lookupFrom(transition.FromState, path),
-				To:      value,
-				RuleIDs: ruleIDs(transition.RuleID),
+				Path:      path,
+				From:      from,
+				To:        value,
+				RuleIDs:   ruleIDs(transition.RuleID),
+				FromKnown: fromKnown,
 			})
 		}
 	}
 	return groups
+}
+
+// aggregateWrites folds the tick's observed writes (rule ops, text effects and
+// implicit @函数/事件 writes) into per-entity changes: earliest from, latest to
+// and deduplicated rule ids. Paths whose net change is zero are skipped; the
+// scene event stream is kept here and bounded later by the board projection
+// (sceneEventProjection.go) so the push never carries the whole list.
+func aggregateWrites(writes []engine.EntityWrite) []entityChanges {
+	groups := make([]entityChanges, 0, len(writes))
+	groupPositions := make(map[string]int, len(writes))
+	pathPositions := make([]map[string]int, 0, len(writes))
+	for _, write := range writes {
+		if write.EntityID == "" || write.Path == "" {
+			continue
+		}
+		groupIndex, exists := groupPositions[write.EntityID]
+		if !exists {
+			groupIndex = len(groups)
+			groupPositions[write.EntityID] = groupIndex
+			groups = append(groups, entityChanges{Entity: write.EntityID})
+			pathPositions = append(pathPositions, map[string]int{})
+		}
+		changes := &groups[groupIndex].Changes
+		indexes := pathPositions[groupIndex]
+		if position, found := indexes[write.Path]; found {
+			(*changes)[position].To = copyValue(write.To)
+			(*changes)[position].RuleIDs = appendRuleID((*changes)[position].RuleIDs, write.RuleID)
+			continue
+		}
+		indexes[write.Path] = len(*changes)
+		*changes = append(*changes, Change{
+			Path:      write.Path,
+			From:      copyValue(write.From),
+			To:        copyValue(write.To),
+			RuleIDs:   ruleIDs(write.RuleID),
+			FromKnown: true,
+		})
+	}
+	// 同 tick 内改了又改回去的路径没有净变化，不记黑板。
+	nonEmpty := groups[:0]
+	for _, group := range groups {
+		kept := group.Changes[:0]
+		for _, change := range group.Changes {
+			if valuesEqual(change.From, change.To) {
+				continue
+			}
+			kept = append(kept, change)
+		}
+		group.Changes = kept
+		if len(kept) > 0 {
+			nonEmpty = append(nonEmpty, group)
+		}
+	}
+	return nonEmpty
 }
 
 // readString returns operation[key] as a string, or "" when absent/non-string.
@@ -104,17 +165,17 @@ func appendRuleID(current []string, ruleID string) []string {
 // walked from every segment offset: dropping leading segments lines the two
 // roots up without hard-coding the configured state-group name. A path absent
 // from the snapshot yields nil, which the board reports as null.
-func lookupFrom(fromState map[string]any, path string) any {
+func lookupFrom(fromState map[string]any, path string) (any, bool) {
 	if value, exists := fromState[path]; exists {
-		return copyValue(value)
+		return copyValue(value), true
 	}
 	segments := strings.Split(path, ".")
 	for offset := 0; offset < len(segments); offset++ {
 		if value, found := walkPath(fromState, segments[offset:]); found {
-			return copyValue(value)
+			return copyValue(value), true
 		}
 	}
-	return nil
+	return nil, false
 }
 
 // walkPath walks a segment list down nested maps, reporting whether it landed.

@@ -63,11 +63,31 @@
       .monitor-split .petui-description-list {
         max-width: 100%;
         min-width: 0;
+        /* 列表是 flex 高度容器里的网格：align-content 默认 stretch 会把自动行拉高，
+           卡片顶部对齐后留下大空带 → 从顶部起排，行高只由内容决定。 */
+        align-content: start;
+        /* 行内等高交给 detailGrid.mjs 的行高平衡器（纯 CSS 的 align-items:stretch 会让
+           长值被裁：Chrome 算行高时不把被拉伸项的内容计入）。 */
       }
       .monitor-split .petui-description-list__item {
         min-width: 0;
-        overflow: hidden;
+        /* 用 clip 而不是 hidden：hidden 会让卡片变成滚动容器，Chrome 在「网格项 + 行夹取值」
+           组合下只画到卡片顶部（值被裁掉）；clip 同样裁溢出但不建滚动容器。 */
+        overflow: clip;
       }
+      /* 实体详情值：人类可读文本，完整显示（不夹取行数），长值悬停另有 title 全文。 */
+      .nek-detail-value {
+        display: block;
+        font-size: var(--font-size-12);
+        line-height: 1.5;
+        color: var(--color-text);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .nek-detail-value--null { color: var(--color-text-muted); }
+      .nek-detail-value--object,
+      .nek-detail-value--array { color: var(--color-text-secondary); }
+      .nek-detail-value[data-summary="true"] { color: var(--color-text-secondary); font-style: italic; }
       .monitor-split .petui-panel__body {
         flex: 1 1 auto;
         min-height: 0;
@@ -80,6 +100,29 @@
       .monitor-split .petui-data-table {
         max-height: 100%;
         overflow: auto;
+      }
+      /* 实体详情写表单：路径 + 值 + 写入压成一行，省掉三行 FormRow 的纵向占地。 */
+      .monitor-split .monitor-writebar {
+        display: flex;
+        align-items: center;
+        gap: var(--space-8);
+        padding-top: var(--space-8);
+        border-top: var(--space-1) solid var(--color-border);
+      }
+      .monitor-split .monitor-writebar > div {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .monitor-split .monitor-writebar input {
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .monitor-split .monitor-writebar > span {
+        flex: 0 0 auto;
+        display: flex;
+      }
+      .monitor-split .monitor-writebar > span > button {
+        white-space: nowrap;
       }
       .monitor-split .petui-tree-view-list {
         overflow-y: scroll !important;

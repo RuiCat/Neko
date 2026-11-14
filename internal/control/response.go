@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/RuiCat/Neko/internal/sessionboard"
 )
 
 const (
@@ -25,6 +27,26 @@ const (
 	CODE_SHUTTING_DOWN = "shutting_down"
 	// CODE_DEADLINE_EXCEEDED marks a request past the server-side deadline.
 	CODE_DEADLINE_EXCEEDED = "deadline_exceeded"
+	// CODE_FORBIDDEN marks a cross-workspace session board request (K9).
+	CODE_FORBIDDEN = sessionboard.CODE_FORBIDDEN
+	// CODE_BOARD_TOO_LARGE marks one session board past 256 KiB (K9).
+	CODE_BOARD_TOO_LARGE = sessionboard.CODE_BOARD_TOO_LARGE
+	// CODE_WORKSPACE_LIMIT marks the 129th workspace session board (K9).
+	CODE_WORKSPACE_LIMIT = sessionboard.CODE_WORKSPACE_LIMIT
+	// CODE_REGION_LIMIT is registered for a no-eviction store variant (K9).
+	CODE_REGION_LIMIT = sessionboard.CODE_REGION_LIMIT
+	// CODE_STORE_TOO_LARGE marks the session board store past 4 MiB (K9).
+	CODE_STORE_TOO_LARGE = sessionboard.CODE_STORE_TOO_LARGE
+	// CODE_PERSIST_FAILED marks a failed session board save (K9).
+	CODE_PERSIST_FAILED = sessionboard.CODE_PERSIST_FAILED
+	// CODE_INVALID_SCOPE, CODE_INVALID_OPS, CODE_INVALID_KEY, CODE_INVALID_VALUE
+	// and CODE_TOO_MANY_OPS are the K5 subcodes; they travel as a message prefix
+	// under CODE_BAD_REQUEST (K5 allows either form).
+	CODE_INVALID_SCOPE = "invalid_scope"
+	CODE_INVALID_OPS   = "invalid_ops"
+	CODE_INVALID_KEY   = "invalid_key"
+	CODE_INVALID_VALUE = "invalid_value"
+	CODE_TOO_MANY_OPS  = "too_many_ops"
 )
 
 // response is one fully buffered reply so a late handler can never write twice.

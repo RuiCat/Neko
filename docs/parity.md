@@ -49,9 +49,10 @@ Python 原实现（`legacy/python-astrbox/`）是行为基线。本文件记录 
 | 能力 | 状态 | 影响 |
 |---|---|---|
 | 函数解释器语法面 | Python 子集 | 已支持 `while`、`try/except/finally`、`break/continue`、链式比较、`for` 遍历列表/文本/映射键与多变量解包、元组赋值、切片步长 `[a:b:c]`、map 字面量、常用 list/text/map 方法、列表推导与 `range/enumerate/zip/sum/sorted/reversed`；算术与 `int()/float()` 按 Python 类型/异常语义（字符串+列表报错）。`except` 可用 `值错误/类型错误/名称错误 as 变量`（含 `Exception`）。内建类型方法：list 全量，dict 除 `fromkeys`，str 常用集（含 `casefold/istitle/expandtabs/rsplit/partition` 等）；`str.format` 支持位置字段 `{}`/`{0}`、`{{`/`}}`、`!r` 与常用规格（`:.2f`、`:>5`、`:05d`、`:^7`）；未支持 `str.encode/translate/format_map` 与 `dict.fromkeys`（无 bytes/类模型） |
-| Python 侧非引擎工具 | 未迁移 | `trash`、`secrets`/`api_login`、`behavior`、`restart`、`emote`、`session_chat`、`event_repair`、`rule_derive` |
+| Python 侧非引擎工具 | 未迁移 | `trash`、`secrets`/`api_login`、`behavior`、`restart`、`session_chat`、`event_repair`、`rule_derive` |
+| 表情工具 | **已迁移** | `emote_find` 语义检索 + `astrbox-emote build` 向量/聚类构建；`vec_db.npz` 与 Python 双向可读；视觉簇分析（`build_cluster_analysis.py`）与场景层（`scene_db.*`）不迁移，`emote_index.json` 视为外部输入。对照/契约/验收见 `docs/emote-tool-migration.md` |
 
-这些缺口在 MCP 工具层都不可见（没有注册对应工具），不会让客户端误以为可用。
+除表情工具（已注册 `emote_find`）外，其余缺口在 MCP 工具层都不可见（没有注册对应工具），不会让客户端误以为可用。
 
 ## 已知数据特例
 

@@ -8,6 +8,8 @@
 - `archives/`：实体快照。
 - `logs/`：tick 日志（保留 7 天）。
 - `llm_decisions.json`：冲突仲裁记录。
+- `training/`：门控训练样本与导出的训练集（含对话摘要，仅本机）。
+- `models/`：训练好的门控权重（`gate-mlp-v1.json` 等，仅本机）。
 
 ## 首次运行
 

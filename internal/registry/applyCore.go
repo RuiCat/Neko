@@ -55,6 +55,10 @@ func (r *Registry) prepareScript(name, text string, skipSafety bool) *preparedSc
 		}
 		return prepared
 	}
+	if errs := r.validateCompiledTemplates(compiled, r.entryTemplateTypes(name)); len(errs) > 0 {
+		prepared.Errors = append(prepared.Errors, errs...)
+		return prepared
+	}
 	prepared.Compiled = compiled
 	return prepared
 }
@@ -62,6 +66,16 @@ func (r *Registry) prepareScript(name, text string, skipSafety bool) *preparedSc
 // commitLocked registers a prepared script. The caller must hold r.mu.
 func (r *Registry) commitLocked(result *ApplyResult, name, text, newHash string, prepared *preparedScript, persist bool) {
 	old := r.entries[name]
+	if conflicts := r.applyRemovalConflicts(name, prepared.Compiled); len(conflicts) > 0 {
+		result.OK = false
+		for _, message := range conflicts {
+			result.Errors = append(result.Errors, ApplyError{
+				Severity: "error", Block: "模板依赖", Message: message,
+				Hint: "先修改依赖方的父列表或删除依赖方，再重新应用该脚本",
+			})
+		}
+		return
+	}
 	if old != nil {
 		delete(r.entries, name)
 		r.releaseLocked(old, result, persist)
@@ -81,6 +95,9 @@ func (r *Registry) commitLocked(result *ApplyResult, name, text, newHash string,
 	}
 	sort.Strings(names)
 	for _, typeName := range names {
+		if parents, ok := prepared.Compiled.TemplateParents[typeName]; ok {
+			r.store.SetTemplateParents(typeName, parents)
+		}
 		r.store.AddTemplate(typeName, prepared.Compiled.Templates[typeName])
 		if persist {
 			if err := r.store.SaveTemplateFile(typeName); err != nil {

@@ -123,18 +123,26 @@ func (b *Bridge) HandleChange(ent *entity.Entity, path string, oldValue, newValu
 }
 
 func (b *Bridge) schemaFor(typeName string) *entity.EntitySchema {
+	// Resolve the order before taking the bridge lock: Refresh takes the store
+	// lock first and then the bridge lock, so this call order must not invert.
+	order := b.store.ResolveOrder(typeName)
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	merged := entity.NewEntitySchema()
 	found := false
-	for _, name := range entity.TypeChain(typeName) {
+	for _, name := range order {
 		schema, ok := b.schemas[name]
 		if !ok {
 			continue
 		}
 		found = true
+		existing := merged.All()
 		for path, field := range schema.All() {
-			merged.Add(path, field)
+			child := field.Clone()
+			if parent, ok := existing[path]; ok {
+				child.MergeInherited(parent)
+			}
+			merged.Add(path, child)
 		}
 	}
 	if !found {

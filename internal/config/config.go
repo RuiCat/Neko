@@ -27,8 +27,19 @@ type Config struct {
 	GlobalEntities []string `json:"global_entities"`
 	// DefaultScene receives emit operations without an explicit scene.
 	DefaultScene string `json:"default_scene"`
+	// CurrentScenePath is the entity field holding the id of the scene it is in.
+	// A scene target that is not a real entity (the default-scene token) resolves
+	// through it, so `场景` means "the actor's current scene" (默认 "位置.场景").
+	CurrentScenePath string `json:"current_scene_path"`
 	// SceneEventField holds a scene's event list.
 	SceneEventField string `json:"scene_event_field"`
+	// SceneEventLimit keeps only the newest entries of that list; 0 = unbounded.
+	// The board only ever projects the newest entry (bounded push).
+	SceneEventLimit int `json:"scene_event_limit"`
+	// SceneOccupancyField is the scene field holding the ids of the actors in it.
+	// Every tick reconciles it from each actor's CurrentScenePath, so a move is a
+	// scene change other agents can see (空 = 关闭同步).
+	SceneOccupancyField string `json:"scene_occupancy_field"`
 	// ClassificationField holds an entity's multi-inheritance labels.
 	ClassificationField string `json:"classification_field"`
 }
@@ -41,7 +52,10 @@ func Default() Config {
 		DefaultStateSubgroup: "身体",
 		GlobalEntities:       []string{"场景", "世界", "时间", "天气", "全局"},
 		DefaultScene:         "场景",
+		CurrentScenePath:     "位置.场景",
 		SceneEventField:      "事件",
+		SceneEventLimit:      50,
+		SceneOccupancyField:  "在场",
 		ClassificationField:  "分类",
 	}
 }
@@ -85,7 +99,35 @@ func (c Config) Validate() error {
 			return fmt.Errorf("global_entities 含非法名称 '%s'", name)
 		}
 	}
+	// 新加字段允许留空（老配置与测试里的 Config 字面量）：留空走 Default 的路径。
+	if c.CurrentScenePath != "" && invalidPath(c.CurrentScenePath) {
+		return fmt.Errorf("current_scene_path '%s' 不是合法的点分路径", c.CurrentScenePath)
+	}
+	if c.SceneEventLimit < 0 {
+		return fmt.Errorf("scene_event_limit 不能为负数")
+	}
+	if c.SceneOccupancyField != "" && invalidPath(c.SceneOccupancyField) {
+		return fmt.Errorf("scene_occupancy_field '%s' 不是合法的点分路径", c.SceneOccupancyField)
+	}
 	return nil
+}
+
+// invalidPath reports whether a dotted path cannot be a field path.
+func invalidPath(path string) bool {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" || strings.HasPrefix(trimmed, ".") || strings.HasSuffix(trimmed, ".") {
+		return true
+	}
+	return strings.ContainsAny(trimmed, "[] ") || strings.Contains(trimmed, "..")
+}
+
+// ScenePath returns the configured current-scene path; an empty value (old
+// config or a Config literal) falls back to the built-in default.
+func (c Config) ScenePath() string {
+	if strings.TrimSpace(c.CurrentScenePath) == "" {
+		return Default().CurrentScenePath
+	}
+	return strings.TrimSpace(c.CurrentScenePath)
 }
 
 // IsGlobalEntity reports whether a reference is a global entity.

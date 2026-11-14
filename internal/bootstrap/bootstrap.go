@@ -2,6 +2,7 @@
 package bootstrap
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/RuiCat/Neko/internal/config"
 	"github.com/RuiCat/Neko/internal/control/ops"
 	"github.com/RuiCat/Neko/internal/diagnostics"
+	"github.com/RuiCat/Neko/internal/emote"
 	"github.com/RuiCat/Neko/internal/engine"
 	"github.com/RuiCat/Neko/internal/entity"
 	"github.com/RuiCat/Neko/internal/eventboard"
@@ -22,9 +24,12 @@ import (
 	"github.com/RuiCat/Neko/internal/gate"
 	"github.com/RuiCat/Neko/internal/hardstate"
 	"github.com/RuiCat/Neko/internal/journal"
+	"github.com/RuiCat/Neko/internal/learn/mlp"
+	"github.com/RuiCat/Neko/internal/learn/samples"
 	"github.com/RuiCat/Neko/internal/mcpserver"
 	"github.com/RuiCat/Neko/internal/registry"
 	"github.com/RuiCat/Neko/internal/repair"
+	"github.com/RuiCat/Neko/internal/sessionboard"
 )
 
 // Options selects the runtime locations. Empty strings follow the historical
@@ -48,6 +53,9 @@ type Options struct {
 	// NightlyPipeline additionally runs the P3 offline pipeline (triage,
 	// repair, regression gate) on every nightly tick.
 	NightlyPipeline bool
+	// EmoteDir is the emote library directory (emote_index.json, vec_db.*,
+	// img/). Empty resolves to $ASTRBOX_EMOTE_DIR or ~/data/catworkspace/emotes.
+	EmoteDir string
 }
 
 // Runtime is the assembled engine shared by astrbox-mcp and dsh-mcp. It owns
@@ -70,12 +78,17 @@ type Runtime struct {
 	// EventBoards keeps every entity's change board (K1); the tick writes it and
 	// the control plane serves it.
 	EventBoards *eventboard.Registry
-	Experts     *expert.Registry
+	// SessionBoards keeps the workspace/global session boards; the control
+	// plane's /boards routes read and write it.
+	SessionBoards *sessionboard.Store
+	Experts       *expert.Registry
 	// ExpertsPath is where the expert contexts are persisted.
-	ExpertsPath     string
-	Assembler       *compensation.Assembler
-	DataDir         string
-	ScriptsDir      string
+	ExpertsPath string
+	Assembler   *compensation.Assembler
+	DataDir     string
+	ScriptsDir  string
+	// EmoteDir is passed to the emote_find backend.
+	EmoteDir        string
 	nightlyStop     chan struct{}
 	nightlyDone     chan struct{}
 	nightlyPipeline bool
@@ -169,12 +182,36 @@ func New(options Options) (*Runtime, error) {
 	// The first observation of an existing entity only fixes its baseline: no
 	// entries and no version until a tick actually changes its state.
 	eventBoards.Observe(storeIDs(store))
+	// Session boards are a separate subsystem (K30): a missing file is an empty
+	// store, a corrupt one is logged and the control plane keeps serving empty.
+	sessionBoards := sessionboard.NewStore(filepath.Join(options.DataDir, sessionboard.FILE_NAME))
+	if err := sessionBoards.Load(); err != nil {
+		log.Printf("astrbox: 加载会话黑板失败（按空黑板继续）: %v", err)
+	}
 	experts := expert.NewDefaultRegistry(expert.DEFAULT_CONTEXT_CAPACITY)
 	expertsPath := filepath.Join(options.DataDir, "experts.json")
 	if err := expert.LoadFile(expertsPath, experts); err != nil {
 		log.Printf("astrbox: 恢复专家上下文失败: %v", err)
 	}
-	assembler := compensation.NewAssembler(gate.NewRuleGate(), experts)
+	ruleGate := gate.NewRuleGate()
+	gateImpl := gate.Gate(ruleGate)
+	gateModelPath := filepath.Join(options.DataDir, "models", "gate-mlp-v1.json")
+	if model, loadErr := mlp.LoadFile(gateModelPath); loadErr == nil {
+		gateImpl = gate.NewModelGate(model, ruleGate, "gate-mlp-v1")
+		log.Printf("astrbox: 门控模型已加载 %s（层宽 %v）", gateModelPath, model.Layers())
+	} else if !errors.Is(loadErr, os.ErrNotExist) {
+		log.Printf("astrbox: 门控模型加载失败，回落规则门控: %v", loadErr)
+	}
+	// 门控样本记录：默认开启（训练数据靠它积累），写失败只记日志、不影响回合。
+	samplesPath := filepath.Join(options.DataDir, samples.SAMPLES_DIR, samples.SAMPLES_FILE)
+	if sampleWriter, sampleErr := samples.NewWriter(samplesPath); sampleErr == nil {
+		gateImpl = samples.NewRecordingGate(gateImpl, sampleWriter, func(err error) {
+			log.Printf("astrbox: 门控样本记录失败: %v", err)
+		})
+	} else {
+		log.Printf("astrbox: 门控样本记录未启用: %v", sampleErr)
+	}
+	assembler := compensation.NewAssembler(gateImpl, experts)
 
 	runtime := &Runtime{
 		Config:          domainConfig,
@@ -190,11 +227,13 @@ func New(options Options) (*Runtime, error) {
 		HardState:       hardstate.DefaultSchema(),
 		Board:           board,
 		EventBoards:     eventBoards,
+		SessionBoards:   sessionBoards,
 		Experts:         experts,
 		ExpertsPath:     expertsPath,
 		Assembler:       assembler,
 		DataDir:         options.DataDir,
 		ScriptsDir:      options.ScriptsDir,
+		EmoteDir:        options.EmoteDir,
 	}
 	runtime.startNightly(options)
 	return runtime, nil
@@ -243,6 +282,7 @@ func (r *Runtime) NewMCPServer() *mcpserver.Server {
 	server.SetOpsDeps(ops.Deps{
 		Store: r.Store, Machine: r.Machine, Experts: r.Experts, DataDir: r.DataDir,
 	})
+	server.SetEmoteClient(emote.NewClient(emote.Config{Dir: r.EmoteDir}))
 	return server
 }
 

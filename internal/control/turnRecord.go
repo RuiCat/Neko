@@ -31,7 +31,7 @@ func (s *Server) recordDSHTurn(request sessionEventRequest, entityID string) {
 	}
 	now := time.Now()
 	turnID := s.runtime.JournalSequence.Next(now)
-	snapshot, pkg, active, err := s.buildTurnContext(context.Background(), turnID, entityID, now)
+	snapshot, pkg, active, err := s.buildTurnContext(context.Background(), turnID, entityID, strings.TrimSpace(request.Summary.UserDigest), now)
 	if err != nil {
 		log.Printf("astrbox: DSH 轮记录失败: %v", err)
 		return
@@ -42,7 +42,7 @@ func (s *Server) recordDSHTurn(request sessionEventRequest, entityID string) {
 	record.UserInput = strings.TrimSpace(request.Summary.UserDigest)
 	record.Answer = answer
 	record.Compensation = pkg
-	record.Gate = journal.Gate{Active: active, Version: gate.RULE_GATE_VERSION}
+	record.Gate = journal.Gate{Active: active, Version: gate.VersionOf(s.runtime.Assembler.Gate)}
 	record.EndedAt = &now
 	if err := s.runtime.Journal.Append(record); err != nil {
 		log.Printf("astrbox: DSH 轮记录入队失败: %v", err)

@@ -48,17 +48,6 @@ type Conflict struct {
 	ResolvedState map[string]any `json:"resolved_state,omitempty"`
 }
 
-// TickResult is one tick's outcome. JSON tags use snake_case to match Python.
-type TickResult struct {
-	TickID         string       `json:"tick_id"`
-	Status         string       `json:"status"`
-	Transitions    []Transition `json:"transitions"`
-	Conflicts      []Conflict   `json:"conflicts"`
-	ReplyHint      string       `json:"hint"`
-	RulesEvaluated int          `json:"rules_evaluated"`
-	Errors         []string     `json:"errors"`
-}
-
 // StateMachine owns a rule set and executes ticks against one entity store.
 type StateMachine struct {
 	mu               sync.Mutex
@@ -215,6 +204,9 @@ func (m *StateMachine) Tick(scope string) TickResult {
 			remove()
 		}
 	}()
+	// 规则开跑前先校准一次在场：规则里读到的「这个场景里还有谁」是当前位置，
+	// 而不是上一个 tick 的旧名单。
+	m.reconcileSceneOccupancy()
 	evalCount := 0
 	transitionCount := 0
 
@@ -258,6 +250,10 @@ func (m *StateMachine) Tick(scope string) TickResult {
 			}
 		}
 	}
+
+	// 场景在场同步：本 tick 规则/函数写完位置后统一校准，写入会被 tick 监听器
+	// 记录进 Writes，事件黑板据此把「谁进了哪个场景」当作场景变化推送。
+	m.reconcileSceneOccupancy()
 
 	result.RulesEvaluated = evalCount
 	switch {
@@ -544,13 +540,24 @@ func newTickID() string {
 }
 
 // attachWriteListeners registers a per-tick listener on every entity so writes
-// performed by @函数/事件 (not just rule ops) participate in branch_race checks.
+// performed by @函数/事件 (not just rule ops) participate in branch_race checks
+// and are reported in TickResult.Writes for the event board.
 func (m *StateMachine) attachWriteListeners() []func() {
 	entities := m.store.ListAll()
 	removers := make([]func(), 0, len(entities))
 	for _, ent := range entities {
-		removers = append(removers, ent.AddChangeListener(func(changed *entity.Entity, path string, _, newValue any) {
+		removers = append(removers, ent.AddChangeListener(func(changed *entity.Entity, path string, oldValue, newValue any) {
 			m.noteStateWrite(changed, path, newValue)
+			if m.tickResult == nil || path == "" {
+				return
+			}
+			m.tickResult.Writes = append(m.tickResult.Writes, EntityWrite{
+				EntityID: changed.ID,
+				RuleID:   m.currentRule,
+				Path:     path,
+				From:     deepCopyAny(oldValue),
+				To:       deepCopyAny(newValue),
+			})
 		}))
 	}
 	return removers

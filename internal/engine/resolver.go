@@ -175,13 +175,16 @@ func (m *StateMachine) newMultiResolver(bindings map[int]*entity.Entity) ValueRe
 }
 
 // clampValue clamps numeric values using template __annotations__ min/max,
-// falling back to suffix matching when the path is not exact.
+// falling back to suffix matching when the path is not exact. Constraints are
+// inherited field-by-field: an ancestor's min/max applies unless a more derived
+// template defines it.
 func (m *StateMachine) clampValue(target *entity.Entity, path string, value any) any {
 	number, numeric := toFloatValue(value)
 	if !numeric {
 		return value
 	}
-	for _, typeName := range entity.TypeChain(target.Type) {
+	var low, high *float64
+	for _, typeName := range m.store.ResolveOrder(target.Type) {
 		template := m.store.GetTemplate(typeName)
 		if template == nil {
 			continue
@@ -212,13 +215,18 @@ func (m *StateMachine) clampValue(target *entity.Entity, path string, value any)
 		if !ok {
 			continue
 		}
-		if low, ok := toFloatValue(schema["min"]); ok && number < low {
-			return low
+		if minValue, ok := toFloatValue(schema["min"]); ok {
+			low = &minValue
 		}
-		if high, ok := toFloatValue(schema["max"]); ok && number > high {
-			return high
+		if maxValue, ok := toFloatValue(schema["max"]); ok {
+			high = &maxValue
 		}
-		return value
+	}
+	if low != nil && number < *low {
+		return *low
+	}
+	if high != nil && number > *high {
+		return *high
 	}
 	return value
 }

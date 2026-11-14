@@ -60,13 +60,5 @@ func (s *Server) attachCompensation(record *journal.TurnRecord, result engine.Ti
 		return
 	}
 	record.Compensation = pkg
-	record.Gate = journal.Gate{Active: active, Version: gate.RULE_GATE_VERSION}
-}
-
-// eventKindOf maps a tick outcome onto the gate's event vocabulary.
-func eventKindOf(result engine.TickResult) string {
-	if len(result.Conflicts) > 0 {
-		return "conflict"
-	}
-	return "turn"
+	record.Gate = journal.Gate{Active: active, Version: gate.VersionOf(s.assembler.Gate)}
 }

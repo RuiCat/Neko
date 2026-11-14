@@ -31,6 +31,28 @@ func NewRuleGate() *RuleGate {
 // Activate scores every expert and returns the top two or three. Ties break by
 // DEFAULT_EXPERT_ORDER; an all-zero turn falls back to the default pair.
 func (g *RuleGate) Activate(features Features) ([]string, error) {
+	return selectExperts(scoreExperts(features)), nil
+}
+
+// PrimaryExpert returns the highest-scoring active semantic expert. Activate
+// keeps the canonical order for stable journal output, so without this the
+// label of a knowledge/self turn would always read as 事件记忆.
+func (g *RuleGate) PrimaryExpert(features Features, active []string) string {
+	scores := scoreExperts(features)
+	primary := ""
+	for _, name := range SEMANTIC_EXPERTS {
+		if !contains(active, name) {
+			continue
+		}
+		if primary == "" || scores[name] > scores[primary] {
+			primary = name
+		}
+	}
+	return primary
+}
+
+// scoreExperts scores every expert from event kind, summary and affect.
+func scoreExperts(features Features) map[string]float64 {
 	scores := map[string]float64{
 		EXPERT_RELATION:   0,
 		EXPERT_EVENT:      0,
@@ -67,7 +89,7 @@ func (g *RuleGate) Activate(features Features) ([]string, error) {
 			break
 		}
 	}
-	return selectExperts(scores), nil
+	return scores
 }
 
 // FALLBACK_EXPERTS fills the minimum when scores leave too few experts; event

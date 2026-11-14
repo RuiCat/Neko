@@ -349,3 +349,48 @@ func TestScopeFilter(t *testing.T) {
 		t.Errorf("scope 应只作用于猫猫, 梦梦 = %#v", got)
 	}
 }
+
+// TestTickRecordsImplicitWrites proves TickResult.Writes covers writes beyond
+// explicit rule ops: add deltas and text-effect assignments.
+func TestTickRecordsImplicitWrites(t *testing.T) {
+	store := entity.NewStore(t.TempDir())
+	store.AddTemplate("NPC", map[string]any{"身体": map[string]any{"饱食": 40}})
+	if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {
+		t.Fatalf("create entity: %v", err)
+	}
+	machine := New(store)
+	machine.AddRule(Rule{
+		ID: "r_feed", Match: "NPC[*]", Enabled: true,
+		Branches: []Branch{{Then: []Op{{Op: "add", Path: "身体.饱食", Value: 5.0}}}},
+	})
+	machine.AddRule(Rule{
+		ID: "r_assign", Match: "NPC[*]", Enabled: true,
+		Branches: []Branch{{Then: []Op{{Op: "set", Path: "状态.触发", Value: "身体状态=疲惫"}}}},
+	})
+	result := machine.Tick("NPC[*]")
+	if result.Status != "ok" {
+		t.Fatalf("status = %s (errors=%v)", result.Status, result.Errors)
+	}
+	writeOf := func(path string) *EntityWrite {
+		for index := range result.Writes {
+			if result.Writes[index].Path == path {
+				return &result.Writes[index]
+			}
+		}
+		return nil
+	}
+	food := writeOf("身体.饱食")
+	if food == nil {
+		t.Fatalf("缺少 身体.饱食 的写入记录: %+v", result.Writes)
+	}
+	if food.RuleID != "r_feed" || !equalValues(food.From, 40) || !equalValues(food.To, 45.0) {
+		t.Fatalf("身体.饱食 写入 = %+v", food)
+	}
+	body := writeOf("状态.身体")
+	if body == nil {
+		t.Fatalf("缺少 状态.身体 的隐式写入（文本赋值副作用）: %+v", result.Writes)
+	}
+	if body.RuleID != "r_assign" || body.To != "疲惫" {
+		t.Fatalf("状态.身体 写入 = %+v", body)
+	}
+}

@@ -12,12 +12,14 @@ import (
 
 // FROZEN_TOOLS is the K6 tool-name set exposed by dsh-mcp (alphabetical).
 // K20 added the control tools: blackboard_get, world_clock, entity_delete and
-// the six operational wrappers.
+// the six operational wrappers; the training tools (gate_status/gate_teach/
+// gate_train) extend the same set for agent-driven training.
 var frozenTools = []string{
 	"blackboard_get", "candidate_apply", "candidate_resolve", "candidates_list",
 	"context_list", "context_send",
-	"diagnostics_query", "entity_create", "entity_delete", "entity_query",
+	"diagnostics_query", "emote_find", "entity_create", "entity_delete", "entity_query",
 	"entity_snapshot", "entity_state_get", "entity_state_set", "event_log",
+	"gate_status", "gate_teach", "gate_train",
 	"inventory", "judge_run",
 	"neko_script_apply", "neko_script_list", "neko_script_read",
 	"neko_script_remove", "neko_script_validate", "neko_script_write",
@@ -25,7 +27,7 @@ var frozenTools = []string{
 	"state_machine_resolve", "state_machine_tick", "stats", "world_clock",
 }
 
-// TestE2EStdioToolsListAndStdoutPurity checks tools/list equals the frozen 28
+// TestE2EStdioToolsListAndStdoutPurity checks tools/list equals the frozen 32
 // names and that stdout carries nothing but MCP frames.
 func TestE2EStdioToolsListAndStdoutPurity(t *testing.T) {
 	session := startStdioSession(t)

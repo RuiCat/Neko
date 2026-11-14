@@ -16,6 +16,7 @@ import (
 	"github.com/RuiCat/Neko/internal/control/ops"
 	"github.com/RuiCat/Neko/internal/diagnostics"
 	"github.com/RuiCat/Neko/internal/driver"
+	"github.com/RuiCat/Neko/internal/emote"
 	"github.com/RuiCat/Neko/internal/engine"
 	"github.com/RuiCat/Neko/internal/entity"
 	"github.com/RuiCat/Neko/internal/eventboard"
@@ -58,12 +59,18 @@ type Server struct {
 	// board and assembler enable the compensation dry-run per tick.
 	board     *blackboard.Board
 	assembler *compensation.Assembler
+	// teachMu serializes teacher-sample appends; trainMu keeps one training run
+	// at a time (the pipeline writes shared work dirs and model files).
+	teachMu sync.Mutex
+	trainMu sync.Mutex
 	// eventBoards records every tick's per-entity changes (K1/K2); nil disables
 	// the board side effect without changing tick behavior.
 	eventBoards *eventboard.Registry
 	// opsDeps backs the operational tools (nightly/judge/candidates/repair);
 	// bootstrap wires it from the runtime.
 	opsDeps ops.Deps
+	// emoteClient answers emote_find; bootstrap wires it from the runtime.
+	emoteClient *emote.Client
 }
 
 // New builds an MCP server over an initialized store, engine and registry.
@@ -147,6 +154,8 @@ func (s *Server) MCPServer() *mcp.Server {
 	s.addBlackboardTool(server)
 	s.addWorldClockTool(server)
 	s.addOpsTools(server)
+	s.addTrainingTools(server)
+	s.addEmoteTools(server)
 	if s.contextTools {
 		s.addContextTools(server)
 	}

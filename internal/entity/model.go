@@ -29,6 +29,8 @@ type Entity struct {
 
 	// Templates is shared with the store and only read for fallback lookups.
 	Templates map[string]map[string]any
+	// Parents is the shared explicit-parent table for @实体 composition.
+	Parents map[string][]string
 	// OnChange is called after a successful write when non-nil.
 	OnChange  func(entity *Entity, path string, oldValue, newValue any)
 	listeners []func(entity *Entity, path string, oldValue, newValue any)
@@ -64,6 +66,16 @@ func DeepMerge(base, override map[string]any) map[string]any {
 		out[key] = deepCopy(value)
 	}
 	return out
+}
+
+// stripTemplateMetadata removes template-only tables so instance data never
+// carries __annotations__/__parents__ copies.
+func stripTemplateMetadata(data map[string]any) {
+	if data == nil {
+		return
+	}
+	delete(data, "__annotations__")
+	delete(data, "__parents__")
 }
 
 // TypeChain returns the inheritance chain from base to leaf.
@@ -109,7 +121,7 @@ func (e *Entity) Get(path string) (any, error) {
 		return copied, nil
 	}
 	e.mu.RUnlock()
-	if value, ok := lookupTemplates(e.Templates, e.Type, parts); ok {
+	if value, ok := lookupTemplates(e.Templates, e.Parents, e.Type, parts); ok {
 		return value, nil
 	}
 	return nil, &PathNotFoundError{Message: fmt.Sprintf("实体 '%s' 路径 '%s' 不存在", e.ID, path)}
@@ -169,16 +181,29 @@ func (e *Entity) Has(path string) bool {
 // CreateEntity builds an instance by deep-merging the template chain and data.
 func CreateEntity(entityID, typeName string, templates map[string]map[string]any,
 	data map[string]any, keys map[string]string) (*Entity, error) {
+	return CreateEntityWithParents(entityID, typeName, templates, nil, data, keys)
+}
+
+// CreateEntityWithParents builds an instance from an explicit-parent composition
+// graph (@实体), falling back to the colon chain when parents is nil.
+func CreateEntityWithParents(entityID, typeName string, templates map[string]map[string]any,
+	parents map[string][]string, data map[string]any, keys map[string]string) (*Entity, error) {
+	order, err := ResolveTemplateOrder(typeName, templates, parents)
+	if err != nil {
+		return nil, err
+	}
 	merged := map[string]any{}
-	for _, name := range TypeChain(typeName) {
+	for _, name := range order {
 		if template, ok := templates[name]; ok {
 			merged = DeepMerge(merged, template)
 		}
 	}
+	stripTemplateMetadata(merged)
 	if data != nil {
 		merged = DeepMerge(merged, data)
+		stripTemplateMetadata(merged)
 	}
-	ent := &Entity{ID: entityID, Type: typeName, Data: merged, Keys: keys, Templates: templates}
+	ent := &Entity{ID: entityID, Type: typeName, Data: merged, Keys: keys, Templates: templates, Parents: parents}
 	if err := ent.ValidateID(); err != nil {
 		return nil, err
 	}
@@ -215,10 +240,10 @@ func lookup(data map[string]any, parts []string) (any, bool) {
 	return current, true
 }
 
-func lookupTemplates(templates map[string]map[string]any, typeName string, parts []string) (any, bool) {
-	chain := TypeChain(typeName)
-	for i := len(chain) - 1; i >= 0; i-- {
-		template, ok := templates[chain[i]]
+func lookupTemplates(templates map[string]map[string]any, parents map[string][]string, typeName string, parts []string) (any, bool) {
+	order := TemplateOrder(typeName, templates, parents)
+	for i := len(order) - 1; i >= 0; i-- {
+		template, ok := templates[order[i]]
 		if !ok {
 			continue
 		}
@@ -234,6 +259,12 @@ func deepCopy(value any) any {
 	case map[string]any:
 		return deepCopyMap(typed)
 	case []any:
+		// Keep typed-nil nil: deep copies must not fabricate a non-nil empty
+		// slice. Non-nil empty slices are copied as-is (still non-nil) so
+		// unrelated empty arrays such as 场景.物品 keep their shape.
+		if typed == nil {
+			return []any(nil)
+		}
 		out := make([]any, len(typed))
 		for i, item := range typed {
 			out[i] = deepCopy(item)

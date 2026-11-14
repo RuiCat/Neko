@@ -20,7 +20,8 @@ func (m *StateMachine) applyOp(ent *entity.Entity, op Op, resolver ValueResolver
 	target := ent
 	switch {
 	case op.Entity != "":
-		target = m.store.Get(op.Entity)
+		// 默认场景名（如「场景」）在库里没有同名实体时解析成 actor 的当前场景。
+		target = m.resolveSceneTarget(ent, op.Entity)
 		if target == nil {
 			return nil
 		}
@@ -99,28 +100,25 @@ func (m *StateMachine) applyOp(ent *entity.Entity, op Op, resolver ValueResolver
 			items = []any{}
 		}
 		items = append(items, value)
+		// 场景事件流有界：追加后保留最近 N 条（0 = 不限）。
+		if path == config.Current().SceneEventField {
+			items = trimSceneEvents(items, config.Current().SceneEventLimit)
+		}
 		if err := target.Set(path, items); err != nil {
 			return nil
 		}
 		return map[string]any{"op": "append", "path": path, "value": value}
 	case "emit":
-		sceneID := op.Entity
-		if sceneID == "" {
-			sceneID = config.Current().DefaultScene
-		}
-		scene := m.store.Get(sceneID)
+		// 未指定场景（或指定默认场景名）时落到 actor 的当前场景。
+		scene := m.resolveSceneTarget(ent, op.Entity)
 		if scene == nil {
 			return nil
 		}
-		events, ok := scene.GetOrNone(config.Current().SceneEventField).([]any)
-		if !ok {
-			events = []any{}
-		}
-		events = append(events, value)
-		if err := scene.Set(config.Current().SceneEventField, events); err != nil {
+		eventField := config.Current().SceneEventField
+		if err := m.appendSceneEvent(scene, eventField, value); err != nil {
 			return nil
 		}
-		return map[string]any{"op": "emit", "path": sceneID + ".事件", "value": value}
+		return map[string]any{"op": "emit", "path": scene.ID + "." + eventField, "value": value}
 	}
 	return nil
 }

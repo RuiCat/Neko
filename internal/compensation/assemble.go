@@ -60,7 +60,14 @@ func (a *Assembler) AssembleWithActive(ctx context.Context, in Input) (journal.C
 	if snapshot.SnapshotID == "" {
 		return journal.Compensation{}, nil, fmt.Errorf("compensation: 黑板没有硬状态快照")
 	}
-	active, err := a.Gate.Activate(in.Features)
+	// 门控特征在这里从不那么结构化的实时信号里补全（用户文本→事件类型、
+	// 快照→affect/知识边界）；特征布局本身仍是冻结的 v1。
+	features := gate.DeriveFeatures(in.Features, gate.DeriveInput{
+		UserInput:         in.UserInput,
+		State:             snapshot.State,
+		KnowledgeBoundary: in.Board.Constraints().KnowledgeBoundary,
+	})
+	active, err := a.Gate.Activate(features)
 	if err != nil {
 		return journal.Compensation{}, nil, fmt.Errorf("compensation: 门控失败: %w", err)
 	}

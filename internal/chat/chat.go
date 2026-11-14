@@ -111,7 +111,7 @@ func (c *Chat) Turn(ctx context.Context, input, tickID string) (Result, error) {
 	record.Source = journal.SOURCE_CHAT
 	record.UserInput = input
 	record.Compensation = pkg
-	record.Gate = journal.Gate{Active: active, Version: gate.RULE_GATE_VERSION}
+	record.Gate = journal.Gate{Active: active, Version: gate.VersionOf(c.options.Assembler.Gate)}
 	record.EndedAt = &started
 
 	result := Result{TurnID: turnID, Package: pkg, Active: active}

@@ -34,7 +34,7 @@ scripts/*.tmp
 # dsh plugin runtime artifacts (generated / machine-local)
 /data/dsh-control.sock
 /data/.engine.lock
-/dsh/cordis.patch.yml
+/plugins/dsh-astrbox/cordis.patch.yml
 
 # dsh context driver (config holds the per-process launch token; never commit it)
 /contexts.json
@@ -48,7 +48,13 @@ scripts/*.tmp
 /data/experts.json
 /data/candidates.jsonl
 /data/rules.json
-runs
+# gate training samples and trained weights are machine-local (may contain dialogue summaries)
+/data/training/
+/data/models/
+/archive/
+/fixtures/
+/runs/
 /data/blackboard.json
+/data/session-boards.json
 /plugins/dsh-qqbot/
 /plugins/*/node_modules/

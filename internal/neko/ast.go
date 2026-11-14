@@ -20,9 +20,12 @@ type Block struct {
 func (b Block) Pos() Pos { return Pos{Line: b.Line} }
 
 // DataDef is an @Data entity template definition (or an @data non-entity block).
+// Parents is non-empty only for @实体 blocks: the templates merged before this
+// one, in declaration order.
 type DataDef struct {
 	TypeName string         `json:"type_name"`
 	Data     map[string]any `json:"data"`
+	Parents  []string       `json:"parents,omitempty"`
 	IsEntity bool           `json:"is_entity"`
 	Pos      Pos            `json:"pos"`
 }

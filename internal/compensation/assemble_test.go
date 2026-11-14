@@ -162,3 +162,37 @@ func TestDedupeFragmentsKeepsHighestWeight(t *testing.T) {
 		t.Fatalf("应保留最高权重，得到 %v", fragments[0].Weight)
 	}
 }
+
+// captureGate records the features the assembler hands to the gate.
+type captureGate struct {
+	features gate.Features
+}
+
+// Activate stores the incoming features and returns a valid activation.
+func (g *captureGate) Activate(features gate.Features) ([]string, error) {
+	g.features = features
+	return []string{gate.EXPERT_EVENT}, nil
+}
+
+// TestAssembleDerivesFeaturesBeforeGate proves the live signals reach the gate
+// instead of the raw "turn" hint the callers pass.
+func TestAssembleDerivesFeaturesBeforeGate(t *testing.T) {
+	capture := &captureGate{}
+	assembler := NewAssembler(capture, testRegistry(t))
+	_, err := assembler.Assemble(context.Background(), Input{
+		UserInput: "你为什么这么晚才回来？",
+		Board:     testBoard(t),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capture.features.EventKind != "question" {
+		t.Fatalf("事件类型未从用户文本推导: %q", capture.features.EventKind)
+	}
+	if capture.features.Summary == "" {
+		t.Fatal("摘要未从用户文本填充")
+	}
+	if _, ok := capture.features.Affect["valence"]; !ok {
+		t.Fatalf("affect 未从快照推导: %+v", capture.features.Affect)
+	}
+}

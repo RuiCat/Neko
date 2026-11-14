@@ -1,5 +1,7 @@
 // monitorView.js —— 监视器视图状态与渲染：把 REST/WS 数据写进 PetUI 组件（不碰布局与网络）。
 import { today } from "./apiClient.js";
+import { formatFieldValue, isLongFieldText, valueKind } from "./detailFormat.mjs";
+import { createRowBalancer } from "./detailGrid.mjs";
 
 export const createView = (refs) => {
   const view = {
@@ -7,6 +9,8 @@ export const createView = (refs) => {
     entity: null, truncated: false, diagnostics: [], scripts: [], lines: [], logKind: "state",
     date: today(), latestTick: null, tickError: "",
   };
+  // 详情网格的行高平衡（同行卡片等高、值不裁切）；每次重渲染后重新量一次。
+  const detailBalancer = createRowBalancer(refs.detailList);
 
   const renderStatus = () => {
     const kind = view.connection === "online" ? (view.readOnly ? "warning" : "success") : "error";
@@ -21,21 +25,59 @@ export const createView = (refs) => {
     refs.treeView.setNodes(nodes);
   };
 
+  /**
+   * 字段值 → 展示节点：人类可读文本 + 类型钩子；长值挂 data-long（样式夹取行数）并加 title（悬停全文）。
+   * @param {unknown} value 字段值
+   * @returns {HTMLElement} 值节点
+   */
+  const createValueNode = (value) => {
+    const text = formatFieldValue(value);
+    const node = document.createElement("span");
+    node.className = `nek-detail-value nek-detail-value--${valueKind(value)}`;
+    node.textContent = text;
+    // 完整文本照常显示（不再夹取行数）；长值额外挂 title，方便悬停瞟一眼。
+    if (isLongFieldText(text)) node.title = text;
+    return node;
+  };
+
+  /**
+   * 字段注解（`__annotations__`）→ 摘要节点：48 条字段定义不摊开成一大坨 JSON，
+   * 只给条数，悬停看字段名清单（完整 JSON 仍可从实体原始数据取）。
+   * @param {unknown} value 注解对象
+   * @returns {HTMLElement} 摘要节点
+   */
+  const createAnnotationNode = (value) => {
+    const keys = value !== null && typeof value === "object" ? Object.keys(value) : [];
+    const node = document.createElement("span");
+    node.className = "nek-detail-value nek-detail-value--object";
+    node.setAttribute("data-summary", "true");
+    node.textContent = `${keys.length} 个字段定义`;
+    if (keys.length > 0) node.title = keys.join("、");
+    return node;
+  };
+
   const renderDetail = () => {
     const selected = view.entities.find((entity) => entity.id === view.selectedId);
     if (view.entity === null) {
       refs.detailList.setItems([{ label: "提示", value: view.selectedId === "" ? "选择左侧实体查看状态" : (view.truncated ? "内容被截断" : "该实体暂无数据") }]);
       return;
     }
+    const entries = Object.entries(view.entity);
     const items = [
       { label: "实体", value: view.selectedId },
       { label: "类型", value: selected?.type ?? "" },
-      { label: "字段数", value: String(Object.keys(view.entity).length) },
+      { label: "字段数", value: String(entries.length) },
     ];
-    for (const [key, value] of Object.entries(view.entity).slice(0, 24)) {
-      items.push({ label: key, value: JSON.stringify(value).slice(0, 160) });
+    for (const [key, value] of entries) {
+      if (key === "__annotations__") {
+        items.push({ label: "字段注解", value: createAnnotationNode(value) });
+        continue;
+      }
+      // 每张卡片等宽（不再为长值跨列），行高由网格统一拉伸对齐。
+      items.push({ label: key, value: createValueNode(value) });
     }
     refs.detailList.setItems(items);
+    detailBalancer.schedule();
   };
 
   const renderDiagnostics = () => {

@@ -18,7 +18,7 @@ func boardChange(path string, from, to any, ruleIDs ...string) Change {
 	if ruleIDs == nil {
 		ruleIDs = []string{}
 	}
-	return Change{Path: path, From: from, To: to, RuleIDs: ruleIDs}
+	return Change{Path: path, From: from, To: to, RuleIDs: ruleIDs, FromKnown: true}
 }
 
 // TestBoardApplyBumpsVersionOncePerTick covers one tick with two paths: both
@@ -125,5 +125,91 @@ func TestBoardCloneIsIndependent(t *testing.T) {
 	}
 	if board.Entries[0].RuleIDs[0] != "r1" {
 		t.Fatalf("live rule ids aliased by clone: %v", board.Entries[0].RuleIDs)
+	}
+}
+
+// TestBoardStampsEntryVersionPerTick covers the per-entry version: entries
+// updated in one tick share that tick's version, untouched entries keep theirs.
+func TestBoardStampsEntryVersionPerTick(t *testing.T) {
+	board := newBoard("梦梦")
+	board.apply([]Change{
+		boardChange("心情.当前", "满足", "开心", "r1"),
+		boardChange("身体.体力", 90, 92, "r2"),
+	}, "tick-1", fixedClock(0))
+	if board.Version != 1 {
+		t.Fatalf("version = %d, want 1", board.Version)
+	}
+	for _, entry := range board.Entries {
+		if entry.Version != 1 {
+			t.Fatalf("entry %s version = %d, want 1", entry.Path, entry.Version)
+		}
+	}
+	board.apply([]Change{boardChange("心情.当前", "开心", "兴奋", "r3")}, "tick-2", fixedClock(1))
+	mood := board.Entries[0]
+	body := board.Entries[1]
+	if mood.Version != 2 {
+		t.Fatalf("心情.当前 version = %d, want 2", mood.Version)
+	}
+	if body.Version != 1 {
+		t.Fatalf("未变化条目版本被刷新: %+v", body)
+	}
+}
+
+// TestBoardNoOpChangeDoesNotBumpVersion covers a tick that rewrites the same
+// value: it must not count as a change or advance the board version.
+func TestBoardNoOpChangeDoesNotBumpVersion(t *testing.T) {
+	board := newBoard("梦梦")
+	unknown := Change{Path: "睡眠.疲劳", To: 20, RuleIDs: []string{"r1"}}
+	if !board.apply([]Change{unknown}, "tick-1", fixedClock(0)) {
+		t.Fatal("首次变化应生效")
+	}
+	same := Change{Path: "睡眠.疲劳", To: 20, RuleIDs: []string{"r1"}}
+	if board.apply([]Change{same}, "tick-2", fixedClock(1)) {
+		t.Fatal("同值重写不应生效")
+	}
+	if board.Version != 1 || board.Entries[0].Version != 1 {
+		t.Fatalf("同值重写不应推进版本: %+v", board)
+	}
+	if board.Entries[0].From != nil || board.Entries[0].To != 20 {
+		t.Fatalf("同值重写不应刷新条目: %+v", board.Entries[0])
+	}
+}
+
+// TestBoardUsesPreviousToWhenFromUnknown covers paths outside the state group:
+// the engine's FromState cannot resolve them, so the board falls back to the
+// entry's previous To and the line keeps a real diff.
+func TestBoardUsesPreviousToWhenFromUnknown(t *testing.T) {
+	board := newBoard("梦梦")
+	board.apply([]Change{{Path: "睡眠.疲劳", To: 60, RuleIDs: []string{"r1"}}}, "tick-1", fixedClock(0))
+	if board.Entries[0].From != nil {
+		t.Fatalf("首次未知 from 应为 null: %+v", board.Entries[0])
+	}
+	board.apply([]Change{{Path: "睡眠.疲劳", To: 20, RuleIDs: []string{"r2"}}}, "tick-2", fixedClock(1))
+	entry := board.Entries[0]
+	if entry.From != 60 || entry.To != 20 {
+		t.Fatalf("未知 from 应回退上一次 To: %+v", entry)
+	}
+	if entry.Version != 2 || board.Version != 2 {
+		t.Fatalf("版本应推进到 2: %+v / %d", entry, board.Version)
+	}
+}
+
+// TestBoardMixedKnownAndNoOp covers one tick mixing a real change and a no-op:
+// only the real change advances the version.
+func TestBoardMixedKnownAndNoOp(t *testing.T) {
+	board := newBoard("梦梦")
+	board.apply([]Change{boardChange("心情.当前", "满足", "开心"), boardChange("身体.体力", 90, 92)}, "tick-1", fixedClock(0))
+	applied := board.apply([]Change{
+		boardChange("心情.当前", "开心", "开心"),
+		boardChange("身体.体力", 92, 88),
+	}, "tick-2", fixedClock(1))
+	if !applied || board.Version != 2 {
+		t.Fatalf("tick-2 应生效并推进版本: %+v", board)
+	}
+	if board.Entries[0].Version != 1 {
+		t.Fatalf("同值条目不应刷新版本: %+v", board.Entries[0])
+	}
+	if board.Entries[1].Version != 2 || board.Entries[1].From == 92 && board.Entries[1].To != 88 {
+		t.Fatalf("真实变化条目错误: %+v", board.Entries[1])
 	}
 }

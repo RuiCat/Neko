@@ -40,6 +40,25 @@ func (s *Server) dispatch(r *http.Request) response {
 			return methodNotAllowed(http.MethodGet)
 		}
 		return s.handleBlackboard(r)
+	case "/boards":
+		switch r.Method {
+		case http.MethodGet:
+			return s.handleBoardsGet(r)
+		case http.MethodPost:
+			return s.handleBoardsWrite(r)
+		default:
+			return methodNotAllowed(http.MethodGet + ", " + http.MethodPost)
+		}
+	case "/boards/panel":
+		if r.Method != http.MethodPost {
+			return methodNotAllowed(http.MethodPost)
+		}
+		return s.handleBoardsPanelWrite(r)
+	case "/boards/workspaces":
+		if r.Method != http.MethodGet {
+			return methodNotAllowed(http.MethodGet)
+		}
+		return s.handleBoardsWorkspaces()
 	case "/tick":
 		if r.Method != http.MethodPost {
 			return methodNotAllowed(http.MethodPost)

@@ -78,7 +78,7 @@ func (s *Server) runTickLocked(scope string, options TickOptions) (engine.TickRe
 	// Record this tick's changes on the per-entity boards before the store save;
 	// a board failure only logs and never fails the tick (K2).
 	s.applyEventBoards(result)
-	if options.SkipSaveWhenUnchanged && len(result.Transitions) == 0 && len(result.Conflicts) == 0 {
+	if options.SkipSaveWhenUnchanged && len(result.Transitions) == 0 && len(result.Conflicts) == 0 && len(result.Writes) == 0 {
 		return result, nil
 	}
 	if err := s.store.Save(); err != nil {

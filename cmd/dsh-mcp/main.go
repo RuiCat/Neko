@@ -23,6 +23,7 @@ import (
 	"github.com/RuiCat/Neko/internal/config"
 	"github.com/RuiCat/Neko/internal/control"
 	"github.com/RuiCat/Neko/internal/driver"
+	"github.com/RuiCat/Neko/internal/emote"
 	"github.com/RuiCat/Neko/internal/events"
 	"github.com/RuiCat/Neko/internal/monitor"
 	"github.com/RuiCat/Neko/internal/monitor/auth"
@@ -68,6 +69,8 @@ func run(args []string) int {
 		"监视器 HTTP 地址（默认 127.0.0.1:8765，可用 ASTRBOX_MONITOR_ADDR；留空禁用）")
 	contextsConfig := flags.String("contexts-config", "",
 		"角色上下文配置（contexts.json；留空禁用上下文驱动）")
+	emoteDir := flags.String("emote-dir", emote.DefaultDir(),
+		"表情库目录（emote_index.json、vec_db.*、img/；ASTRBOX_EMOTE_DIR 可覆盖）")
 	nightlyAt := flags.String("nightly-at", "",
 		"夜间衰减时间（本地 HH:MM；留空禁用）")
 	nightlyFactor := flags.Float64("nightly-factor", 0.5,
@@ -107,7 +110,7 @@ func run(args []string) int {
 	runtime, err := bootstrap.New(bootstrap.Options{
 		DataDir: *dataDir, ScriptsDir: *scriptsDir, ConfigPath: *configPath,
 		Journal: true, NightlyAt: *nightlyAt, NightlyFactor: *nightlyFactor,
-		NightlyPipeline: *nightlyPipeline,
+		NightlyPipeline: *nightlyPipeline, EmoteDir: *emoteDir,
 	})
 	if err != nil {
 		log.Printf("dsh-mcp: 运行时装配失败: %v", err)

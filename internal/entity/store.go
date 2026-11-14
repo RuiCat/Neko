@@ -17,6 +17,7 @@ type Store struct {
 	mu        sync.RWMutex
 	dataDir   string
 	templates map[string]map[string]any
+	parents   map[string][]string
 	entities  map[string]*Entity
 	loaded    bool
 	// OnCreate is called after a new entity is stored (used by the event bridge).
@@ -25,7 +26,10 @@ type Store struct {
 
 // NewStore creates a store rooted at dataDir.
 func NewStore(dataDir string) *Store {
-	return &Store{dataDir: dataDir, templates: map[string]map[string]any{}, entities: map[string]*Entity{}}
+	return &Store{
+		dataDir: dataDir, templates: map[string]map[string]any{},
+		parents: map[string][]string{}, entities: map[string]*Entity{},
+	}
 }
 
 // Load reads templates/*.json and entities.json.
@@ -33,6 +37,7 @@ func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.templates = map[string]map[string]any{}
+	s.parents = map[string][]string{}
 	s.entities = map[string]*Entity{}
 	if err := s.loadTemplatesLocked(); err != nil {
 		return err
@@ -57,6 +62,10 @@ func (s *Store) loadTemplatesLocked() error {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
+		if strings.HasSuffix(entry.Name(), ".parents.json") {
+			s.loadParentsFileLocked(filepath.Join(dir, entry.Name()))
+			continue
+		}
 		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
 		if err != nil {
 			continue
@@ -69,6 +78,23 @@ func (s *Store) loadTemplatesLocked() error {
 		s.templates[strings.ReplaceAll(name, "_", ":")] = data
 	}
 	return nil
+}
+
+// loadParentsFileLocked reads one templates/<name>.parents.json sidecar.
+func (s *Store) loadParentsFileLocked(path string) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var parents []string
+	if err := json.Unmarshal(raw, &parents); err != nil {
+		return
+	}
+	if len(parents) == 0 {
+		return
+	}
+	name := strings.TrimSuffix(filepath.Base(path), ".parents.json")
+	s.parents[strings.ReplaceAll(name, "_", ":")] = parents
 }
 
 func (s *Store) loadEntitiesLocked() error {
@@ -107,9 +133,10 @@ func (s *Store) loadEntitiesFileLocked(path string) error {
 		return fmt.Errorf("实体文件解析失败: %w（已备份到 %s，请人工检查/恢复）", err, backup)
 	}
 	for id, item := range payload.Entities {
+		stripTemplateMetadata(item.Data)
 		s.entities[id] = &Entity{
 			ID: id, Type: item.Type, Data: item.Data, Keys: item.Keys,
-			Meta: item.Meta, Templates: s.templates,
+			Meta: item.Meta, Templates: s.templates, Parents: s.parents,
 		}
 	}
 	return nil
@@ -225,7 +252,8 @@ func (s *Store) AddTemplate(typeName string, data map[string]any) {
 	s.templates[typeName] = deepCopyMap(data)
 }
 
-// SaveTemplateFile persists one template to templates/<name>.json.
+// SaveTemplateFile persists one template to templates/<name>.json plus its
+// parents sidecar when the template declares @实体 parents.
 func (s *Store) SaveTemplateFile(typeName string) error {
 	template := s.GetTemplate(typeName)
 	if template == nil {
@@ -236,25 +264,33 @@ func (s *Store) SaveTemplateFile(typeName string) error {
 		return err
 	}
 	name := strings.ReplaceAll(typeName, ":", "_")
-	return atomicWrite(filepath.Join(s.dataDir, "templates", name+".json"), raw)
+	if err := atomicWrite(filepath.Join(s.dataDir, "templates", name+".json"), raw); err != nil {
+		return err
+	}
+	return s.saveParentsFile(typeName)
 }
 
-// DeleteTemplateFile removes templates/<name>.json when present.
+// DeleteTemplateFile removes templates/<name>.json and its parents sidecar.
 func (s *Store) DeleteTemplateFile(typeName string) error {
 	name := strings.ReplaceAll(typeName, ":", "_")
 	err := os.Remove(filepath.Join(s.dataDir, "templates", name+".json"))
-	if os.IsNotExist(err) {
-		return nil
+	if err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	return err
+	if err := os.Remove(filepath.Join(s.dataDir, "templates", name+".parents.json")); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
-// RemoveTemplate deletes a template and reports whether it existed.
+// RemoveTemplate deletes a template, its parents record and reports whether it
+// existed.
 func (s *Store) RemoveTemplate(typeName string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, ok := s.templates[typeName]
 	delete(s.templates, typeName)
+	delete(s.parents, typeName)
 	return ok
 }
 
@@ -285,7 +321,7 @@ func (s *Store) Create(entityID, typeName string, data map[string]any, keys map[
 		s.mu.Unlock()
 		return nil, &ValidationError{Message: fmt.Sprintf("实体 '%s' 已存在", entityID)}
 	}
-	ent, err := CreateEntity(entityID, typeName, s.templates, data, keys)
+	ent, err := CreateEntityWithParents(entityID, typeName, s.templates, s.parents, data, keys)
 	if err != nil {
 		s.mu.Unlock()
 		return nil, err
@@ -347,6 +383,7 @@ func (s *Store) EntityMatches(sel Selector, ent *Entity) bool {
 			}
 		}
 	}
+	classifications = append(classifications, s.Ancestors(ent.Type)...)
 	return sel.Matches(ent.Type, ent.ID, classifications)
 }
 

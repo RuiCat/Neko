@@ -281,3 +281,47 @@ func TestRegistryDeleteReportsSaveFailure(t *testing.T) {
 		t.Fatalf("board must be removed in memory despite the save failure: %+v", board)
 	}
 }
+
+// TestRecordDirectWrite covers the direct-write path (MCP/control plane): the
+// board gets the change, persists it, and a no-op write changes nothing.
+func TestRecordDirectWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FILE_NAME)
+	registry := New(path)
+	registry.Observe([]string{"S001-LR"})
+	change := Change{Path: "氛围.光照", From: "昏暗", To: "明亮", FromKnown: true}
+	if err := registry.Record("S001-LR", []Change{change}, "direct:mcp", fixedClock(0)); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	board := registry.Board("S001-LR")
+	if board == nil || board.Version != 1 || len(board.Entries) != 1 {
+		t.Fatalf("board = %+v", board)
+	}
+	entry := board.Entries[0]
+	if entry.Path != "氛围.光照" || entry.From != "昏暗" || entry.To != "明亮" || entry.Version != 1 {
+		t.Fatalf("entry = %+v", entry)
+	}
+	if board.TickID != "direct:mcp" {
+		t.Fatalf("tick_id = %q", board.TickID)
+	}
+	// 同值重写（from == to）不算变化。
+	if err := registry.Record("S001-LR", []Change{{Path: "氛围.光照", From: "明亮", To: "明亮", FromKnown: true}}, "direct:mcp", fixedClock(1)); err != nil {
+		t.Fatalf("record noop: %v", err)
+	}
+	if board := registry.Board("S001-LR"); board.Version != 1 || board.Entries[0].Version != 1 {
+		t.Fatalf("同值写入推进了版本: %+v", board)
+	}
+	reloaded := New(path)
+	if err := reloaded.Load(); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if board := reloaded.Board("S001-LR"); board == nil || board.Version != 1 || board.Entries[0].Version != 1 {
+		t.Fatalf("落盘后黑板不一致: %+v", board)
+	}
+	// 未观察过的实体直接写入时懒建黑板。
+	if err := registry.Record("世界", []Change{{Path: "环境.天气", From: "晴", To: "雨", FromKnown: true}}, "direct:mcp", fixedClock(2)); err != nil {
+		t.Fatalf("record new entity: %v", err)
+	}
+	if board := registry.Board("世界"); board == nil || board.Version != 1 {
+		t.Fatalf("懒建黑板失败: %+v", board)
+	}
+}

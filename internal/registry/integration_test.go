@@ -35,8 +35,10 @@ func TestReplayAllScripts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registry: %v", err)
 	}
-	if got := len(reg.List()); got != 186 {
-		t.Fatalf("registered scripts = %d, want 186", got)
+	// The registered count follows the local data/scripts.json; the 2026-11-14
+	// corpus refresh registered cat_proactive (187 -> 188).
+	if got := len(reg.List()); got != 188 {
+		t.Fatalf("registered scripts = %d, want 188", got)
 	}
 	registryPath := filepath.Join(dataDir, "scripts.json")
 	before, err := os.ReadFile(registryPath)

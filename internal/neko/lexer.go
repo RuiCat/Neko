@@ -44,6 +44,13 @@ func ScanBlocks(text string) []Block {
 			continue
 		}
 
+		if strings.HasPrefix(line, "@实体") {
+			block, next := scanEntityBlock(lines, i)
+			blocks = append(blocks, block)
+			i = next
+			continue
+		}
+
 		if strings.HasPrefix(line, "@定义") || strings.HasPrefix(line, "@描述") {
 			kind := "at_desc"
 			if strings.HasPrefix(line, "@定义") {

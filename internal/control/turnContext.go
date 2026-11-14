@@ -27,7 +27,7 @@ func (s *Server) handleTurnContext(r *http.Request) response {
 	}
 	now := time.Now()
 	snapshotID := fmt.Sprintf("ctx_%d", now.UnixNano())
-	snapshot, pkg, active, err := s.buildTurnContext(r.Context(), snapshotID, entityID, now)
+	snapshot, pkg, active, err := s.buildTurnContext(r.Context(), snapshotID, entityID, "", now)
 	if err != nil {
 		return internalError(err.Error())
 	}
@@ -36,7 +36,7 @@ func (s *Server) handleTurnContext(r *http.Request) response {
 		"turn_id":      snapshotID,
 		"entity":       entityID,
 		"snapshot":     snapshot,
-		"gate":         map[string]any{"active": active, "version": gate.RULE_GATE_VERSION},
+		"gate":         map[string]any{"active": active, "version": gate.VersionOf(s.runtime.Assembler.Gate)},
 		"compensation": pkg,
 	}}
 }
@@ -44,7 +44,7 @@ func (s *Server) handleTurnContext(r *http.Request) response {
 // buildTurnContext captures one entity's hard state and assembles a package.
 // The caller owns the snapshot ID: ctx_ for prompt projections, evt_ for
 // journaled DSH turns.
-func (s *Server) buildTurnContext(ctx context.Context, snapshotID, entityID string, now time.Time) (hardstate.Snapshot, journal.Compensation, []string, error) {
+func (s *Server) buildTurnContext(ctx context.Context, snapshotID, entityID, userInput string, now time.Time) (hardstate.Snapshot, journal.Compensation, []string, error) {
 	if s.runtime.Assembler == nil || s.runtime.Board == nil {
 		return hardstate.Snapshot{}, journal.Compensation{}, nil, fmt.Errorf("补偿包组装器未配置")
 	}
@@ -69,8 +69,9 @@ func (s *Server) buildTurnContext(ctx context.Context, snapshotID, entityID stri
 		}
 		var assembleErr error
 		pkg, active, assembleErr = s.runtime.Assembler.AssembleWithActive(ctx, compensation.Input{
-			Board:    s.runtime.Board,
-			Features: gate.Features{EventKind: "turn"},
+			UserInput: userInput,
+			Board:     s.runtime.Board,
+			Features:  gate.Features{EventKind: "turn"},
 		})
 		if assembleErr != nil {
 			return fmt.Errorf("组装补偿包失败: %w", assembleErr)

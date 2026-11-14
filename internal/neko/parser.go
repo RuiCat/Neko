@@ -50,32 +50,36 @@ func parseBlock(ast *ScriptAST, block Block) {
 
 	case "at_data", "at_data_legacy":
 		name := strings.TrimSpace(block.Name)
-		data := map[string]any{}
-		if block.Body != "" {
-			decoded, err := decodeJSONAny(block.Body)
-			if err != nil {
-				ast.Errors = append(ast.Errors, &ParseError{
-					Message: "JSON 解析失败: " + err.Error(),
-					Pos:     pos,
-					Hint:    "检查 JSON 语法（引号/逗号/括号）",
-				})
-				return
-			}
-			obj, ok := decoded.(map[string]any)
-			if !ok {
-				ast.Errors = append(ast.Errors, &ParseError{
-					Message: "JSON 解析失败: 顶层不是对象",
-					Pos:     pos,
-					Hint:    "检查 JSON 语法（引号/逗号/括号）",
-				})
-				return
-			}
-			data = obj
+		data, ok := decodeEntityBody(block.Body, ast, pos)
+		if !ok {
+			return
 		}
 		ast.DataDefs = append(ast.DataDefs, DataDef{
 			TypeName: name,
 			Data:     data,
 			IsEntity: block.Kind == "at_data",
+			Pos:      pos,
+		})
+
+	case "at_entity":
+		name, parents, err := ParseEntityHeader(block.Name)
+		if err != nil {
+			ast.Errors = append(ast.Errors, &ParseError{
+				Message: err.Error(),
+				Pos:     pos,
+				Hint:    "@实体 名称 [父1, 父2] { JSON }",
+			})
+			return
+		}
+		data, ok := decodeEntityBody(block.Body, ast, pos)
+		if !ok {
+			return
+		}
+		ast.DataDefs = append(ast.DataDefs, DataDef{
+			TypeName: name,
+			Data:     data,
+			Parents:  parents,
+			IsEntity: true,
 			Pos:      pos,
 		})
 
@@ -125,6 +129,34 @@ func parseBlock(ast *ScriptAST, block Block) {
 			ast.Metadata = append(ast.Metadata, MetaDef{Key: m[1], Value: m[2], Pos: pos})
 		}
 	}
+}
+
+// decodeEntityBody decodes a template body into a JSON object, reporting a
+// parse error and returning false when the body is malformed.
+func decodeEntityBody(body string, ast *ScriptAST, pos Pos) (map[string]any, bool) {
+	data := map[string]any{}
+	if body == "" {
+		return data, true
+	}
+	decoded, err := decodeJSONAny(body)
+	if err != nil {
+		ast.Errors = append(ast.Errors, &ParseError{
+			Message: "JSON 解析失败: " + err.Error(),
+			Pos:     pos,
+			Hint:    "检查 JSON 语法（引号/逗号/括号）",
+		})
+		return nil, false
+	}
+	obj, ok := decoded.(map[string]any)
+	if !ok {
+		ast.Errors = append(ast.Errors, &ParseError{
+			Message: "JSON 解析失败: 顶层不是对象",
+			Pos:     pos,
+			Hint:    "检查 JSON 语法（引号/逗号/括号）",
+		})
+		return nil, false
+	}
+	return obj, true
 }
 
 // parseEvent parses an @事件 block body into an EventDef.

@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/RuiCat/Neko/internal/bootstrap"
+	"github.com/RuiCat/Neko/internal/emote"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -18,6 +19,7 @@ func main() {
 	transport := flag.String("transport", "stdio", "transport: stdio or http")
 	addr := flag.String("addr", "127.0.0.1:8765", "listen address for -transport=http")
 	configPath := flag.String("config", "config.json", "domain config JSON (missing file = defaults)")
+	emoteDir := flag.String("emote-dir", emote.DefaultDir(), "emote library directory (emote_index.json, vec_db.*, img/); ASTRBOX_EMOTE_DIR overrides")
 	nightlyAt := flag.String("nightly-at", "", "nightly decay local HH:MM (empty disables)")
 	nightlyFactor := flag.Float64("nightly-factor", 0.5, "nightly decay factor (0<factor<1)")
 	flag.Parse()
@@ -25,6 +27,7 @@ func main() {
 	runtime, err := bootstrap.New(bootstrap.Options{
 		DataDir: *dataDir, ScriptsDir: *scriptsDir, ConfigPath: *configPath,
 		Journal: true, NightlyAt: *nightlyAt, NightlyFactor: *nightlyFactor,
+		EmoteDir: *emoteDir,
 	})
 	if err != nil {
 		log.Fatalf("astrbox: %v", err)

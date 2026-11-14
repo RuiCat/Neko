@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/RuiCat/Neko/internal/bootstrap"
+	"github.com/RuiCat/Neko/internal/gate"
 	"github.com/RuiCat/Neko/internal/journal"
 	"github.com/RuiCat/Neko/internal/mcpserver"
 )
@@ -71,6 +72,11 @@ func TestTurnEndWritesCompleteRecord(t *testing.T) {
 		}
 		if record.SessionID != "s-1" {
 			t.Fatalf("会话 %q", record.SessionID)
+		}
+		// 用户原话 "在吗？" 是问句：门控特征应从实时信号推导出 knowledge，
+		// 激活知识边界，而不是恒定的「事件记忆」。
+		if !strings.Contains(strings.Join(record.Gate.Active, ","), gate.EXPERT_KNOWLEDGE) {
+			t.Fatalf("门控未按用户文本激活知识边界：%v", record.Gate.Active)
 		}
 	}
 	if complete != 1 || turnID == "" {

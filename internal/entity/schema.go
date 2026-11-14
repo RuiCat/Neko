@@ -53,7 +53,8 @@ func (s *FieldSchema) Validate(value any) string {
 			return fmt.Sprintf("字段 %s 超过最大值 %v", s.FieldName, *s.Max)
 		}
 	}
-	if s.Enum != nil {
+	// An empty enum means "no constraint"; only a non-empty list restricts values.
+	if len(s.Enum) > 0 {
 		for _, allowed := range s.Enum {
 			if fmt.Sprint(allowed) == fmt.Sprint(value) {
 				return ""
@@ -157,7 +158,8 @@ func (s *EntitySchema) AddFromAnnotations(data map[string]any) {
 		if value, ok := entry["event"].(string); ok {
 			schema.Event = value
 		}
-		if value, ok := entry["enum"].([]any); ok {
+		// Normalize away empty enums so consumers never see a non-nil empty list.
+		if value, ok := entry["enum"].([]any); ok && len(value) > 0 {
 			schema.Enum = value
 		}
 		if value, ok := toFloat(entry["min"]); ok {
@@ -235,32 +237,53 @@ func (s *EntitySchema) All() map[string]*FieldSchema {
 	return out
 }
 
+// Clone returns a copy that callers may modify without changing the schema
+// cache or another type's merged view.
+func (s *FieldSchema) Clone() *FieldSchema {
+	if s == nil {
+		return nil
+	}
+	out := *s
+	if s.Enum != nil {
+		out.Enum = append([]any(nil), s.Enum...)
+	}
+	return &out
+}
+
+// MergeInherited fills this field's unset constraints from parent.
+func (s *FieldSchema) MergeInherited(parent *FieldSchema) {
+	if s == nil || parent == nil {
+		return
+	}
+	if s.Type == "" {
+		s.Type = parent.Type
+	}
+	if s.Event == "" {
+		s.Event = parent.Event
+	}
+	if s.Enum == nil {
+		s.Enum = append([]any(nil), parent.Enum...)
+	}
+	if s.Min == nil {
+		s.Min = parent.Min
+	}
+	if s.Max == nil {
+		s.Max = parent.Max
+	}
+	if !s.Nullable {
+		s.Nullable = parent.Nullable
+	}
+}
+
 // MergeInherited fills unset child constraints from the parent schema.
 func (s *EntitySchema) MergeInherited(parent *EntitySchema) {
 	for path, parentSchema := range parent.All() {
 		child, ok := s.fields[path]
 		if !ok {
-			s.fields[path] = parentSchema
+			s.fields[path] = parentSchema.Clone()
 			continue
 		}
-		if child.Type == "" {
-			child.Type = parentSchema.Type
-		}
-		if child.Event == "" {
-			child.Event = parentSchema.Event
-		}
-		if child.Enum == nil {
-			child.Enum = parentSchema.Enum
-		}
-		if child.Min == nil {
-			child.Min = parentSchema.Min
-		}
-		if child.Max == nil {
-			child.Max = parentSchema.Max
-		}
-		if !child.Nullable {
-			child.Nullable = parentSchema.Nullable
-		}
+		child.MergeInherited(parentSchema)
 	}
 }
 

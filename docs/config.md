@@ -11,8 +11,11 @@
 | `default_state_subgroup` | `身体` | 分支写 `状态 = "昏厥"` 时省略的子组；也是裸字段默认挂载的分组 |
 | `safety_enabled` | `false` | 打开 R18G 词表扫描；`false` 时与 Python 默认行为一致（全部放行） |
 | `global_entities` | `["场景","世界","时间","天气","全局"]` | 不加 `{e}` 前缀、按全局实体解析的名称；解析器/编译器都读它 |
-| `default_scene` | `场景` | `emit` 动作未指定场景时的落点 |
+| `default_scene` | `场景` | `emit` 动作未指定场景时的落点；库里没有同名实体时按 NPC 当前场景解析 |
+| `current_scene_path` | `位置.场景` | 实体上记录当前所在场景 id 的字段；默认场景名解析成当前场景时读它（留空 = 用默认） |
 | `scene_event_field` | `事件` | 场景实体上保存事件列表的字段 |
+| `scene_event_limit` | `50` | 场景事件列表保留条数上限（超出丢最旧；`0` = 不限）。事件黑板只投影最新一条，推送与存储都有界 |
+| `scene_occupancy_field` | `在场` | 场景实体上记录「场内是谁」的 id 列表；每 tick 由各实体的 `current_scene_path` 重新推导并写回，谁进/出场景就是一次场景变化（留空 = 关闭同步） |
 | `classification_field` | `分类` | 实体的多分类标签字段（选择器 `成年[*]` 用它匹配） |
 | `http_token` | 空 | HTTP 传输的 Bearer token；空 = 无鉴权，仅允许绑定回环地址 |
 
@@ -37,7 +40,10 @@
   "safety_enabled": false,
   "global_entities": ["场景", "世界", "时间", "天气", "全局"],
   "default_scene": "场景",
+  "current_scene_path": "位置.场景",
   "scene_event_field": "事件",
+  "scene_event_limit": 50,
+  "scene_occupancy_field": "在场",
   "classification_field": "分类",
   "http_token": ""
 }
@@ -53,6 +59,9 @@
 | 解析器 | 分支 `状态 = "x"` / `状态.情绪 = "x"` 语法糖 |
 | 效果/赋值别名 | `效果词 → 状态.* / 身体.*` 的映射在应用时按配置归一化 |
 | MCP `entity_query` | 返回行里的状态/身体键名 |
+| 场景解析（`default_scene` / `current_scene_path`） | `场景.事件 += ...` 与 `emit` 的目标：有同名实体用实体，否则读 actor 的当前场景路径 |
+| 场景事件流（`scene_event_field` / `scene_event_limit`） | 事件写入的路径与保留条数；黑板把该字段投影成 `<字段>.最新` |
+| 场景在场（`scene_occupancy_field`） | 每 tick 末尾按各实体当前位置重算并写回；位置没变不写。写入会被黑板当作场景变化推送 |
 
 ## 安全扫描（`safety_enabled`）
 

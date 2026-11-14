@@ -3,6 +3,8 @@
 package eventboard
 
 import (
+	"bytes"
+	"encoding/json"
 	"sort"
 	"time"
 )
@@ -11,13 +13,16 @@ import (
 // a normal world stays far below it.
 const MAX_ENTRIES = 200
 
-// Entry records one state path's latest movement on a board.
+// Entry records one state path's latest movement on a board. Version is the
+// board version this entry was last written at, so subscribers can push only
+// the entries newer than the version they last delivered.
 type Entry struct {
 	Path      string   `json:"path"`
 	From      any      `json:"from"`
 	To        any      `json:"to"`
 	RuleIDs   []string `json:"rule_ids"`
 	UpdatedAt string   `json:"updated_at"`
+	Version   int      `json:"version,omitempty"`
 }
 
 // Board is one entity's change board (K1): at most one entry per path, entries
@@ -41,36 +46,70 @@ func newBoard(entity string) *Board {
 // untouched paths keep their entries. The version grows once for the whole
 // tick, never once per path. It reports whether the board changed.
 func (b *Board) apply(changes []Change, tickID string, at time.Time) bool {
+	changes = projectSceneEventChanges(changes)
 	if len(changes) == 0 {
 		return false
 	}
 	stamp := at.Format(time.RFC3339)
+	next := b.Version + 1
+	applied := false
 	positions := make(map[string]int, len(b.Entries)+len(changes))
 	for index, entry := range b.Entries {
 		positions[entry.Path] = index
 	}
 	for _, change := range changes {
+		from := change.From
 		if index, exists := positions[change.Path]; exists {
-			b.Entries[index].From = copyValue(change.From)
+			if !change.FromKnown {
+				// 状态组之外的路径没有历史快照：用该条目上一次的 To 当 from。
+				from = b.Entries[index].To
+			}
+			if valuesEqual(from, change.To) {
+				// 值没变（可能是同值重写）：不算变化、不刷新条目版本。
+				continue
+			}
+			b.Entries[index].From = copyValue(from)
 			b.Entries[index].To = copyValue(change.To)
 			b.Entries[index].RuleIDs = append([]string{}, change.RuleIDs...)
 			b.Entries[index].UpdatedAt = stamp
+			b.Entries[index].Version = next
+			applied = true
+			continue
+		}
+		if change.FromKnown && valuesEqual(from, change.To) {
 			continue
 		}
 		positions[change.Path] = len(b.Entries)
 		b.Entries = append(b.Entries, Entry{
 			Path:      change.Path,
-			From:      copyValue(change.From),
+			From:      copyValue(from),
 			To:        copyValue(change.To),
 			RuleIDs:   append([]string{}, change.RuleIDs...),
 			UpdatedAt: stamp,
+			Version:   next,
 		})
+		applied = true
+	}
+	if !applied {
+		return false
 	}
 	b.trim()
-	b.Version++
+	b.Version = next
 	b.UpdatedAt = stamp
 	b.TickID = tickID
 	return true
+}
+
+// valuesEqual compares two JSON-shaped values. Numbers of different Go types
+// (int from a rule vs float64 from entity JSON) still compare equal because
+// both encode to the same JSON text.
+func valuesEqual(left, right any) bool {
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	return bytes.Equal(leftJSON, rightJSON)
 }
 
 // trim enforces MAX_ENTRIES by dropping the oldest updated_at entries; on a tie

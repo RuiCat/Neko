@@ -15,6 +15,8 @@ METRICS_BIN := bin/astrbox-metrics
 REPLAY_BIN := bin/astrbox-replay
 CHAT_BIN := bin/neko-chat
 NIGHTLY_BIN := bin/astrbox-nightly
+TRAIN_BIN := bin/astrbox-train
+EMOTE_BIN := bin/astrbox-emote
 GO_SOURCES := $(shell find cmd internal -name '*.go')
 
 # Design sources and the embedded page tree are build inputs: editing any of
@@ -30,11 +32,11 @@ LDFLAGS := -X main.version=$(VERSION)
 # code-modularity 技能脚本：默认全局安装；CI/换用户时用 MODULARITY_LINT=... 覆盖。
 MODULARITY_LINT ?= $(HOME)/.dsh/skills/code-modularity/scripts/lintCodeModularity.sh
 
-.PHONY: all build test lint design monitor render-dsh doctor run clean
+.PHONY: all build test lint design monitor render-dsh doctor run clean verify-training train-gate
 
 all: build
 
-build: $(ENGINE_BIN) $(DSH_BIN) $(CONTEXT_BIN) $(METRICS_BIN) $(REPLAY_BIN) $(CHAT_BIN) $(NIGHTLY_BIN)
+build: $(ENGINE_BIN) $(DSH_BIN) $(CONTEXT_BIN) $(METRICS_BIN) $(REPLAY_BIN) $(CHAT_BIN) $(NIGHTLY_BIN) $(TRAIN_BIN) $(EMOTE_BIN)
 
 $(ENGINE_BIN): $(GO_SOURCES) $(DESIGN_SOURCES) $(WEB_SOURCES) $(DESIGN_CSS) go.mod go.sum
 	@mkdir -p bin
@@ -64,6 +66,14 @@ $(NIGHTLY_BIN): $(GO_SOURCES) go.mod go.sum
 	@mkdir -p bin
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(NIGHTLY_BIN) ./cmd/astrbox-nightly
 
+$(TRAIN_BIN): $(GO_SOURCES) go.mod go.sum
+	@mkdir -p bin
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(TRAIN_BIN) ./cmd/astrbox-train
+
+$(EMOTE_BIN): $(GO_SOURCES) go.mod go.sum
+	@mkdir -p bin
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(EMOTE_BIN) ./cmd/astrbox-emote
+
 # Regenerate the CSS from design/tokens.json and copy it into the embedded page
 # tree; both outputs are versioned so a clean checkout builds without node.
 design: $(DESIGN_CSS)
@@ -74,27 +84,36 @@ $(DESIGN_CSS): $(DESIGN_SOURCES) design/dist/genTokens.py
 
 test:
 	$(GO) test ./... -count=1
-	@set -- dsh/lib/*Test.mjs; \
+	@set -- plugins/dsh-astrbox/lib/*Test.mjs internal/monitor/web/*Test.mjs; \
 	if [ -e "$$1" ]; then \
 		echo "node --test $$*"; \
 		node --test "$$@"; \
 	else \
-		echo "SKIP: no dsh/lib/*Test.mjs tests"; \
+		echo "SKIP: no node tests"; \
 	fi
 
 lint:
 	$(GO) vet ./...
 	@test -z "$$(gofmt -l cmd internal)" || (echo "gofmt needed:"; gofmt -l cmd internal; exit 1)
 	@test -f "$(MODULARITY_LINT)" || (echo "缺少 $(MODULARITY_LINT)（code-modularity 技能未安装；可用 MODULARITY_LINT=... 覆盖）" >&2; exit 1)
-	bash "$(MODULARITY_LINT)" internal cmd dsh --naming --comments
+	bash "$(MODULARITY_LINT)" internal cmd plugins/dsh-astrbox --naming --comments
 
-# Render dsh/cordis.patch.yml from the read-only template.
+# Render plugins/dsh-astrbox/cordis.patch.yml from the read-only template.
 render-dsh:
 	bash scripts/tools/renderDshPatch.sh
 
-# Spawn bin/dsh-mcp, run the MCP handshake and check the frozen 17 tools.
+# Spawn bin/dsh-mcp, run the MCP handshake and check the frozen tool set (31 tools).
 doctor: $(DSH_BIN)
 	node scripts/tools/doctorDsh.mjs
+
+# 独立端到端验证门控训练链路：样本 → 导出 → 算法导论训练 → 部署 → 模型门控 → fail-open。
+# 需要算法导论仓库（默认 $ITA_DIR 或 /home/ruicat/Desktop/算法导论）；过程产物落 .local/e2e/work。
+verify-training: build
+	bash scripts/tools/verifyTrainingPipeline.sh
+
+# 一键训练 + 安全部署门控模型（先攒样本；dry-run 只看将做什么）。
+train-gate: build
+	bash scripts/tools/trainGateModel.sh --data-dir $(CURDIR)/data
 
 # Start the read-only monitor UI (add http_token to config.json for writes).
 monitor: $(DSH_BIN)

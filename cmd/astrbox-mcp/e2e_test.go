@@ -83,6 +83,16 @@ func callJSON(t *testing.T, session *mcp.ClientSession, name string, args map[st
 	}
 }
 
+// hasTool reports whether the tool list contains name.
+func hasTool(tools []*mcp.Tool, name string) bool {
+	for _, tool := range tools {
+		if tool.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func callText(t *testing.T, session *mcp.ClientSession, name string, args map[string]any) string {
 	t.Helper()
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
@@ -109,8 +119,11 @@ func TestMCPStdioEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if len(tools.Tools) != 26 {
-		t.Fatalf("tools = %d, want 26", len(tools.Tools))
+	if len(tools.Tools) != 30 {
+		t.Fatalf("tools = %d, want 30", len(tools.Tools))
+	}
+	if !hasTool(tools.Tools, "emote_find") {
+		t.Fatal("emote_find not registered")
 	}
 
 	var inventory map[string]any

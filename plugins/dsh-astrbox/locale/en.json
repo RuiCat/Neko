@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Neko panel",
+    "description": "Sidebar entry: a status snapshot bar (bound entity fields + world clock), the embedded Neko Monitor view (collapsible / full width), a change-only event blackboard, and control actions."
+  }
+}

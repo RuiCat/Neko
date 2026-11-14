@@ -1,7 +1,7 @@
 # MCP 工具参考
 
-服务以 MCP（Model Context Protocol）暴露工具。`astrbox-mcp` 暴露 26 个引擎工具；
-`dsh-mcp` 在此基础上增加 `context_list` / `context_send`（共 28 个，用于角色上下文驱动）。
+服务以 MCP（Model Context Protocol）暴露工具。`astrbox-mcp` 暴露 30 个引擎工具；
+`dsh-mcp` 在此基础上增加 `context_list` / `context_send`（共 32 个，用于角色上下文驱动）。
 默认 stdio；`-transport http` 时使用 Streamable HTTP。
 
 ## 启动
@@ -232,6 +232,29 @@ dry-run：解析 + 安全 + 编译，**不注册、不落盘**。返回
 
 把当前全部实体写入 `<dataDir>/archives/<name>.json`，返回 `{"path","entities","bytes"}`。名称不允许包含路径分隔符、点或空格。
 
+## 表情
+
+### `emote_find`
+
+根据文本语义在 QQ 表情库中检索，返回图片路径（可直接交给 `qqbot_send_file` 发送）。
+数据目录由 `-emote-dir` / `ASTRBOX_EMOTE_DIR` 指定（默认 `~/data/catworkspace/emotes`）；
+表情数据（图片、向量、索引）**不进版本库**。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `text` | string | 是 | 想表达的内容/情感，如 `主人我好想你呀` |
+| `top` | integer | 否 | 返回数量，默认 3，夹紧到 1–20 |
+
+返回 JSON：`{"source":"vec_db|vectors|keyword","results":[{"file","desc","score","categories","intent_bonus","cluster","path","missing"}]}`。
+
+- 三级降级：`vec_db.npz`（128 簇两层检索）→ `emote_vectors.json`（余弦 ≥0.35）→ 关键词打分；
+  三级都不可用时返回 `❌ 表情库索引缺失: <路径>`。
+- 检索含意图融合与 R18 内容过滤（词表冻结，见 `docs/emote-tool-migration.md`）；
+  Ollama `nomic-embed-text` 不可用时返回 `❌`，不静默降级（决策 d3）。
+- 缺图行返回 `path:""` + `missing:true`；查询文本不落盘、不进日志。
+- 构建/巡检用 CLI（`make build` 产出 `bin/astrbox-emote`）：
+  `astrbox-emote info` / `find [-top N] [-json] <文本>` / `build [-dry-run] [-limit N] [-workers N] [-out DIR]`。
+
 ## 运维（K20 工具化）
 
 以下工具是控制面运维路由的薄封装，行为与对应 HTTP 端点一致；失败返回 `❌` 文本。
@@ -263,6 +286,42 @@ dry-run：解析 + 安全 + 编译，**不注册、不落盘**。返回
 
 保护：同一 `(来源,目标,正文)` 60 秒内只发一次；每个来源每分钟最多 10 条。
 MCP 调用本身不携带会话身份，来源需要调用方显式给出（P3 的桥接原生工具才能自动归属）。
+
+## 训练（智慧体主动训练）
+
+智慧体可以直接提交训练数据并触发训练（默认 dry-run，安装权重需显式 `deploy`）。
+
+### `gate_status`
+
+无参数。返回自动/教师样本数、可导出样本、主专家标签分布、覆盖/失衡门槛是否满足、
+模型是否已安装与当前门控版本（`gate-mlp-v1` / `gate-v1`）。
+
+### `gate_teach`
+
+| 参数 | 说明 |
+|---|---|
+| `samples[]` | 教师样本（1–200 条，整批校验，一条非法整批拒绝） |
+| `samples[].target_expert` | 目标语义专家：关系记忆 / 事件记忆 / 自我记忆 / 知识边界 |
+| `samples[].event_kind` | 事件类型（缺省 `turn`） |
+| `samples[].summary` | 对话摘要（训练特征） |
+| `samples[].affect` | 情感向量，如 `{"trust":0.4,"valence":-0.8}` |
+| `samples[].hard_state_keys` | 硬状态键，如 `["知识边界"]` |
+
+写入 `<data>/training/gate-teacher.jsonl`（`source=teacher`、`primary=目标专家`），
+导出训练集时与自动样本合并。
+
+### `gate_train`
+
+| 参数 | 说明 |
+|---|---|
+| `deploy` | 默认 false：只训练+校验不安装；true：过全部门槛才安装（重启 `dsh-mcp` 生效） |
+| `min_samples` / `min_classes` / `min_class_samples` | 样本与类别覆盖门槛（默认 50 / 4 / 5） |
+| `max_class_share` | 最大类别占比门槛（0-1，默认 0.7；超过拒绝，避免多数类撑起准确率） |
+| `min_accuracy` | 留出集准确率门槛（默认 0.8） |
+| `epochs` | 训练轮数（默认 400） |
+| `ita_dir` | 算法导论仓库路径（默认 `$ITA_DIR` 或 `/home/ruicat/Desktop/算法导论`） |
+
+返回 `ok` / `exit_code` / `output_tail`；门槛不过时 `ok=false` 并附训练日志尾部。
 
 ## 权限与安全
 

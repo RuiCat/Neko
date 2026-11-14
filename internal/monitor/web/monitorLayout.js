@@ -10,9 +10,15 @@ export const createLayout = (handlers) => {
   const statusPill = P.createStatusPill("连接中…", "info");
   const navbar = P.createNavbar({ items: ["Neko Monitor"] });
   // 手动 tick / 刷新已移到 Neko 面板控制区（K22），监控页只保留状态与数据视图。
-  app.body.appendChild(P.createPanel({
+  const headerPanel = P.createPanel({
     tag: "div", bare: true, className: "monitor-header", body: [navbar, statusPill],
-  }));
+  });
+  // PetUI 的 createPanel 给每个面板写死内联 `flex:1 1 auto` + `min-height:0`，标题栏因此可被压缩：
+  // 切到「脚本」tab（上百行 DataTable）时，标题栏被挤到 4px、标题文字被裁掉（用户报告的「标题栏被掩盖」）。
+  // 组合层把它改回不可压缩，标题栏高度只由内容决定。
+  headerPanel.style.flex = "0 0 auto";
+  headerPanel.style.minHeight = "auto";
+  app.body.appendChild(headerPanel);
 
   const splitHost = P.createPanel({ tag: "div", bare: true, className: "monitor-split" });
   app.body.appendChild(splitHost);
@@ -25,19 +31,25 @@ export const createLayout = (handlers) => {
   });
   const treePanel = P.createPanel({ title: "实体", bodyFlex: true, body: [filterInput, treeView] });
 
-  const detailList = P.createDescriptionList({ items: [], minColumnWidth: 150 });
+  const detailList = P.createDescriptionList({ items: [], minColumnWidth: 220 });
+  // 字段列表占满剩余高度并自己滚，写表单固定成一行贴底（不再用三行 FormRow 占地）。
+  detailList.style.flex = "1 1 auto";
+  detailList.style.minHeight = "0";
   const pathInput = P.createInput({ placeholder: "点分路径，如 身体.体力" });
   const valueInput = P.createInput({ placeholder: "值（JSON 或纯文本）" });
   const writeButton = P.createButton({ text: "写入字段", type: "primary", onClick: () => handlers.onWrite?.() });
+  const writeBar = document.createElement("div");
+  writeBar.className = "monitor-writebar";
+  writeBar.append(pathInput, valueInput, writeButton);
+  // 单行表单没有可见标签：给内部 input 补 aria-label，读屏与测试仍能识别。
+  for (const [wrapper, label] of [[pathInput, "路径"], [valueInput, "值"]]) {
+    const control = wrapper.querySelector("input");
+    if (control !== null) control.setAttribute("aria-label", label);
+  }
   const detailPanel = P.createPanel({
     title: "实体详情",
     bodyFlex: true,
-    body: [
-      detailList,
-      P.createFormRow({ label: "路径", control: pathInput }),
-      P.createFormRow({ label: "值", control: valueInput }),
-      writeButton,
-    ],
+    body: [detailList, writeBar],
   });
 
   const diagTable = P.createDataTable({

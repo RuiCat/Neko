@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "layers": [2, 2, 2],
+  "activation": "tanh",
+  "leaky": 0,
+  "seed": 1,
+  "weights": [1, 1, 0.5, 1, 1, -0.5, -1, 1, 0.5, 1, -1, -0.5]
+}

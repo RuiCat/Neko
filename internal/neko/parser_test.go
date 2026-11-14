@@ -436,8 +436,10 @@ func collectCorpus(t *testing.T) []string {
 // TestCorpus parses every corpus script and checks counts against the Python run.
 func TestCorpus(t *testing.T) {
 	files := collectCorpus(t)
-	if len(files) != 188 {
-		t.Fatalf("corpus has %d files, want 188", len(files))
+	// Corpus baseline refreshed 2026-11-14: cat_proactive.neko joined the
+	// collection (190 -> 191, one more @Data definition).
+	if len(files) != 191 {
+		t.Fatalf("corpus has %d files, want 191", len(files))
 	}
 	var total [5]int
 	clean := 0
@@ -474,10 +476,13 @@ func TestCorpus(t *testing.T) {
 			total[i] += got[i]
 		}
 	}
-	if clean != 186 {
-		t.Errorf("clean scripts = %d, want 186", clean)
+	if clean != 189 {
+		t.Errorf("clean scripts = %d, want 189", clean)
 	}
-	wantTotal := [5]int{56, 1843, 5, 16, 0}
+	// Totals track the corpus: the 2026-11-10 cat_metabolism scripts add 2 data
+	// definitions and 8 rules (56/1843 -> 58/1851); cat_proactive.neko adds one
+	// data definition (58 -> 59).
+	wantTotal := [5]int{59, 1851, 5, 16, 0}
 	if total != wantTotal {
 		t.Errorf("corpus totals (data,rule,event,func,meta) = %v, want %v", total, wantTotal)
 	}
@@ -504,5 +509,33 @@ func TestSummaryDump(t *testing.T) {
 			t.Fatalf("marshal %s: %v", rel, err)
 		}
 		fmt.Printf("SUMMARY\t%s\t%s\n", rel, payload)
+	}
+}
+
+// TestSceneEventExampleParses keeps the documented scene-event example valid.
+// docs/examples/scene_events.neko is intentionally not registered, but the
+// repository still ships it as documentation, so it must keep parsing cleanly.
+func TestSceneEventExampleParses(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/examples/scene_events.neko")
+	if err != nil {
+		t.Fatalf("read example: %v", err)
+	}
+	ast := Parse(string(raw))
+	if len(ast.Errors) > 0 {
+		t.Fatalf("example has parse errors: %v", ast.Errors)
+	}
+	if len(ast.RuleDefs) != 1 {
+		t.Fatalf("rule defs = %d, want 1", len(ast.RuleDefs))
+	}
+	rule := ast.RuleDefs[0]
+	if len(rule.Conditions) != 1 || len(rule.Actions) != 1 {
+		t.Fatalf("conditions/actions = %v/%v, want one condition and one action", rule.Conditions, rule.Actions)
+	}
+	op := rule.Actions[0]
+	if op.Op != "append" || op.Entity != "场景" || op.Target != "事件" {
+		t.Fatalf("action = %+v, want append 场景.事件", op)
+	}
+	if op.Value != "状态.触发" {
+		t.Fatalf("action value = %#v, want 状态.触发", op.Value)
 	}
 }

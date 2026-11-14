@@ -255,6 +255,22 @@ func (r *Registry) Remove(name string) *ApplyResult {
 	if !ok {
 		return result
 	}
+	removed := map[string]bool{}
+	for typeName := range entry.Templates {
+		if r.refCountLocked("template", typeName) == 1 {
+			removed[typeName] = true
+		}
+	}
+	if conflicts := r.dependencyConflicts(removed); len(conflicts) > 0 {
+		result.OK = false
+		for _, message := range conflicts {
+			result.Errors = append(result.Errors, ApplyError{
+				Severity: "error", Block: "模板依赖", Message: message,
+				Hint: "先修改依赖方的父列表或删除依赖方，再删除该脚本",
+			})
+		}
+		return result
+	}
 	delete(r.entries, name)
 	r.order = removeName(r.order, name)
 	r.releaseLocked(entry, result, true)

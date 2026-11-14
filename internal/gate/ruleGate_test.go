@@ -75,3 +75,32 @@ func TestDeterministicAcrossCalls(t *testing.T) {
 		}
 	}
 }
+
+// TestPrimaryExpertIgnoresCanonicalOrder proves the training label follows the
+// highest score, not the canonical activation order (where 事件记忆 comes
+// before 知识边界/自我记忆).
+func TestPrimaryExpertIgnoresCanonicalOrder(t *testing.T) {
+	gate := NewRuleGate()
+	features := Features{EventKind: "knowledge", Summary: "猫猫的设定"}
+	active, err := gate.Activate(features)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) == 0 || active[0] != EXPERT_EVENT {
+		t.Fatalf("前提不成立：active 首位应为事件记忆（规范顺序），得到 %v", active)
+	}
+	if primary := gate.PrimaryExpert(features, active); primary != EXPERT_KNOWLEDGE {
+		t.Fatalf("主专家 = %q, want %q", primary, EXPERT_KNOWLEDGE)
+	}
+	plain := Features{EventKind: "turn", Summary: "主人回来了"}
+	plainActive, err := gate.Activate(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if primary := gate.PrimaryExpert(plain, plainActive); primary != EXPERT_EVENT {
+		t.Fatalf("普通回合主专家 = %q, want %q", primary, EXPERT_EVENT)
+	}
+	if primary := gate.PrimaryExpert(plain, []string{PHRASING_EXPERT}); primary != "" {
+		t.Fatalf("没有语义专家时应返回空主专家: %q", primary)
+	}
+}

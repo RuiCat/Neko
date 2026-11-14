@@ -100,6 +100,31 @@ curl -s -o /dev/null -w '%{http_code}\n' -H 'Authorization: Bearer abcdefghijklm
 `404 not_found`、`409 tick_busy` / `write_busy`、`413 too_large`、`500 internal`。
 `409 write_busy` 表示写请求等待共享 gate 超过 2 秒。
 
+## 实体详情显示
+
+右侧「实体详情」把选中实体的字段渲染成一格一字段的网格（`PetUI.createDescriptionList`，
+`minColumnWidth: 220`，长值卡片跨两列）。值不再直接输出 `JSON.stringify(value).slice(0,160)`：
+
+| 值类型 | 显示 |
+|---|---|
+| 字符串 | 原样（不再带引号/转义）；空串「（空）」 |
+| 数字 / 布尔 | 原样（数字等宽对齐） |
+| `null` / 缺失 | 「—」 |
+| 扁平对象（值全是标量） | `键: 值 · 键: 值` 一行内联；空对象「（空）」 |
+| 含结构的对象 / 对象数组 | 2 空格缩进 JSON，**完整显示**（不夹取行数；长值另挂 `title` 悬停可看全文） |
+| 标量数组 | 「、」连接；空数组「（空）」 |
+| `__annotations__` | 折叠成「N 个字段定义」，悬停看字段名清单 |
+
+字段显示**全量**（不再截前 24 个），顶部三格是实体 / 类型 / 字段数。网格是**等宽等高**的：每张卡片占一列
+（不再为长值跨列），同一行卡片等高——由 `detailGrid.mjs` 的 `createRowBalancer` 在每次渲染后量一次
+每行最高卡片、给同行其它卡片补 `min-height`（纯 CSS 的 `align-items:stretch` 不行：Chrome 算行高时
+不把被拉伸项的内容计入，长值会被裁掉）。列表在 flex 高度容器里用 `align-content: start` 从顶部起排
+（否则默认 stretch 会把行拉高、行间出现大空带）。写表单压成**一行**贴在面板底部
+（`路径` 输入 + `值` 输入 + `写入字段`，标签走 `aria-label`），字段列表占满剩余高度并自己滚动，
+不再用三行 FormRow 挤掉列表可视区。
+格式化是纯函数 `internal/monitor/web/detailFormat.mjs`，回归测试
+`detailFormatTest.mjs` 已纳入 `make test`。监视页资源是 `go:embed`，改动需要 `make build` + 重启 DSH。
+
 ## 日志
 
 | 路径 | 内容 | 保留 |

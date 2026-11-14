@@ -64,7 +64,12 @@ func (r *Registry) Observe(entityIDs []string) {
 // tick's changes. The caller keeps the tick's fate independent: an Apply error
 // is logged by the caller and never fails the tick (K2).
 func (r *Registry) Apply(result engine.TickResult) error {
-	groups := aggregateTransitions(result.Transitions)
+	// TickResult.Writes 覆盖规则 op、文本效果/赋值副作用和 @函数隐式写入；
+	// 手工构造的 TickResult（旧测试/调用方）没有 Writes，回落到 transitions。
+	groups := aggregateWrites(result.Writes)
+	if len(groups) == 0 && len(result.Writes) == 0 {
+		groups = aggregateTransitions(result.Transitions)
+	}
 	if len(groups) == 0 {
 		return nil
 	}
@@ -83,6 +88,31 @@ func (r *Registry) Apply(result engine.TickResult) error {
 		}
 	}
 	if !changed {
+		return nil
+	}
+	if err := saveBoards(r.path, r.boards); err != nil {
+		return fmt.Errorf("保存事件黑板失败: %w", err)
+	}
+	return nil
+}
+
+// Record folds one batch of direct state writes (MCP tool / control plane) into
+// one entity's board and persists it. The board model is per-entity latest
+// movement, so a direct write is just another change source; tickID names that
+// source (for example "direct:mcp"). A no-op write changes nothing and returns
+// nil without saving, keeping the push diff honest.
+func (r *Registry) Record(entityID string, changes []Change, tickID string, at time.Time) error {
+	if entityID == "" || len(changes) == 0 {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	board, exists := r.boards[entityID]
+	if !exists {
+		board = newBoard(entityID)
+		r.boards[entityID] = board
+	}
+	if !board.apply(changes, tickID, at) {
 		return nil
 	}
 	if err := saveBoards(r.path, r.boards); err != nil {
