@@ -2,7 +2,7 @@
 
 > 状态：**已实施（2026-11-10）**：`internal/emote` + `emote_find` + `astrbox-emote` CLI 已落地，A1–A9 实测结果见 §10。
 > 范围经用户 2026-11-10 确认：**查找链路 + 向量库构建维护链路**。
-> 冻结基线：`legacy/python-astrbox/` 与 `/home/ruicat/data/catworkspace/` 的现有行为与数据格式；本文所有断言带
+> 冻结基线：`legacy/python-astrbox/` 与 `~/data/catworkspace/` 的现有行为与数据格式；本文所有断言带
 > `文件:行` 或实测命令，未实测的标 **假设**。
 > 实施轮按 `task-orchestration` 的 L3 走（跨模块接口 + 数据契约冻结 + 多执行体）；本文件只负责把范围、对照、契约、验收先定死。
 
@@ -22,7 +22,7 @@ Python 侧的表情工具是**一个薄工具层 + 三个检索脚本 + 四个�
 | 明确不在范围内 | 承担者 |
 |---|---|
 | 发送表情到 QQ | DSH `qqbot_send_file`（本会话已可用；`plugins/dsh-plugin-qq/README.md:66` 明确该插件不支持媒体，媒体能力在 `plugins/dsh-qqbot/src/media/`） |
-| 图片采集、dHash 去重、视觉打标（`*.jpg.txt` 提示词） | 已完成的外部产物，见 `/home/ruicat/data/catworkspace/notes/表情包提示词库.md:4-10` |
+| 图片采集、dHash 去重、视觉打标（`*.jpg.txt` 提示词） | 已完成的外部产物，见 `~/data/catworkspace/notes/表情包提示词库.md:4-10` |
 | AstrBot `FunctionTool` 适配层 | Python 插件已冻结，Go 侧换 MCP 工具注册 |
 | 簇级视觉分析与场景层（见 §2.8 G3） | 低频离线步骤，保留 shell 脚本即可 |
 
@@ -42,7 +42,7 @@ Python 侧的表情工具是**一个薄工具层 + 三个检索脚本 + 四个�
 
 ### 2.2 查询算法（主路径 `emote_vec_db.search`）
 
-`/home/ruicat/data/catworkspace/emote_vec_db.py:82-249`：
+`~/data/catworkspace/emote_vec_db.py:82-249`：
 
 1. **查询向量**：`POST http://127.0.0.1:11434/api/embeddings`，body `{"model":"nomic-embed-text","prompt":text}`，
    60s 超时，取 `embedding`（`emote_vec_db.py:32-39`）→ **768 维**。
@@ -62,20 +62,20 @@ Python 侧的表情工具是**一个薄工具层 + 三个检索脚本 + 四个�
 - `emote_matcher_v2.find_emotes_vec()`：同样调 Ollama，遍历 **105MB** `emote_vectors.json` 做余弦，阈值 0.35，暧昧过滤（`emote_matcher_v2.py:28-37,56-97`；空文本短路 `:58-59`；暧昧过滤 `:81-82`）。
 - `emote_matcher.find_emotes()`：纯关键词打分——意图类别命中 ×10、关键词交集 ×3、desc 包含 ×2、
   「开心+爱」−1、「其他」−2、非亲密意图跳过 `暧昧` 表情（`emote_matcher.py:37-120`；暧昧过滤 `:102-103`；空文本短路 `:58-59`）。
-- 路径解析 `_emote_path()`：`img/<file>` 优先，`.jpg/.gif/.png/.jpeg/.webp` 试扩展名，缺失回退 `/home/ruicat/Desktop/QQ表情`（`emote_matcher_v2.py:100-110`）。
+- 路径解析 `_emote_path()`：`img/<file>` 优先，`.jpg/.gif/.png/.jpeg/.webp` 试扩展名，缺失回退 `~/Desktop/QQ表情`（`emote_matcher_v2.py:100-110`）。
 
 ### 2.4 构建链路（4 步，全部离线批处理）
 
 | 步 | 脚本 | 作用 | 关键参数 | 产物 |
 |---|---|---|---|---|
-| 1 | `/home/ruicat/data/catworkspace/build_emote_vectors.py:1-53` | `desc` → 向量 | 串行；每 100 条原子落盘（`:44`）；收尾原子写（`:49-51`）；**断点续传**（已有向量跳过；失败写 `null`） | `emote_vectors.json`（105MB） |
+| 1 | `~/data/catworkspace/build_emote_vectors.py:1-53` | `desc` → 向量 | 串行；每 100 条原子落盘（`:44`）；收尾原子写（`:49-51`）；**断点续传**（已有向量跳过；失败写 `null`） | `emote_vectors.json`（105MB） |
 | 2 | `emote_vec_db.py:41-80` | KMeans 聚类 | `N_CLUSTERS=128`（`:29`）、seed 42、随机初始化、≤20 轮 | `vec_db.npz` + `vec_db.json` |
 | 3 | `build_cluster_analysis.py:1-111` | 每簇代表图 → qwen2.5vl 分析 | 代表 = 簇内 `members[0]`；`/api/generate` + base64 图；`num_predict:120`；断点续传 | `cluster_analysis.json` |
 | 4 | `finalize_emote_vec.sh:1-54` | 128 簇分析向量 → 16 场景簇 | seed 7 | `scene_db.npz` + `scene_db.json` |
 
 编排外壳：`auto_build_vecdb.sh` / `finalize_emote_vec.sh` 用 `pgrep` 轮询等待上一步进程结束——**无状态、无法重入**（Go 化时应换成显式子命令）。
 
-### 2.5 数据清单（2026-11-10 实测，路径 `/home/ruicat/data/catworkspace/emotes/`）
+### 2.5 数据清单（2026-11-10 实测，路径 `~/data/catworkspace/emotes/`）
 
 | 文件 | 大小 | 条目 | 结构 | 生产者 | 查询期消费者 |
 |---|---|---|---|---|---|
@@ -99,7 +99,7 @@ Python 侧的表情工具是**一个薄工具层 + 三个检索脚本 + 四个�
 
 ### 2.7 行为基线（2026-11-10 本机实测）
 
-- `python3 /home/ruicat/data/catworkspace/verify_emote_negkw.py` → **8/8 通过，PASS**（正/负向意图、R18 过滤、困/难过）。
+- `python3 ~/data/catworkspace/verify_emote_negkw.py` → **8/8 通过，PASS**（正/负向意图、R18 过滤、困/难过）。
   这是**唯一现成的行为回归集**，迁移时须 1:1 转成 Go 测试。
 - 三查询 top-3（`time python3 -c ...`，三连查共 1.24s、含首轮 npz 加载；单查询热态实测 0.25s）：
 
@@ -227,15 +227,15 @@ P3 三条实测基线命令可复现（`verify_emote_negkw.py`、三查询、Oll
 # 工具定义与三级降级
 sed -n '1032,1075p' legacy/python-astrbox/tools/tools.py
 # 查询算法
-sed -n '82,249p' /home/ruicat/data/catworkspace/emote_vec_db.py
+sed -n '82,249p' ~/data/catworkspace/emote_vec_db.py
 # 构建链
-sed -n '1,53p' /home/ruicat/data/catworkspace/build_emote_vectors.py
-sed -n '41,80p' /home/ruicat/data/catworkspace/emote_vec_db.py
-sed -n '1,54p' /home/ruicat/data/catworkspace/finalize_emote_vec.sh
+sed -n '1,53p' ~/data/catworkspace/build_emote_vectors.py
+sed -n '41,80p' ~/data/catworkspace/emote_vec_db.py
+sed -n '1,54p' ~/data/catworkspace/finalize_emote_vec.sh
 # 数据清单与结构
 python3 - <<'PY'
 import json, os, numpy as np, collections
-E='/home/ruicat/data/catworkspace/emotes'
+E='~/data/catworkspace/emotes'
 idx=json.load(open(f'{E}/emote_index.json')); cats=collections.Counter()
 for v in idx.values(): cats.update(v['categories'])
 print('index', len(idx), 'categories', len(cats))
@@ -245,12 +245,12 @@ for f in ['emote_index.json','emote_vectors.json','vec_db.npz','vec_db.json','cl
     print(f, os.path.getsize(f'{E}/{f}'))
 PY
 # 行为基线与性能
-python3 /home/ruicat/data/catworkspace/verify_emote_negkw.py        # 期望 8/8 PASS
-time python3 -c "import sys;sys.path.insert(0,'/home/ruicat/data/catworkspace');from emote_vec_db import search;print([r['file'] for r in search('今天好开心',top=3)])"
+python3 ~/data/catworkspace/verify_emote_negkw.py        # 期望 8/8 PASS
+time python3 -c "import sys;sys.path.insert(0,'~/data/catworkspace');from emote_vec_db import search;print([r['file'] for r in search('今天好开心',top=3)])"
 # 运行依赖
 curl -s http://127.0.0.1:11434/api/tags | python3 -c "import json,sys;[print(m['name'],m['details'].get('embedding_length')) for m in json.load(sys.stdin)['models']]"
 # 基线快照（写进验收夹具，替代裸计数）
-sha256sum /home/ruicat/data/catworkspace/emotes/{vec_db.npz,cluster_analysis.json,emote_index.json}
+sha256sum ~/data/catworkspace/emotes/{vec_db.npz,cluster_analysis.json,emote_index.json}
 ```
 
 ## 8. 风险与坑
@@ -319,14 +319,14 @@ sha256sum /home/ruicat/data/catworkspace/emotes/{vec_db.npz,cluster_analysis.jso
 
 1. npz 可用性判定改为「存在即解析」（见 §4.1 注）；损坏报错而非静默回退。
 2. 工具层空文本短路；`top` 夹紧到 1–20（Python 不夹紧）。
-3. 缺图行给 `path:""` + `missing:true`（Python 打印 `path=None`）；不再回退 `/home/ruicat/Desktop/QQ表情`。
+3. 缺图行给 `path:""` + `missing:true`（Python 打印 `path=None`）；不再回退 `~/Desktop/QQ表情`。
 4. 工具返回 JSON（决策 d4），字段名固定。
 5. KMeans 随机序列与 numpy 不同 → 重建后的簇编号与 Python 不一致（只读现有 npz 时结果一致；重建后 A2 基线需重采样，风险 R2 已登记）。
 
 ### 10.4 遗留
 
 - **`make test` 全量已全绿**（2026-11-10 收尾）：此前 2 个既存失败来自 `scripts/` 新增脚本造成的语料基线漂移
-  （`scripts/behavior/cat_metabolism.neko`、`scripts/cat_metabolism.neko`），已按实测刷新冻结基线：
+  （`scripts/kernel/behavior/cat_metabolism.neko`、`scripts/cat_metabolism.neko`），已按实测刷新冻结基线：
   `internal/neko` 语料 188→190 文件、clean 186→188、totals `[56,1843,5,16,0]`→`[58,1851,5,16,0]`；
   `internal/registry` 注册 186→187。复跑 `make test` exit 0（node 274 pass）。
 - `internal/registry` 的注册数来自本地 `data/scripts.json`（gitignore），后续新增脚本注册后需同步该基线（注释已写明来源）。

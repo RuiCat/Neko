@@ -19,8 +19,8 @@
 {
   "mcpServers": {
     "astrbox": {
-      "command": "/home/ruicat/Desktop/Neko/bin/astrbox-mcp",
-      "args": ["-data-dir", "/home/ruicat/Desktop/Neko/data", "-scripts-dir", "/home/ruicat/Desktop/Neko/scripts"]
+      "command": "/path/to/Neko/bin/astrbox-mcp",
+      "args": ["-data-dir", "/path/to/Neko/data", "-scripts-dir", "/path/to/Neko/scripts"]
     }
   }
 }
@@ -319,7 +319,7 @@ MCP 调用本身不携带会话身份，来源需要调用方显式给出（P3 �
 | `max_class_share` | 最大类别占比门槛（0-1，默认 0.7；超过拒绝，避免多数类撑起准确率） |
 | `min_accuracy` | 留出集准确率门槛（默认 0.8） |
 | `epochs` | 训练轮数（默认 400） |
-| `ita_dir` | 算法导论仓库路径（默认 `$ITA_DIR` 或 `/home/ruicat/Desktop/算法导论`） |
+| `ita_dir` | 算法导论仓库路径（默认 `$ITA_DIR`） |
 
 返回 `ok` / `exit_code` / `output_tail`；门槛不过时 `ok=false` 并附训练日志尾部。
 

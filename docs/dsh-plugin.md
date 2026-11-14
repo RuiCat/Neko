@@ -4,16 +4,19 @@
 
 - `bin/dsh-mcp`：同一份引擎的第二个入口。MCP stdio 暴露 31 个 `mcp__astrbox__*` 工具，
   另在 `<data-dir>/dsh-control.sock` 上提供本地控制面（Unix domain socket）。
-- `plugins/dsh-astrbox/`：DSH bundle。`dsh.bundle.patch` 指向渲染后的 `plugins/dsh-astrbox/cordis.patch.yml`，
-  装入 profile 后自动插入两条条目：`mcp-astrbox`（MCP client）与 `astrbox-bridge`（本插件）。
-- `plugins/dsh-astrbox/lib/*.mjs`：静态使用说明段、每轮优先注入一条 `[astrbox]` 补偿包（`GET /turn-context`；
-  状态投影 + 记忆 + 约束 + 情境 + 激活专家），旧引擎回退 `/state` 快照；定时 `POST /tick`、
-  `session/created` 与 `agent/turn-stopping` 的 `POST /session-event`；并向其它插件提供
-  `astrboxBridge` 服务（NPC 实体目录 / 实体人设 / 事件黑板，见「NPC 实体绑定」与「事件黑板订阅」节）。
-  事件黑板：`GET /blackboard`，tick 成功后主会话每 10 分钟收一次变化、绑定实体的子会话在
-  pre-step 注入一次，面板数据由桥接的 `GET /astrbox/blackboard` 路由提供（K4–K8）。
-  跨会话交互（K10–K14）：turn-stopping 采集每实体「最近对话」摘要，订阅文本追加「最近对话」段，
-  并按对话版本一起门控推送/注入；另注册 `astrbox_relay` 工具，可把一句话转达到另一实体主会话
+- `plugins/dsh-astrbox/`：DSH bundle。`dsh.bundle.patch` 指向 `plugins/dsh-astrbox/cordis.patch.yml`，
+  装入 profile 后自动插入五行：`mcp-astrbox`（MCP client）、`astrbox-bridge`（本插件）、
+  `im-qqbot`、`diary`、`bilibili`。
+- `plugins/dsh-astrbox/lib/*.mjs`：静态使用说明段；`agent/pre-step` 每轮至多注入一条 `[astrbox-state]`
+  现状卡（`GET /v2/observations/state`）与一条 `[astrbox-compensation]` 补偿包（`GET /turn-context`：
+  记忆/约束/情境/专家）；定时 `POST /tick`、`session/created` 与 `agent/turn-stopping`
+  的 `POST /session-event`；并向其它插件提供 `astrboxBridge` 服务（NPC 实体目录 / 实体人设 / 面板黑板，
+  见「NPC 实体绑定」与「状态变化推送」节）。
+  状态变化推送（Observation v2）：tick 成功后主会话按**实体游标**拉 `GET /v2/observations` 的 delta，
+  用 `renderDelta` 渲染后推送，对话摘要随同一条消息附带；面板数据由桥接的 `GET /astrbox/blackboard`
+  路由提供（数据源为 `/v2/observations/state`）。
+  跨会话交互（K10–K14）：turn-stopping 采集每实体「最近对话」摘要，变化推送附带「最近对话」段，
+  并按对话版本一起门控；另注册 `astrbox_relay` 工具，可把一句话转达到另一实体主会话
   或经 QQ bot 直发私聊/群聊。
   订阅间隔工具（K17）：`astrbox_subscription` 让主会话读取/设置自己的订阅推送间隔（1..1440 分钟，
   持久化到 `<subscriptionStatePath 或 ~/.dsh-astrbox/subscription.json>`），reset 回到全局默认。
@@ -32,7 +35,7 @@
 
 - Linux（控制面依赖 Unix domain socket 与 `flock`；Windows 不支持，macOS 未验证）。
 - Go（构建两个二进制）、Node.js `^22.19.0 || >=24`、pnpm（`dsh plugin` 会转发给 pnpm）。
-- 可用的 DSH CLI（本机：`/home/ruicat/Desktop/deepseek-harness/apps/cli/lib/bin.js`）。
+- 可用的 DSH CLI（如 `<dsh-checkout>/apps/cli/lib/bin.js`）。
 
 ## 安装
 
@@ -40,40 +43,77 @@
 # 1) 构建两个二进制：bin/astrbox-mcp 与 bin/dsh-mcp
 make build
 
-# 2) 用模板渲染本机绝对路径，生成 plugins/dsh-astrbox/cordis.patch.yml（模板本身不改）
-make render-dsh
+# 2) 把运行时（bin/scripts/config）拷贝到生产运行根 ~/.dsh-neko/Neko
+make install-runtime
 ```
 
-`make render-dsh` 把 `${REPO_ROOT}`、`${DATA_DIR}`、`${SCRIPTS_DIR}`、`${CONFIG}`
-替换为 `scripts/tools/renderDshPatch.sh` 看到的路径（默认 `$PWD` 及其下的 `data/`、`scripts/`、
-`config.json`；可用同名环境变量覆盖）。生成物 `plugins/dsh-astrbox/cordis.patch.yml` 已进 `.gitignore`，
-**必须在安装前渲染**：bundle 加载的是这个文件，未渲染时其中仍是占位符。
+`make install-runtime` 在 Makefile 内直接完成：把 `bin/dsh-mcp`、`bin/astrbox-mcp`、`scripts/**`、
+`config.json` **拷贝**到 `~/.dsh-neko/Neko`。可用 `NEKO_HOME=` 改目标、`PRUNE=1` 先清空旧脚本，
+`make -n install-runtime` 为 dry-run。
+
+`plugins/dsh-astrbox` 是**聚合 bundle**：`package.json` 的 dependencies 带入 4 个同级组件
+（`dsh-mcp-client` / `@tencent-connect/dsh-qqbot` / `dsh-plugin-diary` / `dsh-plugin-bilibili`），
+`cordis.patch.yml` 声明 5 行、**不含 config 与机器路径**。运行配置由各插件从
+`~/.dsh-neko/Neko/data/<组件>.config.json` 读取；MCP 启动参数由 `dsh-mcp-client` 包装插件默认指向
+`~/.dsh-neko/Neko/bin/dsh-mcp`（可用 `mcp-astrbox.json` 覆盖）。
+
+### `link:` 安装与依赖解析（必读）
+
+DSH 的 loader 在 **profile 目录**上解析 patch 里的**裸包名**；而 pnpm 的 `link:` 只建符号链接，
+**不会安装被链 bundle 自己的 dependencies**。所以「dependencies 带入组件」只对**真实安装**（拷贝/打包）成立，
+`link:` 安装下裸名能否解析取决于 profile 的 `node_modules`，缺一个就是启动告警
+`<id> (<name>): failed to import: Cannot find package '<name>'`，该行静默不激活。
+
+本仓库对两种安装都成立的写法：
+
+| 行 | 入口 | `link:` 安装要求 |
+|---|---|---|
+| `mcp-astrbox` | `./lib/mcpClientEntry.mjs`（bundle 内相对入口，loader 会锚定到 bundle 目录） | 仓库内两处 `node_modules` 链接（见下） |
+| `astrbox-bridge` | `dsh-astrbox`（自己，profile 一定可解析） | — |
+| `im-qqbot` / `diary` / `bilibili` | 裸包名 | profile 的 `node_modules` 里必须有同名包 |
+
+仓库内链接依赖（幂等，且已被 `.gitignore` 的 `/plugins/*/node_modules/` 覆盖）：
+
+```bash
+cd /path/to/Neko
+mkdir -p plugins/dsh-astrbox/node_modules plugins/dsh-mcp-client/node_modules/@deepseek-ai
+ln -sfn ../../dsh-mcp-client plugins/dsh-astrbox/node_modules/dsh-mcp-client
+ln -sfn "$DSH_HOME/profiles/node_modules/@deepseek-ai/dsh-mcp-client" \
+        plugins/dsh-mcp-client/node_modules/@deepseek-ai/dsh-mcp-client
+```
+
+第一条让 `mcpClientEntry.mjs` 找得到 `dsh-mcp-client`；第二条让包装插件找得到它自己的上游
+`@deepseek-ai/dsh-mcp-client`（`link:` 下 Node 按真实路径解析，不经过 `~/.dsh/profiles/node_modules`
+这一层目录——必须显式链到宿主那份，才能与宿主共用同一个模块实例与版本）。
+
+其余 4 行的包在 profile 里也得有；本机 profile 是用 `dsh plugin --profile web add link:<组件路径>`
+分别装过的产物。换机器或重装 profile 后，缺哪个就在 profile 里补 link 哪个（或改用真实安装，
+让 pnpm 一次装齐）。
 
 ```bash
 # 3) 用户执行：以 link 方式把本仓库的 dsh/ 装进 web profile
-dsh plugin --profile web add link:/home/ruicat/Desktop/Neko/plugins/dsh-astrbox
+dsh plugin --profile web add link:/path/to/Neko/plugins/dsh-astrbox
 ```
 
 `dsh plugin add` 会把 `dsh-astrbox` 写进 profile 的 `package.json` 的
 `dsh.profile.bundles`，并在下次启动时应用它的 `dsh.bundle.patch`。装完重启 DSH。
 
-> 仓库路径变化（移动目录、换机器）后要重新 `make build && make render-dsh` 并重启，
-> 因为渲染结果是绝对路径。
+> 仓库路径变化（移动目录、换机器）后要重新 `make build && make install-runtime`、
+> 重做上面的仓库内 `node_modules` 链接，并重启 DSH：`install-runtime` 的落点是绝对路径，
+> 链接是相对路径（`plugins/*/node_modules` 不入库）。
 
 ## 配置键
 
-配置写在 bundle patch 的 `astrbox-bridge` 条目下（即 `plugins/dsh-astrbox/cordis.patch.yml.template`）。
+配置写在运行数据目录的 `bridge.config.json`（默认 `~/.dsh-neko/Neko/data/bridge.config.json`），行配置为空时由插件读取。
 未知键、类型错误、负数、路径无分隔符会在 `apply` 时抛错并指名键。
 
 | 键 | 默认值 | 含义 |
 |---|---|---|
 | `socketPath` | `<repo>/data/dsh-control.sock` | 控制面 socket；必须与 `dsh-mcp -data-dir` 推导出的路径一致 |
 | `entity` | `猫猫` | 未命中实体绑定时的回落实体名（K6） |
-| `paths` | 8 条（见下） | 快照白名单点分路径；默认不含 R18 字段 |
-| `personaPaths` | 7 条（见下） | 人设白名单点分路径；空数组=关闭人设；默认不含 R18 字段 |
 | `personaMaxChars` | `600` | 单条人设文本上限（字符，超限截断并加 `…（截断）`） |
-| `promptMaxChars` | `1200` | 单条快照消息上限（字符，超限截断并加 `…（截断）`） |
-| `promptRefreshMs` | `5000` | 同一窗口内不重复拉 `/state` |
+| `promptMaxChars` | `1200` | 单条现状卡字符上限（`renderState` 的 `maxChars`） |
+| `promptRefreshMs` | `5000` | 同一窗口内不重复拉 `/v2/observations/state`（现状卡与面板投影共用） |
 | `tickEveryMs` | `60000` | 定时 tick 间隔；`0` 关闭定时器 |
 | `tickScope` | `""` | `POST /tick` 的 scope，空串与 MCP 工具一致按全量处理 |
 | `clockStepMinutes` | `10` | 世界时钟：**活跃窗口内**每 tick 推进的游戏分钟数（`0` 关闭时钟） |
@@ -83,29 +123,29 @@ dsh plugin --profile web add link:/home/ruicat/Desktop/Neko/plugins/dsh-astrbox
 | `functionName` | `dsh_on_event` | `/session-event` 调用的引擎函数名；未注册时只写日志 |
 | `requestTimeoutMs` | `2000` | `/state`、`/session-event` 请求超时 |
 | `tickTimeoutMs` | `15000` | `/tick` 请求超时 |
-| `subscriptionEnabled` | `true` | 事件黑板订阅总开关；`false` = 不推主会话、不注入子会话 |
-| `subscriptionMainIntervalMs` | `600000` | 主会话主动读取黑板的最小间隔（毫秒；`0` = 每个 tick 都检查版本） |
-| `subscriptionMaxChars` | `2000` | 单条订阅文本上限（字符，超限截断并加 `…（截断）`） |
-| `scenePaths` | 7 条（见下） | 实体**进入新场景**时随推送带出的场景字段；空数组 = 不推场景信息 |
+| `subscriptionEnabled` | `true` | 状态变化推送总开关；`false` = 不推主会话 |
+| `subscriptionMainIntervalMs` | `600000` | 主会话拉取变化流的最小间隔（毫秒；`0` = 每个 tick 都可拉） |
+| `subscriptionMaxChars` | `2000` | 单条变化推送文本上限（正文 + 附带对话段，超限截断并加 `…（截断）`） |
 | `dialogExcerptChars` | `160` | 对话摘要里每条用户/助手文本的字符上限（K10，超限加 `…`） |
 | `dialogFeedSize` | `20` | 每实体保留的最近对话条数（K10） |
-| `subscriptionStatePath` | `""` | 订阅间隔覆盖的持久化路径（K17）；空串 = `~/.dsh-astrbox/subscription.json` |
+| `subscriptionStatePath` | `""` | 推送间隔覆盖的持久化路径（K17）；空串 = `~/.dsh-astrbox/subscription.json` |
 | `mainSessionPromptStatePath` | `""` | 主会话提示词持久化路径（K28）；空串 = `~/.dsh-astrbox/main-session-prompts.json` |
 | `boardEnabled` | `true` | 会话黑板总开关（K30/K11）；`false` = 不注册 `astrbox_board`、不注入 `[astrbox-board]` |
 | `boardSubscriptionMaxChars` | `1200` | 单条 `[astrbox-board]` 注入文本上限（字符，整数 ≥1） |
 | `boardSubscriptionStatePath` | `""` | 会话黑板订阅游标持久化路径（K30/K8）；空串 = `~/.dsh-astrbox/board-subscriptions.json` |
 | `warningAfterMs` | `30000` | 连续失败后警告节流窗口 |
 
-默认 `paths`：`状态.情绪`、`身体.体力`、`心情.当前`、`关系.亲密`、`位置.场景`、
-`睡眠.疲劳`、`社交.互动需求`、`任务.当前任务`。
+人设路径固定为 `种族`、`体型`、`毛色`、`自称`、`对主人称呼`、`人格.MBTI`、`人格.气质类型`
+（`astrboxService.mjs` 的 `PERSONA_PATHS`，不含 R18 字段）。
 
-默认 `personaPaths`：`种族`、`体型`、`毛色`、`自称`、`对主人称呼`、`人格.MBTI`、`人格.气质类型`。
+`paths` / `personaPaths` / `scenePaths` / `subscriptionPaths` / `subscriptionIgnore` /
+`subscriptionMaxEntries` 已随旧推送实现退役（contract §5）：配置里出现时**读取即忽略**（不报错、不再生效），
+旧 `bridge.config.json` 可以直接继续用；推送过滤/预算改由服务端 `<data-dir>/observation.json` 策略驱动。
+其它未知键仍然按 `invalid config key <key>: unknown key` 抛错。
 
-默认 `scenePaths`：`名称`、`类型`、`特征`、`氛围`、`物品`、`连接`、`在场`（缺失字段自动跳过，
-单字段值按 200 字符截断）。
-
-`mcp-astrbox` 条目里的 `command` 必须指向 `make build` 产出的 `bin/dsh-mcp`，
-`args` 的 `-data-dir` / `-scripts-dir` / `-config` 与渲染出的模板一致。
+`mcp-astrbox` 的启动参数不写在 patch 里：由 `plugins/dsh-mcp-client` 包装插件在 `apply` 时解析，
+默认 `command` = `~/.dsh-neko/Neko/bin/dsh-mcp`，`args` = `-data-dir/-scripts-dir/-config`
+指向同一运行根；可用 `<data-dir>/mcp-astrbox.json` 整体覆盖。patch 行里只剩 `name: './lib/mcpClientEntry.mjs'`。
 
 ## 世界时钟（`clockStepMinutes` / 活跃推进）
 
@@ -140,7 +180,7 @@ dsh plugin --profile web add link:/home/ruicat/Desktop/Neko/plugins/dsh-astrbox
 ## NPC 实体绑定（按会话 cwd 注入/回写）
 
 多机器人（`dsh-qqbot`）场景下，每个 bot 的会话有自己的 `cwd`；桥接按 `cwd` 解析「生效实体」，
-注入的状态快照与回写的 `session-event` 都落到该实体。绑定的唯一来源是 qqbot 提供的 cordis 服务
+注入的现状卡与回写的 `session-event` 都落到该实体。绑定的唯一来源是 qqbot 提供的 cordis 服务
 `qqbotBots`（K1）；桥接用 `ctx.get('qqbotBots')` **惰性**读取，**不进静态 `inject`**（C6）——
 qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
 
@@ -157,7 +197,7 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
 | 缓存 | 保留最近一次**非空合法**绑定：服务缺失/返回空/HMR 空窗继续用缓存；从未有过绑定 = 旧行为 |
 
 解析输入是 `agent.session.header.cwd`（会话事件与 pre-step 都用同一来源）。同一个刷新窗口内，
-不同实体的会话各取各的快照，**不会串实体**。
+不同实体的会话各取各的现状卡，**不会串实体**。
 
 ### 服务契约（K2 `astrboxBridge`）
 
@@ -170,7 +210,7 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
 | `persona(entityId): string` | 实体人设文本（见下）；同步 getter，未就绪返回 `''`，**永不抛错、不返回 Promise** |
 | `mainSessionPrompt?(entityId): string` | 该实体的主会话提示词（K28，可选方法；旧版桥接没有）；同步 getter，未配置/异常返回 `''`，**永不抛错** |
 | `refresh(): Promise<void>` | 清缓存、重拉实体目录、预取当前绑定实体的人设；失败静默（只记日志） |
-| `blackboards(): Array<{entity: string, board: object 或 null}>` | 绑定实体 + 全局 `entity` 去重升序；同步 getter，返回缓存黑板并后台按 `promptRefreshMs` 刷新；**永不抛错** |
+| `blackboards(): Array<{entity: string, board: object 或 null}>` | 绑定实体 + 全局 `entity` 去重升序；同步 getter，返回由 `/v2/observations/state` 投影的缓存黑板并后台按 `promptRefreshMs` 刷新；**永不抛错** |
 
 - 缓存 TTL = `promptRefreshMs`（`0` = 每次取值都刷新）；每个实体一个 single-flight 在飞请求。
 - 人设文本（冻结格式）：
@@ -183,20 +223,21 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
   与主人对话时保持该角色与语气；不要自称 AI 助手。
   ```
 
-- 只渲染 `personaPaths` 中**有值**的路径；没有任何可用路径（或 `personaPaths: []` 关闭人设）时返回 `''`；
+- 只渲染固定人设路径 `PERSONA_PATHS` 中**有值**的路径；一个都没有时返回 `''`；
   总长按 `personaMaxChars` 截断（追加 `…（截断）`）。消费方（qqbot）把它作为 systemPrompt 的 persona 段，
   且必须 `interpolate: false`（实体文本不参与 `{{…}}` 插值，K7）。
 - **冷启动首轮**：人设是同步缓存值，桥接服务未就绪/首轮未预取时为空段（宿主丢弃）。qqbot 会按实体
   记录**一次** warn（`人设尚未就绪…`），下一轮自动生效；持续为空时检查 `astrboxBridge` 服务与
-  `personaPaths` 是否对该实体有值。
+  `PERSONA_PATHS` 是否对该实体有值。
 
 ### 注入与回写行为
 
-- **注入**：唯一注入点仍是本桥接。`agent/pre-step` 的 step 1 每轮至多一条 `[astrbox] <实体>` user 消息，
-  按该 agent 会话 `cwd` 命中的绑定实体取快照（补偿包优先，旧引擎回退 `/state`），
-  每个实体独立的 TTL、失败计数与单飞。
-  **状态没变默认跳过**：按会话记录「去掉时间戳首行后的快照正文」签名，与上次注入相同就不再重复注入
-  （首轮必注入；状态变化后恢复注入）；订阅文本同理只在黑板变化时出现。
+- **注入**：唯一注入点仍是本桥接。`agent/pre-step` 的 step 1 每轮至多两条 user 消息，顺序固定：
+  ① `[astrbox-state] <实体>` 现状卡，由 `/v2/observations/state` 渲染（每个实体独立的 TTL、失败计数与单飞）；
+  ② `[astrbox-compensation] <实体> 补偿包`，由 `/turn-context` 渲染（记忆 / 人设约束 / 情境 / 激活专家；
+  状态段已由现状卡负责，补偿包不再重复）。
+  **文本没变默认跳过**：按会话记录上次注入的两段文本，各自与上次相同就不再重复注入
+  （首轮必注入；变化后恢复注入）。状态变化推送只走 tick 主会话链路，不在 pre-step 注入。
 - **回写**：绑定命中的会话（`session/created` / `agent/turn-stopping`）**即使 `cwd` 不在 `workspacePrefix`
   内也上报**，并在请求体带 `entity`（K3）；未命中的会话保持旧行为（前缀门控、不带 `entity`、服务端默认实体）。
   去重键 `(kind, sessionId, turn)` 与命中顺序语义不变。
@@ -215,47 +256,39 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
 - id: astrbox-bridge
   # …socketPath 等既有键…
   entity: 猫猫                        # 未命中绑定时的回落实体
-  personaPaths: [种族, 体型, 毛色, 自称, 对主人称呼, 人格.MBTI, 人格.气质类型]
-  personaMaxChars: 600
+  personaMaxChars: 600                # 人设文本上限（路径固定，见 PERSONA_PATHS）
 ```
 
 绑定本身来自 qqbot：每个 bot 配 `cwd` 与 `entity`（`plugins/dsh-qqbot` 的 `bots[]` / 设置页）。
 仓库单测（伪客户端，不依赖真 UDS / 真引擎）：`node --test plugins/dsh-astrbox/lib/*Test.mjs`。
 
-## 事件黑板订阅（K4–K13）
+## 状态变化推送（Observation v2）
 
-状态机每 tick 把实体变化写进「每实体一块」的事件黑板（K1 数据模型 / K3 控制面契约，
-由控制面实现）。桥接只读黑板，按 K5/K6 把**变化**推给会话：主会话定时主动读取，
-绑定实体的子会话在收到新消息的 pre-step 注入一次；黑板与「最近对话」都无变化不推送。
+状态机把任何状态写入变成一条 append-only 的 `ObservationEvent`（`scope=entity:<id>`，`seq` 单调递增），
+服务端按 `observation.json` 策略（tier / 阈值 / 合并窗口 / 预算）过滤与排序后再交给桥接。
+桥接**不做任何过滤**：主会话按实体游标拉 delta，pre-step 拉现状卡与补偿包；对话摘要只作为变化推送的附带段。
+旧 `bridge.config.json` 里若还留着 `paths`/`personaPaths`/`scenePaths`/`subscription*` 键，启动时会被忽略（不报错），
+过滤与预算统一由服务端 `observation.json` 决定。
+
+冻结契约见 [observation-v2-api.md](observation-v2-api.md)，设计背景见 [observation-v2-design.md](observation-v2-design.md)。
 
 ### 数据来源（控制面 UDS）
 
 | 请求 | 响应 |
 |---|---|
-| `GET /blackboard?entity=<id>` | `200 {ok:true, board:{entity, version, updated_at, tick_id, entries:[{path, from, to, rule_ids, updated_at, version}]}}`；无黑板 `board:null`（不返回 404） |
-| `GET /blackboard`（无参数） | `200 {ok:true, boards:[{...K1...}]}`（按 entity 升序） |
+| `GET /v2/observations?scope=entity:<id>&since=<seq>&limit=<n>` | `200 {ok, scope, version, since, cursor, events, truncated, dropped, budget, policyVersion}`；`events` 已按服务端策略过滤/合并/排序（critical 在前），`noise` 永不出现；`cursor` 是下一次的 `since` |
+| `GET /v2/observations/state?scope=entity:<id>` | `200 {ok, scope, version, entries:[{path, value, from, tier, seq, at}], truncated, budget}`；每个 path 只留最新值 |
 
-`version` 每发生一次**真实变化** +1；`entries` 只增不删（路径再变化时原地更新 from/to/规则，
-并写入 `entry.version = 本次写入时的黑板版本`）。
-- 同值重写（from 与 to 相同）不算变化，不推进版本；状态组之外的路径在引擎 `FromState` 里查不到时，
-  `from` 回落为**该条目上一次的 to**，因此重复推送不会永远显示 `null → 值`。
-- 旧引擎/旧黑板（条目没有 `version`）保持全量渲染，桥接向后兼容。
-- **K1 扩展（tick 内全部写入）**：引擎每 tick 观察所有状态写入（规则 `set/add/append`、文本效果/赋值
-  的隐式写入、`@函数/事件` 里的直接写入），以 `TickResult.Writes`（entity/rule/path/from/to）交给黑板
-  ——所以「饱食度、身体状态」这类不在规则 `set` 操作里的更新也能进变化推送，`rule_ids` 尽量带因果规则。
-  同 tick 内改了又改回去（净变化 0）不记；场景「事件」列表（无界数组）不整份记录，
-  只投影最新一条为 `事件.最新`（单条预览截断 120 字），所以推送有界、可读。
-- **K1 扩展（tick 外直接写入）**：MCP 工具 `entity_state_set` 与控制面 `POST /state` 的写入也记入黑板
-  （`tick_id=direct:mcp` / `direct:control`，`rule_ids` 为空）；场景/实体内容被直接编辑时订阅同样能推送。
-- 世界时钟的 `当前时间` / `当前月份` / `状态.阶段` 是引擎内部推进的镜像，**不记入黑板**
-  （否则每个 tick 都会推一次时间）。
+- `scope` 必填；空/非法 → `400 bad_request`；未知 scope 返回 `200` 空 `events`（不报错）。
+- 事件流每实体内存环形缓冲 + 可选落盘；`version` = 该 scope 当前最大 `seq`。
+- 桥接客户端实现于 `plugins/dsh-astrbox/lib/controlClient.mjs`（`fetchObservations` / `fetchObservationState`）。
 
 ### 对话摘要 Feed（K10）
 
 - 采集：`agent/turn-stopping` 时从 `agent.session.snapshotEvents()` 取**本轮**最后一条
-  `user/message`（`source.kind === 'user'`，跳过桥接自己的 `[astrbox*]` 注入文本）与最后一条
+  `user/message`（`source.kind === 'user'`，跳过桥接自己的 `[astrbox-*]` 注入文本）与最后一条
   `assistant/message` 文本，各截断 `dialogExcerptChars`（默认 160，超限加 `…`）。
-- **只有真实用户文本的轮次才记**：没有 `userText` 的 assistant-only 轮次（例如订阅/relay 注入触发的
+- **只有真实用户文本的轮次才记**：没有 `userText` 的 assistant-only 轮次（例如变化推送/relay 注入触发的
   NPC 回复）不生成 entry，避免「最近对话」把自己的回复反复带回并再次推送。
 - 存储：每实体保留最近 `dialogFeedSize`（默认 20）条
   `{sessionId, label, kind, userText, assistantText, at, seq}`；内存态、不落盘（重启清空）。
@@ -265,61 +298,40 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
 - 版本：每新增一条 `feedVersion + 1`（单调，不因淘汰回退）。
 - 只采集 `cwd` 命中实体绑定的会话（未绑定会话不进入任何实体 Feed）。
 
-### 主会话主动读取（K5，门控扩展 K12）
+### 主会话变化推送（Observation v2）
 
 - 触发：`/tick` **成功后**（`tickEveryMs` 节奏），对每条带 `entity` + `mainSessionId` 的
   `qqbotBots.bindings()` 绑定检查；无绑定不推（全局 `config.entity` 没有主会话 id）。
 - 条件（全部满足才发）：`subscriptionEnabled` && 距上次推送 ≥ `subscriptionMainIntervalMs`
-  && **任一黑板版本前进** && 能拿到该主会话 agent（优先 DSH `agents` 注册表 `get(sessionId)`；
+  （K17 可覆盖）&& 能拿到该主会话 agent（优先 DSH `agents` 注册表 `get(sessionId)`；
   不可用时回落桥接在 pre-step / turn-stopping 见过的 agent 缓存）。
-- 参与推送的**三块黑板**：
-  1. 绑定实体的本体黑板；
-  2. 该实体当前所在场景（状态 `位置.场景`）的场景黑板（场景内容/氛围/物品变化，
-     「事件」列表只投影最新一条 `事件.最新`；`在场` 列出当前在这个场景的实体 id，
-     每 tick 由所有实体的 `位置.场景` 重算，**谁进/出场景就是一次场景变化**，
-     同一场景里的多个智能体因此能同步彼此的位置）；
-  3. `世界` 实体的世界黑板（`环境.所在场景`、光照、天气、场景特征等）。
-- **进入新场景带场景信息**：目标实体的 `位置.场景` 与上次成功推送时不同（含首推）→ 额外读一次场景实体，
-  在文本里加一段「场景信息（<场景 id>）」，逐行列出 `scenePaths` 里**有值**的字段
-  （名称/类型/特征/氛围/物品/连接/在场…），让智能体一进场景就拿到场景内容；
-  同场景不重复带。场景信息读取失败只跳过该段，不影响其余推送。
-- **推送只带差异**：文本里的每条变化都要求 `entry.version > 上次推送版本`；首推（没有历史版本）为全量。
-  三块黑板任一没有新条目就不出现对应段；**没有任何可渲染的黑板变化时默认跳过**（只有对话 feed 变化不推送），
-  例外：刚进入新场景且拿到了场景信息时，即使黑板无变化也推一次。
-- 对话 feed 变化**不单独触发**推送，只在黑板变化时作为附带内容；附带对话段只含
-  `feedVersion > lastMainFeedVer` 的**新增**条目（避免每次重复最近的 20 条）。
-- 动作：`agent.followup(user 消息)`；**成功后**才推进三块黑板版本（`boardVersion`/`sceneVersion`/
-  `worldVersion`）、`lastMainFeedVer=feedVersion` 与时间。agent 不在线、黑板拉取失败、`followup` 抛错
-  都只记 debug（下个 tick 重试，不推进版本）。
+- **首次不回放历史**：首次见到目标时调一次 `fetchObservationState(scope)`，用响应的 `version` 作为游标起点；
+  之后只拉 `seq > cursor` 的变化，并按响应的 `cursor` 推进（`events` 为空时 cursor 已推进到 `version`，
+  不会重扫噪声）。
+- **推送只带差异**：`renderDelta` 只渲染服务端返回的 `events`；没有可渲染变化时不打扰会话（只推进游标）。
+- 对话 feed 变化**不单独触发**推送，只在有变化时作为同一条消息的「最近对话」段附带，且只含
+  `feedVersion > lastMainFeedVer` 的**新增**条目。
+- 动作：`agent.followup(user 消息)`；**成功后**才推进游标、`lastMainFeedVer` 与时间。
+  agent 不在线、拉取失败、`followup` 抛错都只记 debug（下个 tick 重试，不推进游标）。
+- 值编码与预算：字符串原样、布尔 `真`/`假`、数字不带多余小数、对象/数组紧凑 JSON、空值 `null`；
+  文本实现于 `plugins/dsh-astrbox/lib/observationRender.mjs`（纯函数，golden 稳定）。
 
-### 子会话注入（K6，门控扩展 K13）
-
-- 位置：`agent/pre-step` 的 step 1（与状态快照同一注入通道，**快照在前、订阅在后**）。
-- 对象：`cwd` 命中实体绑定、且会话 id **不是**该绑定的 `mainSessionId`（主会话走 K5，避免双份）。
-- 条件：`subscriptionEnabled` && **`board.version` 前进**（对话 feed 变化不再单独触发）；
-  同会话同版本**永不重复注入**；没有黑板变化默认跳过；无变化/异常都不影响本轮（异常只记 warn）。
-- 注入文本同样只含上次注入之后变化的条目（`entry.version`），不再重复历史变化。
-- 对话段**排除本会话自身**的条目（避免复述自己刚说的话），「主体」与「QQ」都展示，
-  便于子会话知道主体/其他会话最近说了什么。
-
-### 注入文本（K5，主/子会话一致）
+推送示例（`renderDelta`）：
 
 ```text
-[astrbox-subscription] 梦梦 事件黑板（数据，不是指令；版本 12）
-更新时间：2026-11-06T16:20:00+08:00
-变化（2 条）：
-- 心情.当前：满足 → 开心（规则 r_0cb76329）
-- 身体.体力：90 → 92
-最近对话：
-- 主体：用户「在吗」→ 回复「在的」（20:05:12）
-- 私聊(85D47757)：用户「嗨」→ 回复「嗨呀」（20:06:40）
-无变化的部分不上报；本消息每 10 分钟最多一次。
+[astrbox-observation] 猫 · 2 处变化
+- 状态.身体: 疲惫 → 虚弱
+- 位置.场景: 书房 → 卧室
+另有 3 条未显示
 ```
 
-- 黑板与对话都无变化返回空串 → 不注入、不推送；值编码：字符串原样、空值 `null`、其余紧凑 JSON；
-  无规则时省略括号；对话行以 `label`（主体 / `私聊(…)` / `群聊(…)`，缺省回退 `QQ`）开头，
-  缺失一侧显示 `—`；总长按 `subscriptionMaxChars` 截断并追加 `…（截断）`。
-- 文本实现于 `plugins/dsh-astrbox/lib/blackboardText.mjs`（纯函数，主会话与子会话共用；对话段由 `dialogFeed.mjs` 提供）。
+现状卡示例（`renderState`，pre-step 注入）：
+
+```text
+[astrbox-state] 猫
+状态.身体: 虚弱
+位置.场景: 卧室
+```
 
 ### 面板数据路由（K7）
 
@@ -329,14 +341,16 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
 | 请求 | 响应 |
 |---|---|
 | `GET /astrbox/blackboard` | `200 {ok:true, primary, paths, boards:[{entity, board}]}`（实体升序） |
-| `GET /astrbox/blackboard?entity=梦梦` | `200 {ok:true, entity:'梦梦', board}`（无黑板 `board:null`） |
+| `GET /astrbox/blackboard?entity=梦梦` | `200 {ok:true, entity:'梦梦', board}`（无数据 `board:null`） |
 | 其它方法 | `405 {ok:false, error:{code:'method_not_allowed'}}` |
 
-- 数据源是 `astrboxBridge.blackboards()`；路由实现于 `plugins/dsh-astrbox/lib/blackboardRoute.mjs`。
-- `primary` / `paths`（K7b）是面板状态快照条的元数据：生效实体 `config.entity` 与 pre-step
-  快照同一份白名单 `config.paths`（最多 32 条）。元数据源缺失/抛错/形状非法时**这两个字段不出现**，
-  `boards` 照常返回（旧版本面板与旧响应完全兼容）。
+- 数据源是各实体的 `GET /v2/observations/state` 投影（`blackboardRoute.mjs` + `observationBoard.mjs`）：
+  `board = {entity, version, updated_at, entries:[{path, from, to, updated_at}]}`，`to` 取自 state 的 `value`；
+  无数据时 `board:null`。
+- `primary` / `paths` 是面板状态快照条的元数据：生效实体 `config.entity` 与它的观测现状路径（最多 32 条）。
+  元数据源缺失/抛错/形状非法时**这两个字段不出现**，`boards` 照常返回。
 - 面板状态条不自己猜实体：先用 `primary` 读 `/astrbox/control/state`，读不到就不显示 chips（不报错）。
+- `astrboxBridge.blackboards()` 仍是同步缓存 getter（后台按 `promptRefreshMs` 刷新）；路由走异步数据源。
 
 配置示例（调小间隔可做真机验证，验证完改回默认）：
 
@@ -345,7 +359,7 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
   # …socketPath 等既有键…
   subscriptionEnabled: true
   subscriptionMainIntervalMs: 600000   # 主会话每 10 分钟最多收一次
-  subscriptionMaxChars: 2000           # 单条订阅文本上限
+  subscriptionMaxChars: 2000           # 单条变化推送文本上限（含附带对话段）
   dialogExcerptChars: 160               # 每条对话摘要上限
   dialogFeedSize: 20                    # 每实体最近对话条数
   subscriptionStatePath: ""             # K17 间隔覆盖持久化路径；空串=~/.dsh-astrbox/subscription.json
@@ -511,8 +525,9 @@ K28 补一条**按实体**的补充提示词：在 Neko 面板里编辑，qqbot 
 ## 会话黑板（K30，工作区/跨工作区）
 
 会话之间的共享黑板：每个会话有自己的区域，把「任务.当前 / 项目.状态」这类短键值行写进板里，
-同工作区（或跨工作区，按 scope）的其它会话可在下一轮开头收到**差异**注入。与事件黑板
-（`[astrbox-subscription]`，按实体）是两条独立通道：会话黑板按「工作区」分区、按会话身份写入。
+同工作区（或跨工作区，按 scope）的其它会话可在下一轮开头收到**差异**注入。与状态变化推送
+（`[astrbox-observation]` / `[astrbox-state]`，按实体）是两条独立通道：会话黑板按「工作区」分区、
+按会话身份写入。
 
 ### 数据与路由（Go 控制面）
 
@@ -561,7 +576,7 @@ K28 补一条**按实体**的补充提示词：在 Neko 面板里编辑，qqbot 
 - **显式订阅**：会话调用 `op=subscribe` 才注入；游标初值 = 当前板 version（不灌历史）。
   退订用 `op=unsubscribe`（省略 scope = 整个会话）；`op=subscriptions` 只读列出自己的订阅。
 - 每轮 `agent/pre-step` 最多追加**一条** `[astrbox-board]` user 消息，顺序固定：
-  状态快照 → 事件黑板订阅 → 会话黑板（既有两条路径零改动）。
+  现状卡 → 补偿包 → 会话黑板（变化推送走 tick 主会话链路，不在 pre-step 注入）。
 - 文本形状（受 `boardSubscriptionMaxChars` 限制）：
 
   ```text
@@ -584,7 +599,7 @@ K28 补一条**按实体**的补充提示词：在 Neko 面板里编辑，qqbot 
   形状 `{"subscriptions":{"<sessionId>":{"workspace":{"since":7},"global":{"since":12}}}}`；
   原子写（tmp+rename）、缺失/损坏 fail-soft 空表。
 - 会话换 id（qqbot fork/归档）后**订阅不继承**：旧区由 LRU 回收，新会话需重新 `subscribe`。
-- 控制面不可达/超时：本轮跳过该板（warnOnce），游标不推进，下轮重试；不影响快照与事件黑板。
+- 控制面不可达/超时：本轮跳过该板（warnOnce），游标不推进，下轮重试；不影响现状卡与变化推送。
 
 ### 信任边界（K30/C8 降级）
 
@@ -716,14 +731,14 @@ order 50，图标是猫脸），并把页面挂到主列 `main` 槽位的同名 
 
 | 区域 | 内容 | 数据来源 |
 |---|---|---|
-| 顶部状态快照条 | 生效实体（`primary`）+ 白名单字段 chips（`情绪 睡醒的软` / `体力 90` …，长值省略号、悬停看全文）+ 世界时钟 `08-16 08:56 · 清晨`；右侧「刷新 / 收起监控 / 监控全宽」 | 同源 `GET /astrbox/blackboard`（拿 `primary`/`paths`）+ `GET /astrbox/control/state`（实体 `primary` 与 `世界`） |
+| 顶部状态快照条 | 生效实体（`primary`）+ 观测现状路径 chips（`情绪 睡醒的软` / `体力 90` …，长值省略号、悬停看全文）+ 世界时钟 `08-16 08:56 · 清晨`；右侧「刷新 / 收起监控 / 监控全宽」 | 同源 `GET /astrbox/blackboard`（拿 `primary`/`paths`，数据源 `/v2/observations/state`）+ `GET /astrbox/control/state`（实体 `primary` 与 `世界`） |
 | 左：监控区 | iframe 内嵌 Neko Monitor 页面，带地址输入、`重新载入`、新标签打开 | `http://127.0.0.1:8765/monitor/`（默认值；面板内改后存浏览器 localStorage） |
-| 右：事件黑板 | **只有变化的实体**出卡片：`entity`、`生效实体`标记（仅 primary）、`版本 N`、`更新时间 HH:MM:SS`；逐条变化给 `path：from → to`（`from` 为空时只显示当前值）+ 该条时间戳 `MM-DD HH:MM` + `规则 ×N`（完整规则 id 在 title 里，不再把 12 个 id 摊在行内） | 同源 `GET /astrbox/blackboard`（桥接路由，K7） |
+| 右：事件黑板 | **有现状的实体**出卡片：`entity`、`生效实体`标记（仅 primary）、`版本 N`、`更新时间 HH:MM:SS`；逐条给 `path：from → to`（`from` 为空时只显示当前值）+ 该条时间戳 `MM-DD HH:MM`（数据来自 `/v2/observations/state` 的折叠现状） | 同源 `GET /astrbox/blackboard`（桥接路由，K7；数据源 `/v2/observations/state`） |
 | 右：控制区 | 世界时钟、`+15/+60 分钟`/`datetime-local` 设定、手动 tick、实体状态编辑 | 同源 `/astrbox/control/*`（桥接代理，K21/K22） |
 | 右：黑板 Tab（事件黑板 / 会话黑板） | 事件黑板卡片；会话黑板 Tab 内：跨工作区板 + 工作区板（区域卡片、条目删除、两步确认清空、写表单、工作区选择器） | 同源 `/astrbox/blackboard` + `/astrbox/boards*`（K7/K15/K16/K31b） |
 
 面板**不再有会话列表/聊天**（会话选择、消息气泡、输入框与 prompt 发送逻辑已删除，K8）：
-会话上下文的阅读与发送走 DSH 自己的会话界面，面板只负责 Neko 状态与事件黑板。
+会话上下文的阅读与发送走 DSH 自己的会话界面，面板只负责 Neko 状态与观测现状。
 
 - 轮询：挂载时立即拉一次，之后每 **10s** 一次（黑板 + 快照 + 世界时钟在同一次刷新里并发取）；
   `document.hidden` 时暂停，页面恢复可见时立刻补拉并重启计时。
@@ -778,7 +793,7 @@ bash ~/.dsh/skills/code-modularity/scripts/lintCodeModularity.sh dsh --naming --
 ### 1) 组合验证（不碰真 profile、不耗模型调用）
 
 ```bash
-bash scripts/tools/verifyProfile.sh --composition
+bash tools/verifyProfile.sh --composition
 ```
 
 它会在 `.local/profile-test` 重建隔离 `DSH_HOME`：只读复制源 profile 的
@@ -794,7 +809,7 @@ DSH_HOME=$PWD/.local/profile-test node <dsh>/apps/cli/lib/bin.js \
 文件可执行。期望输出形如：
 
 ```text
-OK: composition checks passed (mcp-astrbox=1, astrbox-bridge=1, command=/home/ruicat/Desktop/Neko/bin/dsh-mcp, dump=.../dump.txt)
+OK: composition checks passed (mcp-astrbox=1, astrbox-bridge=1, command=/path/to/Neko/bin/dsh-mcp, dump=.../dump.txt)
 ```
 
 > `--dump-config` 会写 profile 的 `cordis.yml`，所以**必须**带隔离 `DSH_HOME`；
@@ -825,10 +840,10 @@ OK: doctor 通过（31 tools, socket 0600, SIGTERM 清理；data=/tmp/dsh-mcp-do
 | socket 0600 | `stat -c '%a %n' data/dsh-control.sock` → `600 .../dsh-control.sock` |
 | 两类控制日志 | `data/logs/dsh-control-*.log` 中的 `POST /tick` 与 `POST /session-event` 行 |
 | 17 工具名 | 会话里 `tools/list` 的 JSON（或用 `make doctor` 的输出） |
-| 会话快照 | 真装会话中出现过的 `[astrbox]` 快照行 |
+| 会话现状卡 | 真装会话中出现过的 `[astrbox-state]` 现状卡行 |
 
 ```bash
-bash scripts/tools/verifyProfile.sh --evidence <file>
+bash tools/verifyProfile.sh --evidence <file>
 ```
 
 齐全输出 `OK: 25 checks`；缺字段逐条打印 `MISSING: <field>` 并以非 0 退出，例如：
@@ -861,7 +876,7 @@ make clean                                      # 只删 bin/，不动 data/
   日志走 `stderr` 与 `data/logs/`。
 - 控制日志记 `method path status`，`/session-event` 额外记 `kind/session/turn/function`；
   不记录模型对话正文。
-- 快照只读 `paths` 白名单；**R18 字段默认不注入**。
+- 现状卡/推送由服务端 `observation.json` 策略决定（桥接不做过滤）；**R18 字段默认不登记为可推路径**。
 
 ## 平台与生命周期
 
@@ -881,19 +896,22 @@ make clean                                      # 只删 bin/，不动 data/
 | 启动报 socket 已被占用 / 退出码 3 | 另一个 `dsh-mcp` 还在用同一 `data/`：先停 DSH（或对应 MCP 子进程），再 `rm data/dsh-control.sock` 重试 |
 | stale socket（上次 `kill -9` 后残留） | 正常路径会自动 `ECONNREFUSED → unlink` 自愈；仍失败时手工 `rm data/dsh-control.sock` |
 | 锁被占用但找不到进程 | 只有持有 `flock` 的进程算占用；`kill -9` 后内核已释放，直接重启即可。确认无进程再用 `rm data/.engine.lock` |
-| 工具消失 / `tools/list` 不满 31 个 | `make doctor` 先确认二进制；再看 profile `package.json` 的 `dsh.profile.bundles` 是否含 `dsh-astrbox`、`plugins/dsh-astrbox/cordis.patch.yml` 是否已渲染为绝对路径；最后看 DSH 启动日志里的 `mcp-astrbox` 错误 |
-| 快照不出现 | 检查 `socketPath` 与 `dsh-mcp` 的 `-data-dir` 是否一致、`workspacePrefix` 是否覆盖当前会话 `cwd`、`paths` 是否在白名单内 |
+| 启动告警 `mcp-astrbox (dsh-mcp-client): failed to import: Cannot find package 'dsh-mcp-client'` | `link:` 安装下裸包名解析不到（loader 在 profile 目录上解析）。现行 patch 用 bundle 内相对入口，出现这条说明是旧版 patch 或仓库内 `node_modules` 链接缺失：按「`link:` 安装与依赖解析」重做两条链接 |
+| 工具消失 / `tools/list` 不满 31 个 | `make doctor` 先确认二进制；再确认 profile `package.json` 的 `dsh.profile.bundles` **仍然含** `dsh-astrbox`（GUI 插件管理页的移除/停用会改写这里）；最后看 DSH 启动日志里的 `mcp-astrbox` 错误 |
+| 现状卡不出现 | 检查 `socketPath` 与 `dsh-mcp` 的 `-data-dir` 是否一致、`workspacePrefix` 是否覆盖当前会话 `cwd`、`observation.json` 是否把该路径登记为 critical/normal |
 | 重复 tick / `tick_busy` | `/tick` 用 `TryRunTick`，MCP `state_machine_tick` 或另一个 tick 在飞时返回 `409`，插件按设计跳过本次；持续出现时把 `tickEveryMs` 调大或设 `0` 关闭定时 tick |
 | `/session-event` 只有 `logged` | `functionName` 指向的函数未注册；用 `entity`/脚本工具确认函数存在，或改配置指向已注册函数 |
 
 ## 相关文件
 
-- `Makefile`：`build` / `test` / `lint` / `render-dsh` / `doctor` / `clean`
-- `scripts/tools/renderDshPatch.sh`：模板 → `plugins/dsh-astrbox/cordis.patch.yml`
-- `scripts/tools/doctorDsh.mjs`：`make doctor` 的实现
-- `scripts/tools/verifyProfile.sh`：`--composition` / `--evidence`
-- `plugins/dsh-astrbox/cordis.patch.yml.template`：占位符模板（版本库内，不含机器绝对路径）
-- `plugins/dsh-astrbox/lib/`：插件运行时（`blackboardText.mjs` 订阅文本、`blackboardRoute.mjs` 面板黑板路由、
+- `Makefile`：`build` / `test` / `lint` / `install-runtime` / `doctor` / `clean`
+- `tools/doctorDsh.mjs`：`make doctor` 的实现
+- `tools/verifyProfile.sh`：`--composition` / `--evidence`
+- `plugins/dsh-astrbox/cordis.patch.yml`：本 bundle 的插件行（不含 config / 机器路径）
+- `plugins/dsh-astrbox/lib/mcpClientEntry.mjs`：`mcp-astrbox` 行的 bundle 内相对入口（转发 `dsh-mcp-client`）
+- `plugins/dsh-mcp-client/`：`mcp-astrbox` 的包装组件（解析 `mcp-astrbox.json` / 默认启动参数）
+- `plugins/dsh-astrbox/lib/`：插件运行时（`observationRender.mjs` v2 渲染（formatValue/renderDelta/renderState）、
+  `observationBoard.mjs` 面板投影、`blackboardRoute.mjs` 面板黑板路由、
   `dialogFeed.mjs` 对话摘要 Feed、`relayTool.mjs` 跨会话转达工具、
   `sessionBoardText.mjs` / `sessionBoardSubscription.mjs` / `sessionBoardTool.mjs` 会话黑板（K30）、
   `sessionBoardRoute.mjs` 面板会话黑板路由（K15/K31）、

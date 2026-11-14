@@ -75,9 +75,9 @@ func (s *Server) runTickLocked(scope string, options TickOptions) (engine.TickRe
 	if !options.SkipJournal {
 		s.appendTurnRecord(result)
 	}
-	// Record this tick's changes on the per-entity boards before the store save;
-	// a board failure only logs and never fails the tick (K2).
-	s.applyEventBoards(result)
+	// Record this tick's net changes on the observation bus before the store
+	// save; the bus cannot fail the tick.
+	s.observeTick(result)
 	if options.SkipSaveWhenUnchanged && len(result.Transitions) == 0 && len(result.Conflicts) == 0 && len(result.Writes) == 0 {
 		return result, nil
 	}

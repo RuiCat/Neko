@@ -34,7 +34,7 @@ scripts/*.tmp
 # dsh plugin runtime artifacts (generated / machine-local)
 /data/dsh-control.sock
 /data/.engine.lock
-/plugins/dsh-astrbox/cordis.patch.yml
+
 
 # dsh context driver (config holds the per-process launch token; never commit it)
 /contexts.json
@@ -56,5 +56,4 @@ scripts/*.tmp
 /runs/
 /data/blackboard.json
 /data/session-boards.json
-/plugins/dsh-qqbot/
 /plugins/*/node_modules/

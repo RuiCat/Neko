@@ -157,20 +157,60 @@ func (m *StateMachine) resolveOpValue(value any, ent, target *entity.Entity, res
 	} else if resolved, ok := evalConcatExpr(text, resolver); ok {
 		value = resolved
 		text = resolved
-	} else if strings.HasPrefix(text, "$") {
-		if resolved, err := resolver(text[1:]); err == nil {
-			value = resolved
-			if resolvedText, ok := resolved.(string); ok {
-				text = resolvedText
-			} else {
-				text = ""
-			}
+	} else if resolved, ok := resolveDollarValue(text, resolver); ok {
+		value = resolved
+		if resolvedText, ok := resolved.(string); ok {
+			text = resolvedText
+		} else {
+			text = ""
 		}
 	}
 	if strings.Contains(text, "&{") {
 		value = m.replacePlaceholders(text, target)
 	}
 	return value
+}
+
+// resolveDollarValue resolves "$..." / "{e}..." action-value references against
+// the current-entity context. "$.路径" is normalised to "{e}.路径"; a bare
+// "$路径" keeps its selector/global-entity meaning first and falls back to the
+// current entity only when that lookup fails. "$1"/"$2" multi-subject
+// references keep their existing form and are not normalised.
+func resolveDollarValue(text string, resolver ValueResolver) (any, bool) {
+	switch {
+	case strings.HasPrefix(text, "{e}"):
+		value, err := resolver(text)
+		return value, err == nil
+	case !strings.HasPrefix(text, "$"):
+		return nil, false
+	case strings.HasPrefix(text, "$."):
+		value, err := resolver("{e}" + text[1:])
+		return value, err == nil
+	case isMultiSubjectRef(text):
+		// 多主体 $1/$2 先保留 "$N." 前缀交给多主体 resolver（它只认这个形态）；
+		// 失败再退回旧行为（剥掉 "$"），保证单主体上下文不回归。
+		if value, err := resolver(text); err == nil {
+			return value, true
+		}
+		value, err := resolver(text[1:])
+		return value, err == nil
+	case strings.HasPrefix(text, "$["), text == "$":
+		// 类型引用 $[...] 与裸 "$" 维持原有解析路径。
+		value, err := resolver(text[1:])
+		return value, err == nil
+	}
+	value, err := resolver(text[1:])
+	if err != nil {
+		value, err = resolver("{e}." + text[1:])
+	}
+	return value, err == nil
+}
+
+// isMultiSubjectRef reports whether text is a "$1"/"$2" style multi-subject
+// reference that must stay in its original form for the multi resolver.
+func isMultiSubjectRef(text string) bool {
+	runes := []rune(text)
+	return len(runes) > 1 && runes[0] == '$' && runes[1] >= '0' && runes[1] <= '9'
 }
 
 func (m *StateMachine) replacePlaceholders(text string, target *entity.Entity) string {

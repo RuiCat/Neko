@@ -17,7 +17,6 @@ import (
 	"github.com/RuiCat/Neko/internal/emote"
 	"github.com/RuiCat/Neko/internal/engine"
 	"github.com/RuiCat/Neko/internal/entity"
-	"github.com/RuiCat/Neko/internal/eventboard"
 	"github.com/RuiCat/Neko/internal/events"
 	"github.com/RuiCat/Neko/internal/expert"
 	"github.com/RuiCat/Neko/internal/function"
@@ -27,6 +26,7 @@ import (
 	"github.com/RuiCat/Neko/internal/learn/mlp"
 	"github.com/RuiCat/Neko/internal/learn/samples"
 	"github.com/RuiCat/Neko/internal/mcpserver"
+	"github.com/RuiCat/Neko/internal/observation"
 	"github.com/RuiCat/Neko/internal/registry"
 	"github.com/RuiCat/Neko/internal/repair"
 	"github.com/RuiCat/Neko/internal/sessionboard"
@@ -75,9 +75,11 @@ type Runtime struct {
 	// HardState defines which fields the snapshot captures.
 	HardState hardstate.Schema
 	Board     *blackboard.Board
-	// EventBoards keeps every entity's change board (K1); the tick writes it and
-	// the control plane serves it.
-	EventBoards *eventboard.Registry
+	// Observations is the append-only change stream behind every push; the tick
+	// writes it and the control plane serves it.
+	Observations *observation.Bus
+	// ObservationRule decides which paths are worth pushing.
+	ObservationRule *observation.Policy
 	// SessionBoards keeps the workspace/global session boards; the control
 	// plane's /boards routes read and write it.
 	SessionBoards *sessionboard.Store
@@ -175,13 +177,18 @@ func New(options Options) (*Runtime, error) {
 		journalWriter = journal.NewWriter(journalDir)
 	}
 	board := blackboard.New()
-	eventBoards := eventboard.New(filepath.Join(options.DataDir, eventboard.FILE_NAME))
-	if err := eventBoards.Load(); err != nil {
-		log.Printf("astrbox: 加载事件黑板失败（按空黑板继续）: %v", err)
+	// Observation v2 replaces the per-entity event boards: one append-only
+	// stream per scope, filtered at read time by observation.json.
+	observations := observation.NewBus()
+	observationPolicy, policyErr := observation.LoadPolicy(filepath.Join(options.DataDir, "observation.json"))
+	if policyErr != nil {
+		log.Printf("astrbox: 观察策略解析失败（按内置策略继续）: %v", policyErr)
 	}
-	// The first observation of an existing entity only fixes its baseline: no
-	// entries and no version until a tick actually changes its state.
-	eventBoards.Observe(storeIDs(store))
+	// Seed every entity's current non-noise state once so a state projection
+	// can show long-lived fields that never change after creation.
+	for _, ent := range store.ListAll() {
+		observation.SeedEntity(observations, observationPolicy, ent.ID, ent.Snapshot())
+	}
 	// Session boards are a separate subsystem (K30): a missing file is an empty
 	// store, a corrupt one is logged and the control plane keeps serving empty.
 	sessionBoards := sessionboard.NewStore(filepath.Join(options.DataDir, sessionboard.FILE_NAME))
@@ -226,7 +233,8 @@ func New(options Options) (*Runtime, error) {
 		JournalSequence: sequence,
 		HardState:       hardstate.DefaultSchema(),
 		Board:           board,
-		EventBoards:     eventBoards,
+		Observations:    observations,
+		ObservationRule: observationPolicy,
 		SessionBoards:   sessionBoards,
 		Experts:         experts,
 		ExpertsPath:     expertsPath,
@@ -276,24 +284,14 @@ func (r *Runtime) NewMCPServer() *mcpserver.Server {
 	if r.Assembler != nil {
 		server.SetLearningLoop(r.Board, r.Assembler)
 	}
-	if r.EventBoards != nil {
-		server.SetEventBoards(r.EventBoards)
+	if r.Observations != nil {
+		server.SetObservations(r.Observations, r.ObservationRule)
 	}
 	server.SetOpsDeps(ops.Deps{
 		Store: r.Store, Machine: r.Machine, Experts: r.Experts, DataDir: r.DataDir,
 	})
 	server.SetEmoteClient(emote.NewClient(emote.Config{Dir: r.EmoteDir}))
 	return server
-}
-
-// storeIDs lists the entity ids of a loaded store, for baseline observation.
-func storeIDs(store *entity.Store) []string {
-	all := store.ListAll()
-	ids := make([]string, 0, len(all))
-	for _, ent := range all {
-		ids = append(ids, ent.ID)
-	}
-	return ids
 }
 
 func loadRules(path string) ([]engine.Rule, error) {

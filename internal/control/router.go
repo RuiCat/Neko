@@ -35,11 +35,21 @@ func (s *Server) dispatch(r *http.Request) response {
 			return methodNotAllowed(http.MethodGet)
 		}
 		return s.handleEntities()
-	case "/blackboard":
+	case "/v2/observations":
 		if r.Method != http.MethodGet {
 			return methodNotAllowed(http.MethodGet)
 		}
-		return s.handleBlackboard(r)
+		return s.handleObservations(r)
+	case "/v2/observations/state":
+		if r.Method != http.MethodGet {
+			return methodNotAllowed(http.MethodGet)
+		}
+		return s.handleObservationState(r)
+	case "/v2/observations/streams":
+		if r.Method != http.MethodGet {
+			return methodNotAllowed(http.MethodGet)
+		}
+		return s.handleObservationStreams(r)
 	case "/boards":
 		switch r.Method {
 		case http.MethodGet:

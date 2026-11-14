@@ -26,7 +26,7 @@ Python 原实现（`legacy/python-astrbox/`）是行为基线。本文件记录 
 - 实体：模板继承链、点分路径、模板回退、选择器与 `key:`/字段查询、`entities.json` 原子保存。
 - 状态机：条件表达式、效果文本、分支短路、多主体绑定、优先级、scope、模板 min/max 限幅、冲突收集与 `ResolveConflict`。
 - 函数：变量、`if/else if/else`、`返回`、`for ... in`、列表 `.append`、字符串拼接/切片、`int()`、`in`/`contains`、函数互调、实体路径读写、`{e}`。
-- 事件：模板注解 `@事件` → 字段变化 → 条件（`变化量`/`旧值`/`新值`）→ `@函数`；多脚本同名事件按「带条件优先」合并；深度上限 10。
+- 事件：模板注解 `@事件` → 字段变化 → 条件（`变化量`/`旧值`/`新值`）→ `@函数`；多脚本同名事件按「带条件优先」合并；嵌套受函数调用深度 20、执行步数 100000、在途事件 256 限制。
 - 日志：`Tick` 通过 MCP 工具调用时追加 `<dataDir>/logs/state_YYYY-MM-DD.log`（保留 7 天），并对每条记录做清理。
 - 注册表：hash、引用计数、增量替换、源文件落盘、`scripts.json`、重启重放；**只读启动不写 `scripts.json`**。
 - 冲突仲裁：`state_machine_resolve` 把目标状态写回实体，追加记录到 `<dataDir>/llm_decisions.json`；带 `side_effects` 时回填一条 `source=llm_backfill`、优先级 +100 的规则。

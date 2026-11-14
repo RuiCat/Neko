@@ -115,7 +115,7 @@ MCP 请求
         ├─ 写：entity.Set → OnChange → events.Bridge
         │        ├─ schema 校验（模板 __annotations__）
         │        ├─ 命中 @事件 → events.Bus.Fire（条件用 变化量/旧值/新值）
-        │        └─ 调用 @函数 → 可能继续写实体（事件总线深度上限 10）
+        │        └─ 调用 @函数 → 可能继续写实体（函数深度 20 / 执行步数 100000 / 在途事件 256）
         ├─ 规则：engine.Tick(scope) → 内存状态变化 → 调用方 store.Save
         ├─ 仲裁：ResolveConflictWithEffects → 写状态 → llm_decisions.json
         │        └─ 有 side_effects ⇒ 回填 source=llm_backfill 的高优先级规则

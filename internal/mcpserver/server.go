@@ -19,10 +19,10 @@ import (
 	"github.com/RuiCat/Neko/internal/emote"
 	"github.com/RuiCat/Neko/internal/engine"
 	"github.com/RuiCat/Neko/internal/entity"
-	"github.com/RuiCat/Neko/internal/eventboard"
 	"github.com/RuiCat/Neko/internal/events"
 	"github.com/RuiCat/Neko/internal/hardstate"
 	"github.com/RuiCat/Neko/internal/journal"
+	"github.com/RuiCat/Neko/internal/observation"
 	"github.com/RuiCat/Neko/internal/registry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -63,9 +63,10 @@ type Server struct {
 	// at a time (the pipeline writes shared work dirs and model files).
 	teachMu sync.Mutex
 	trainMu sync.Mutex
-	// eventBoards records every tick's per-entity changes (K1/K2); nil disables
-	// the board side effect without changing tick behavior.
-	eventBoards *eventboard.Registry
+	// observations records every tick's net changes and direct writes; nil
+	// disables the observation side effect without changing tick behavior.
+	observations      *observation.Bus
+	observationPolicy *observation.Policy
 	// opsDeps backs the operational tools (nightly/judge/candidates/repair);
 	// bootstrap wires it from the runtime.
 	opsDeps ops.Deps
@@ -151,7 +152,7 @@ func (s *Server) MCPServer() *mcp.Server {
 	s.addStatsTool(server)
 	s.addSnapshotTool(server)
 	s.addEventLogTool(server)
-	s.addBlackboardTool(server)
+	s.addObservationTool(server)
 	s.addWorldClockTool(server)
 	s.addOpsTools(server)
 	s.addTrainingTools(server)
@@ -289,6 +290,9 @@ func (s *Server) addEntityTools(server *mcp.Server) {
 			if err := s.store.Save(); err != nil {
 				return fmt.Errorf("保存失败: %s", err)
 			}
+			if created := s.store.Get(args.Name); created != nil {
+				s.seedObservations(created.ID, created.Snapshot())
+			}
 			return nil
 		}); err != nil {
 			return fail("%s", err)
@@ -298,7 +302,7 @@ func (s *Server) addEntityTools(server *mcp.Server) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "entity_delete",
-		Description: "删除实体及其事件黑板并落盘（不可撤销）。实体不存在时返回错误。",
+		Description: "删除实体及其观察流并落盘（不可撤销）。实体不存在时返回错误。",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args entityDeleteArgs) (*mcp.CallToolResult, any, error) {
 		entityID := strings.TrimSpace(args.Entity)
 		if entityID == "" {

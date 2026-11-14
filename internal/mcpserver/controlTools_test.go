@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/RuiCat/Neko/internal/control/ops"
-	"github.com/RuiCat/Neko/internal/eventboard"
 	"github.com/RuiCat/Neko/internal/expert"
+	"github.com/RuiCat/Neko/internal/observation"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -108,16 +108,17 @@ func TestEntityStateSetRejectsBadInput(t *testing.T) {
 	}
 }
 
-// TestEntityDeleteTool covers deleting an entity with its board, then a second
-// delete of the same id.
+// TestEntityDeleteTool covers deleting an entity with its observation stream,
+// then a second delete of the same id.
 func TestEntityDeleteTool(t *testing.T) {
 	fx := newTickFixture(t)
-	boards := eventboard.New(filepath.Join(fx.dataDir, eventboard.FILE_NAME))
-	fx.server.SetEventBoards(boards)
+	bus := wireObservations(t, fx)
 	if _, err := fx.server.store.Create("月月", "NPC", map[string]any{"状态": map[string]any{"情绪": "平静"}}, nil); err != nil {
 		t.Fatalf("create 月月: %v", err)
 	}
-	boards.Observe([]string{"月月"})
+	if _, err := fx.server.WriteEntityPaths("月月", map[string]any{"状态.情绪": "开心"}, "test"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 	session, cancel := connect(t, fx.server)
 	defer cancel()
 
@@ -128,8 +129,8 @@ func TestEntityDeleteTool(t *testing.T) {
 	if fx.server.store.Get("月月") != nil {
 		t.Fatal("entity still in the store")
 	}
-	if board := boards.Board("月月"); board != nil {
-		t.Fatalf("board survived: %+v", board)
+	if version := bus.Version(observation.ScopeForEntity("月月")); version != 0 {
+		t.Fatalf("观察流应随实体删除：version=%d", version)
 	}
 	again := callToolText(t, session, "entity_delete", map[string]any{"entity": "月月"})
 	if !strings.HasPrefix(again, "❌") || !strings.Contains(again, "不存在") {
@@ -137,28 +138,42 @@ func TestEntityDeleteTool(t *testing.T) {
 	}
 }
 
-// TestBlackboardGetTool covers both read shapes of the event board tool.
-func TestBlackboardGetTool(t *testing.T) {
+// TestObservationGetTool covers both read modes of the observation tool.
+func TestObservationGetTool(t *testing.T) {
 	fx := newTickFixture(t)
-	boards := eventboard.New(filepath.Join(fx.dataDir, eventboard.FILE_NAME))
-	fx.server.SetEventBoards(boards)
-	boards.Observe([]string{"猫猫"})
+	wireObservations(t, fx)
+	if _, err := fx.server.WriteEntityPaths("猫猫", map[string]any{"状态.情绪": "开心"}, "test"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 	session, cancel := connect(t, fx.server)
 	defer cancel()
 
-	one := callToolJSON(t, session, "blackboard_get", map[string]any{"entity": "猫猫"})
-	board, ok := one["board"].(map[string]any)
-	if !ok || board["entity"] != "猫猫" || board["version"] != float64(0) {
-		t.Fatalf("board = %v", one["board"])
+	delta := callToolJSON(t, session, "observation_get", map[string]any{"entity": "猫猫"})
+	events, ok := delta["events"].([]any)
+	if !ok || len(events) != 1 {
+		t.Fatalf("delta events = %v", delta["events"])
 	}
-	all := callToolJSON(t, session, "blackboard_get", map[string]any{})
-	items, ok := all["boards"].([]any)
-	if !ok || len(items) != 1 {
-		t.Fatalf("boards = %v", all["boards"])
+	event, _ := events[0].(map[string]any)
+	if event["path"] != "状态.情绪" || event["to"] != "开心" || event["tier"] != "critical" {
+		t.Fatalf("event = %v", event)
 	}
-	missing := callToolJSON(t, session, "blackboard_get", map[string]any{"entity": "不存在"})
-	if value, exists := missing["board"]; !exists || value != nil {
-		t.Fatalf("missing board = %v, want null", missing["board"])
+	if delta["scope"] != "entity:猫猫" || delta["cursor"] != float64(1) {
+		t.Fatalf("delta envelope = %v", delta)
+	}
+
+	state := callToolJSON(t, session, "observation_get", map[string]any{"entity": "猫猫", "mode": "state"})
+	entries, ok := state["entries"].([]any)
+	if !ok || len(entries) != 1 {
+		t.Fatalf("state entries = %v", state["entries"])
+	}
+	entry, _ := entries[0].(map[string]any)
+	if entry["path"] != "状态.情绪" || entry["value"] != "开心" {
+		t.Fatalf("entry = %v", entry)
+	}
+
+	missing := callToolText(t, session, "observation_get", map[string]any{})
+	if !strings.HasPrefix(missing, "❌") {
+		t.Fatalf("missing scope answer = %q", missing)
 	}
 }
 
@@ -283,18 +298,19 @@ func TestOpsToolsWithoutDeps(t *testing.T) {
 	}
 }
 
-// TestDeleteEntityRemovesChangeBoard covers the helper directly: a changed
-// board disappears with the entity and the store is saved.
-func TestDeleteEntityRemovesChangeBoard(t *testing.T) {
+// TestDeleteEntityRemovesObservations covers the helper directly: a changed
+// observation stream disappears with the entity and the store is saved.
+func TestDeleteEntityRemovesObservations(t *testing.T) {
 	fx := newTickFixture(t)
-	boards := eventboard.New(filepath.Join(fx.dataDir, eventboard.FILE_NAME))
-	fx.server.SetEventBoards(boards)
-	boards.Observe([]string{"猫猫"})
+	bus := wireObservations(t, fx)
+	if _, err := fx.server.WriteEntityPaths("猫猫", map[string]any{"状态.情绪": "开心"}, "test"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 	if err := fx.server.DeleteEntity("猫猫"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if fx.server.store.Get("猫猫") != nil || boards.Board("猫猫") != nil {
-		t.Fatal("entity or board survived the delete")
+	if fx.server.store.Get("猫猫") != nil || bus.Version(observation.ScopeForEntity("猫猫")) != 0 {
+		t.Fatal("entity or observation stream survived the delete")
 	}
 	if err := fx.server.DeleteEntity("猫猫"); err == nil {
 		t.Fatal("second delete must report the missing entity")

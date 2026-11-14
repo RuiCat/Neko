@@ -11,11 +11,11 @@ import (
 )
 
 // FROZEN_TOOLS is the K6 tool-name set exposed by dsh-mcp (alphabetical).
-// K20 added the control tools: blackboard_get, world_clock, entity_delete and
+// K20 added the control tools: observation_get, world_clock, entity_delete and
 // the six operational wrappers; the training tools (gate_status/gate_teach/
 // gate_train) extend the same set for agent-driven training.
 var frozenTools = []string{
-	"blackboard_get", "candidate_apply", "candidate_resolve", "candidates_list",
+	"candidate_apply", "candidate_resolve", "candidates_list",
 	"context_list", "context_send",
 	"diagnostics_query", "emote_find", "entity_create", "entity_delete", "entity_query",
 	"entity_snapshot", "entity_state_get", "entity_state_set", "event_log",
@@ -23,7 +23,7 @@ var frozenTools = []string{
 	"inventory", "judge_run",
 	"neko_script_apply", "neko_script_list", "neko_script_read",
 	"neko_script_remove", "neko_script_validate", "neko_script_write",
-	"nightly_run", "repair_rollback",
+	"nightly_run", "observation_get", "repair_rollback",
 	"state_machine_resolve", "state_machine_tick", "stats", "world_clock",
 }
 

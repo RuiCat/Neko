@@ -1,10 +1,12 @@
-// entityDelete_test.go covers POST /entities/delete: entity removal, change
-// board removal, persistence and the 400/404 vocabulary.
+// entityDelete_test.go covers POST /entities/delete: entity removal, observation
+// stream removal, persistence and the 400/404 vocabulary.
 package control
 
 import (
 	"net/http"
 	"testing"
+
+	"github.com/RuiCat/Neko/internal/observation"
 )
 
 // TestEntityDeleteRemovesEntityAndBoard covers the happy path: a changed tick
@@ -16,8 +18,8 @@ func TestEntityDeleteRemovesEntityAndBoard(t *testing.T) {
 	if recorder := env.call(t, http.MethodPost, "/tick", []byte(`{}`)); recorder.Code != http.StatusOK {
 		t.Fatalf("tick status = %d (%s)", recorder.Code, recorder.Body.String())
 	}
-	if env.runtime.EventBoards.Board("猫猫") == nil {
-		t.Fatal("tick did not create the board")
+	if env.runtime.Observations.Version(observation.ScopeForEntity("猫猫")) == 0 {
+		t.Fatal("tick did not feed the observation stream")
 	}
 	recorder := env.call(t, http.MethodPost, "/entities/delete", []byte(`{"entity":"猫猫"}`))
 	if recorder.Code != http.StatusOK {
@@ -30,8 +32,8 @@ func TestEntityDeleteRemovesEntityAndBoard(t *testing.T) {
 	if env.runtime.Store.Get("猫猫") != nil {
 		t.Fatal("entity still in the store")
 	}
-	if board := env.runtime.EventBoards.Board("猫猫"); board != nil {
-		t.Fatalf("board survived the delete: %+v", board)
+	if version := env.runtime.Observations.Version(observation.ScopeForEntity("猫猫")); version != 0 {
+		t.Fatalf("observation stream survived the delete: version=%d", version)
 	}
 }
 

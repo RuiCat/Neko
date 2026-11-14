@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,8 +77,19 @@ func TestToolListAndInventory(t *testing.T) {
 		}
 	}
 
+	if query, qerr := session.CallTool(ctx, &mcp.CallToolParams{Name: "entity_query", Arguments: map[string]any{"query": "测试猫"}}); qerr == nil {
+		if text, ok := query.Content[0].(*mcp.TextContent); ok {
+			var payload map[string]any
+			if json.Unmarshal([]byte(strings.TrimSpace(text.Text)), &payload) == nil {
+				if count, _ := payload["count"].(float64); count == 0 {
+					t.Skip("data/ 里没有 测试猫，跳过依赖实体的用例")
+				}
+			}
+		}
+	}
+
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "entity_state_get", Arguments: map[string]any{
-		"entity": "猫猫", "path": "身体.体力",
+		"entity": "测试猫", "path": "代谢.体温",
 	}})
 	if err != nil {
 		t.Fatalf("call entity_state_get: %v", err)

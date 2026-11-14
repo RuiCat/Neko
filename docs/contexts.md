@@ -36,7 +36,7 @@ DSH 轮结束 ──▶ 插件 POST /session-event{kind:turn-end} ──▶ driv
       "character_id": "猫猫",
       "session_id": "neko-cat",
       "preset_id": "standard",
-      "cwd": "/home/ruicat/Desktop/Neko",
+      "cwd": "/path/to/Neko",
       "entity": "猫猫"
     }
   ]

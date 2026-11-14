@@ -4,7 +4,7 @@
 
 - `entities.json`：实体状态（写入即变化）。
 - `scripts.json`：脚本注册表（apply/remove 时变化）。
-- `templates/`：由脚本 `@Data` 落盘的模板。
+- `templates/`：由 `scripts/kernel/` 的模板定义落盘的派生索引（可删，启动会重建）。
 - `archives/`：实体快照。
 - `logs/`：tick 日志（保留 7 天）。
 - `llm_decisions.json`：冲突仲裁记录。
@@ -13,9 +13,15 @@
 
 ## 首次运行
 
-注册表缺失时，服务会扫描 `../scripts/*.neko` 并引导注册（`BootstrapFromSources`），
-同时在本地生成 `scripts.json` 与 `templates/`。实体状态不会凭空生成；需要时从备份恢复
-`entities.json`。
+注册表缺失时，服务会递归扫描 `../scripts/kernel/**/*.neko` 并引导注册（`BootstrapFromSources`），
+同时在本地生成 `scripts.json` 与 `templates/`。`../scripts/entities/` 与 `../scripts/scenes/`
+是内容蓝图，不会被注册。
+
+实体状态有两类来源：
+
+- **内容蓝图**（进版本库）：`neko-data -data-dir data -scripts-dir ../scripts apply`
+  把 `@data` 实例块物化成实体；已存在的实体默认跳过，不覆盖运行时状态。
+- **运行时存档**（本目录，需要单独备份）：tick 产生的状态变化写入 `entities.json` / `user/entities.json`。
 
 ## 备份
 

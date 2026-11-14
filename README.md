@@ -45,8 +45,8 @@ MCP 客户端（stdio）配置示例：
 {
   "mcpServers": {
     "astrbox": {
-      "command": "/home/ruicat/Desktop/Neko/bin/astrbox-mcp",
-      "args": ["-data-dir", "/home/ruicat/Desktop/Neko/data", "-scripts-dir", "/home/ruicat/Desktop/Neko/scripts"]
+      "command": "/path/to/Neko/bin/astrbox-mcp",
+      "args": ["-data-dir", "/path/to/Neko/data", "-scripts-dir", "/path/to/Neko/scripts"]
     }
   }
 }

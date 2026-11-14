@@ -1,0 +1,22 @@
+// 生殖内核（L4）模板：周期相位、受孕、妊娠与避孕的持久状态。
+// 只存状态，不含结算；结算见 reproductiveCycleFunctions / reproductivePregnancyFunctions 与各自 Tick。
+@定义 生殖内核 {
+  "生殖": {
+    "周期相位[int,min:0,max:99]": 0,
+    "周期日[int,min:0,max:27]": 0,
+    "受孕窗口[bool]": false,
+    "怀孕状态[str,@事件分娩]": "未孕",
+    "孕周[int,min:0,max:42]": 0,
+    "孕期分钟[int,min:0,max:604800]": 0,
+    "避孕[bool]": false,
+    "受孕概率[int,min:0,max:100]": 20,
+    "能量需求[int,min:0,max:1200]": 0,
+    "血容量系数[int,min:80,max:160]": 100,
+    "分娩出血[int,min:0,max:100]": 0,
+    "分娩已结算[bool]": false,
+    "子痫前期[int,min:0,max:100]": 0,
+    "胎盘早剥[int,min:0,max:100]": 0,
+    "子宫破裂[int,min:0,max:100]": 0,
+    "并发症[str,@事件并发症]": ""
+  }
+}

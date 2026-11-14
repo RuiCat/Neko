@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "defaultTier": "normal",
+  "rules": [
+    { "pattern": "伤害.*", "tier": "critical", "threshold": 0 },
+    { "pattern": "状态.*", "tier": "critical" },
+    { "pattern": "生殖.怀孕状态", "tier": "critical" },
+    { "pattern": "生殖.分娩", "tier": "critical" },
+    { "pattern": "世界.死亡", "tier": "critical" },
+    { "pattern": "关系.*", "tier": "normal" },
+    { "pattern": "情绪.*", "tier": "normal" },
+    { "pattern": "心情.*", "tier": "normal" },
+    { "pattern": "睡眠.*", "tier": "normal" },
+    { "pattern": "身体.*", "tier": "normal" },
+    { "pattern": "位置.*", "tier": "normal" },
+    { "pattern": "场景.*", "tier": "normal" },
+    { "pattern": "代谢.*", "tier": "noise" },
+    { "pattern": "循环.*", "tier": "noise" },
+    { "pattern": "呼吸.*", "tier": "noise" },
+    { "pattern": "内分泌.*", "tier": "noise" },
+    { "pattern": "器官.*", "tier": "noise" },
+    { "pattern": "内脏.*", "tier": "noise" },
+    { "pattern": "体温.*", "tier": "noise" }
+  ],
+  "budget": { "maxItems": 12, "maxChars": 1200, "coalesceMs": 60000 }
+}

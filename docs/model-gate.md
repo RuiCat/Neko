@@ -75,7 +75,7 @@
 - **训练**（算法导论仓库）：
 
   ```bash
-  cd /home/ruicat/Desktop/算法导论/training/mlp_jsonl
+  cd /path/to/算法导论/training/mlp_jsonl
   go run . -data /path/to/gate-v1.jsonl -out gate-mlp-v1.json -hidden 16 -act relu -epochs 300 -optimizer adam -holdout 0.2
   ```
 
@@ -92,8 +92,9 @@
 
 ```bash
 make train-gate                                          # 默认 data/（要求 ≥50 样本、4 类各 ≥5、最大类 ≤70%、holdout ≥0.8）
-bash scripts/tools/trainGateModel.sh --data-dir data --dry-run
-bash scripts/tools/trainGateModel.sh --data-dir data --min-samples 200 --min-accuracy 0.85
+# 注：trainGateModel.sh 未随仓库提供，以下命令当前不可用
+bash tools/trainGateModel.sh --data-dir data --dry-run
+bash tools/trainGateModel.sh --data-dir data --min-samples 200 --min-accuracy 0.85
 ```
 
 流程：样本检查 → `bin/astrbox-train` 导出 → **样本类别覆盖门槛**（默认 4 类语义专家各 ≥5 条，
@@ -160,7 +161,7 @@ tick 记录按状态转移派生；`neko-chat` 路径本来就传用户输入。
 - 教师样本与自动记录样本**分文件存**，导出训练集时合并（`bin/astrbox-train` 同时读 `gate-samples.jsonl` 与 `gate-teacher.jsonl`），
   教师记录带 `source=teacher`、`primary=<目标专家>`，可追溯。
 - `gate_teach` 任一条非法（未知专家 / 未知事件类型 / 超过 200 条）**整批拒绝**，不落半批。
-- `gate_train` 复用 `scripts/tools/trainGateModel.sh`，通过 `NEKO_ROOT` 或 `bin/dsh-mcp` 的父目录定位仓库根；
+- `gate_train` 复用 `tools/trainGateModel.sh`（未随仓库提供），通过 `NEKO_ROOT` 或 `bin/dsh-mcp` 的父目录定位仓库根；
   需要本机 `go` 与算法导论仓库（`ita_dir` 或 `$ITA_DIR`）。
 - 部署语义：`deploy=false` 只训练+校验并返回输出尾部；`deploy=true` 过全部门槛才安装，权重仍需重启 `dsh-mcp` 生效。
 - 注意：**新增工具本身也要重启 dsh-mcp** 后才会出现在 agent 的工具列表里。
@@ -169,8 +170,9 @@ tick 记录按状态转移派生；`neko-chat` 路径本来就传用户输入。
 
 ```bash
 make build
-make verify-training                                  # 默认用 /home/ruicat/Desktop/算法导论
-bash scripts/tools/verifyTrainingPipeline.sh --ita-dir /path/to/ita --samples 200
+make verify-training                                  # 默认 $ITA_DIR
+# 注：verifyTrainingPipeline.sh 未随仓库提供，以下命令当前不可用
+bash tools/verifyTrainingPipeline.sh --ita-dir /path/to/ita --samples 200
 ```
 
 覆盖整条链路（不复用单元测试）：生成带标签样本 → `bin/astrbox-train` 导出 → 算法导论

@@ -17,6 +17,7 @@ CHAT_BIN := bin/neko-chat
 NIGHTLY_BIN := bin/astrbox-nightly
 TRAIN_BIN := bin/astrbox-train
 EMOTE_BIN := bin/astrbox-emote
+DATA_BIN := bin/neko-data
 GO_SOURCES := $(shell find cmd internal -name '*.go')
 
 # Design sources and the embedded page tree are build inputs: editing any of
@@ -32,11 +33,11 @@ LDFLAGS := -X main.version=$(VERSION)
 # code-modularity 技能脚本：默认全局安装；CI/换用户时用 MODULARITY_LINT=... 覆盖。
 MODULARITY_LINT ?= $(HOME)/.dsh/skills/code-modularity/scripts/lintCodeModularity.sh
 
-.PHONY: all build test lint design monitor render-dsh doctor run clean verify-training train-gate
+.PHONY: all build test lint design monitor install-runtime doctor run clean
 
 all: build
 
-build: $(ENGINE_BIN) $(DSH_BIN) $(CONTEXT_BIN) $(METRICS_BIN) $(REPLAY_BIN) $(CHAT_BIN) $(NIGHTLY_BIN) $(TRAIN_BIN) $(EMOTE_BIN)
+build: $(ENGINE_BIN) $(DSH_BIN) $(CONTEXT_BIN) $(METRICS_BIN) $(REPLAY_BIN) $(CHAT_BIN) $(NIGHTLY_BIN) $(TRAIN_BIN) $(EMOTE_BIN) $(DATA_BIN)
 
 $(ENGINE_BIN): $(GO_SOURCES) $(DESIGN_SOURCES) $(WEB_SOURCES) $(DESIGN_CSS) go.mod go.sum
 	@mkdir -p bin
@@ -70,6 +71,10 @@ $(TRAIN_BIN): $(GO_SOURCES) go.mod go.sum
 	@mkdir -p bin
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(TRAIN_BIN) ./cmd/astrbox-train
 
+$(DATA_BIN): $(GO_SOURCES) go.mod go.sum
+	@mkdir -p bin
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(DATA_BIN) ./cmd/neko-data
+
 $(EMOTE_BIN): $(GO_SOURCES) go.mod go.sum
 	@mkdir -p bin
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(EMOTE_BIN) ./cmd/astrbox-emote
@@ -98,22 +103,33 @@ lint:
 	@test -f "$(MODULARITY_LINT)" || (echo "缺少 $(MODULARITY_LINT)（code-modularity 技能未安装；可用 MODULARITY_LINT=... 覆盖）" >&2; exit 1)
 	bash "$(MODULARITY_LINT)" internal cmd plugins/dsh-astrbox --naming --comments
 
-# Render plugins/dsh-astrbox/cordis.patch.yml from the read-only template.
-render-dsh:
-	bash scripts/tools/renderDshPatch.sh
+# 拷贝运行时（bin/scripts/config）到 ~/.dsh-neko/Neko。
+# 用法：make install-runtime [NEKO_HOME=...] [PRUNE=1]；make -n install-runtime 为 dry-run。
+NEKO_HOME ?= $(HOME)/.dsh-neko/Neko
+PRUNE ?= 0
 
-# Spawn bin/dsh-mcp, run the MCP handshake and check the frozen tool set (31 tools).
+install-runtime: build
+	@case "$(NEKO_HOME)" in "$(CURDIR)"|"$(CURDIR)"/*) echo "NEKO_HOME 不能位于仓库内: $(NEKO_HOME)" >&2; exit 1;; esac
+	@mkdir -p "$(NEKO_HOME)/bin" "$(NEKO_HOME)/data" "$(NEKO_HOME)/scripts"
+	install -m 0755 bin/dsh-mcp bin/astrbox-mcp "$(NEKO_HOME)/bin/"
+	@if [ "$(PRUNE)" = "1" ]; then rm -rf "$(NEKO_HOME)/scripts"; mkdir -p "$(NEKO_HOME)/scripts"; fi
+	@if command -v rsync >/dev/null 2>&1; then rsync -a --exclude '.git' scripts/ "$(NEKO_HOME)/scripts/"; else cp -a scripts/. "$(NEKO_HOME)/scripts/"; fi
+	@if [ -f config.json ]; then cp -f config.json "$(NEKO_HOME)/config.json"; fi
+	@if [ -f observation.example.json ] && [ ! -f "$(NEKO_HOME)/data/observation.json" ]; then \
+		cp -f observation.example.json "$(NEKO_HOME)/data/observation.json"; \
+	fi
+	@# scripts.json 与 templates/ 都是派生数据：删掉让运行时下次启动从 scripts/ 重新引导（旧模板的组合会过期）。
+	@rm -f "$(NEKO_HOME)/data/scripts.json"
+	@rm -rf "$(NEKO_HOME)/data/templates"
+	@if [ -f plugins/dsh-astrbox/bridge.config.example.json ] && [ ! -f "$(NEKO_HOME)/data/bridge.config.json" ]; then \
+		cp -f plugins/dsh-astrbox/bridge.config.example.json "$(NEKO_HOME)/data/bridge.config.json"; \
+		sed -i "s|__WORKSPACE_PREFIX__|$(NEKO_HOME)|" "$(NEKO_HOME)/data/bridge.config.json"; \
+	fi
+	@echo "runtime installed: $(NEKO_HOME)"
+
+# Spawn bin/dsh-mcp, run the MCP handshake and check the frozen tool set.
 doctor: $(DSH_BIN)
-	node scripts/tools/doctorDsh.mjs
-
-# 独立端到端验证门控训练链路：样本 → 导出 → 算法导论训练 → 部署 → 模型门控 → fail-open。
-# 需要算法导论仓库（默认 $ITA_DIR 或 /home/ruicat/Desktop/算法导论）；过程产物落 .local/e2e/work。
-verify-training: build
-	bash scripts/tools/verifyTrainingPipeline.sh
-
-# 一键训练 + 安全部署门控模型（先攒样本；dry-run 只看将做什么）。
-train-gate: build
-	bash scripts/tools/trainGateModel.sh --data-dir $(CURDIR)/data
+	node tools/doctorDsh.mjs
 
 # Start the read-only monitor UI (add http_token to config.json for writes).
 monitor: $(DSH_BIN)

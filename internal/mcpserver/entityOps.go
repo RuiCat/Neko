@@ -8,10 +8,9 @@ import (
 	"log"
 	"sort"
 	"strings"
-	"time"
 
-	"github.com/RuiCat/Neko/internal/eventboard"
 	"github.com/RuiCat/Neko/internal/hardstate"
+	"github.com/RuiCat/Neko/internal/observation"
 )
 
 // ErrEntityMissing marks a write or delete against an unknown entity.
@@ -59,7 +58,7 @@ func (s *Server) WriteEntityPaths(entityID string, values map[string]any, source
 	if len(paths) == 0 {
 		return nil, fmt.Errorf("%w: 没有要写入的路径", ErrPathInvalid)
 	}
-	changes := make([]eventboard.Change, 0, len(paths))
+	changes := make([]observation.Change, 0, len(paths))
 	err := s.WithStateWrite(func() error {
 		ent := s.store.Get(entityID)
 		if ent == nil {
@@ -73,8 +72,8 @@ func (s *Server) WriteEntityPaths(entityID string, values map[string]any, source
 			if err := ent.Set(path, values[path]); err != nil {
 				return fmt.Errorf("%w: %s: %s", ErrPathInvalid, path, err)
 			}
-			changes = append(changes, eventboard.Change{
-				Path: path, From: from, To: values[path], FromKnown: true,
+			changes = append(changes, observation.Change{
+				Path: path, From: from, To: values[path],
 			})
 		}
 		if err := s.store.Save(); err != nil {
@@ -85,13 +84,8 @@ func (s *Server) WriteEntityPaths(entityID string, values map[string]any, source
 	if err != nil {
 		return nil, err
 	}
-	// K1 扩展：直接写入也进入事件黑板，订阅推送才看得到场景/实体内容变化。
-	// 黑板记录失败只记日志，不让一次成功的状态写入变成失败。
-	if s.eventBoards != nil {
-		if recordErr := s.eventBoards.Record(entityID, changes, "direct:"+source, time.Now()); recordErr != nil {
-			log.Printf("astrbox: 直接写入记录黑板失败: %v", recordErr)
-		}
-	}
+	// 直接写入（MCP/控制面）同样进入观察流，订阅推送才看得到内容变化。
+	s.observeDirect(entityID, changes, source)
 	return paths, nil
 }
 
@@ -102,10 +96,8 @@ func (s *Server) DeleteEntity(entityID string) error {
 		if !s.store.Delete(entityID) {
 			return fmt.Errorf("%w: '%s'", ErrEntityMissing, entityID)
 		}
-		if s.eventBoards != nil {
-			if err := s.eventBoards.Delete(entityID); err != nil {
-				return fmt.Errorf("删除事件黑板失败: %w", err)
-			}
+		if s.observations != nil {
+			s.observations.Delete(observation.ScopeForEntity(entityID))
 		}
 		if err := s.store.Save(); err != nil {
 			return fmt.Errorf("保存失败: %w", err)

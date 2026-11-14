@@ -108,11 +108,41 @@ func New(store *entity.Store, machine *engine.StateMachine, path, scriptsDir str
 	return reg, nil
 }
 
+// CONTENT_DIRS are the scripts subdirectories reserved for entity content:
+// scripts/entities/{characters,items,foods} and scripts/scenes. Their .neko
+// files are @data instance blocks materialized by `neko-data apply`; they are
+// never registered as scripts (no rules, no templates, no replay).
+var CONTENT_DIRS = []string{"entities", "scenes"}
+
+// isContentPath reports whether a path lives under one of the content roots.
+func isContentPath(root, path string) bool {
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	first := strings.SplitN(filepath.ToSlash(relative), "/", 2)[0]
+	for _, name := range CONTENT_DIRS {
+		if first == name {
+			return true
+		}
+	}
+	return false
+}
+
 // indexSources maps script names to their source path (scripts may be nested).
 func (r *Registry) indexSources() {
 	sources := map[string]string{}
 	_ = filepath.WalkDir(r.scriptsDir, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || entry.IsDir() || !strings.HasSuffix(entry.Name(), ".neko") {
+		if err != nil {
+			return nil
+		}
+		if entry.IsDir() {
+			if isContentPath(r.scriptsDir, path) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), ".neko") {
 			return nil
 		}
 		name := strings.TrimSuffix(entry.Name(), ".neko")
@@ -353,18 +383,29 @@ func (r *Registry) writeSourceLocked(name, text string) error {
 func (r *Registry) BootstrapFromSources() (ReplayResult, error) {
 	out := ReplayResult{Replayed: []string{}, Skipped: []string{}, Failed: []string{}, Details: map[string][]string{}}
 	r.indexSources()
+	sources := make(map[string][]byte, len(r.sources))
 	names := make([]string, 0, len(r.sources))
 	for name := range r.sources {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, scriptName := range names {
-		raw, err := os.ReadFile(r.sourcePath(scriptName))
+		raw, err := os.ReadFile(r.sourcePath(name))
 		if err != nil {
-			out.Failed = append(out.Failed, scriptName)
-			out.Details[scriptName] = append(out.Details[scriptName], err.Error())
+			out.Failed = append(out.Failed, name)
+			out.Details[name] = append(out.Details[name], err.Error())
 			continue
 		}
+		sources[name] = raw
+		names = append(names, name)
+	}
+	// 按依赖顺序应用：模板 → 组合（@实体）→ 函数 → 规则。
+	// 只按名字排序时，先应用 @实体 组合会因父模板尚未注册而失败。
+	sort.SliceStable(names, func(i, j int) bool {
+		pi, pj := bootstrapPass(sources[names[i]]), bootstrapPass(sources[names[j]])
+		if pi != pj {
+			return pi < pj
+		}
+		return names[i] < names[j]
+	})
+	for _, scriptName := range names {
+		raw := sources[scriptName]
 		result := r.Apply(scriptName, string(raw), true, true)
 		if result.OK {
 			out.Replayed = append(out.Replayed, scriptName)
@@ -523,4 +564,19 @@ func validateName(name string) string {
 		return fmt.Sprintf("非法脚本名 '%s'：仅允许字母数字下划线、中文与连字符", name)
 	}
 	return ""
+}
+
+// bootstrapPass 决定引导顺序：模板先于组合，组合先于函数，函数先于规则。
+func bootstrapPass(raw []byte) int {
+	text := string(raw)
+	switch {
+	case strings.Contains(text, "@定义") || strings.Contains(text, "@Data"):
+		return 0
+	case strings.Contains(text, "@实体"):
+		return 1
+	case strings.Contains(text, "@函数") || strings.Contains(text, "@func"):
+		return 2
+	default:
+		return 3
+	}
 }

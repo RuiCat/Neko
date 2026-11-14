@@ -13,7 +13,7 @@ import (
 func TestBootstrapFromSources(t *testing.T) {
 	dataDir := t.TempDir()
 	scriptsDir := t.TempDir()
-	for _, item := range [][2]string{{"core/cat_core.neko", "cat_core.neko"}, {"behavior/cat_daily.neko", "cat_daily.neko"}} {
+	for _, item := range [][2]string{{"kernel/world/worldModel.neko", "worldModel.neko"}, {"kernel/scene/sceneModel.neko", "sceneModel.neko"}} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "scripts", item[0]))
 		if err != nil {
 			t.Fatal(err)
@@ -22,7 +22,7 @@ func TestBootstrapFromSources(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	before, err := os.ReadFile(filepath.Join(scriptsDir, "cat_core.neko"))
+	before, err := os.ReadFile(filepath.Join(scriptsDir, "worldModel.neko"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestBootstrapFromSources(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dataDir, "scripts.json")); err != nil {
 		t.Fatalf("registry not persisted: %v", err)
 	}
-	after, err := os.ReadFile(filepath.Join(scriptsDir, "cat_core.neko"))
+	after, err := os.ReadFile(filepath.Join(scriptsDir, "worldModel.neko"))
 	if err != nil {
 		t.Fatal(err)
 	}

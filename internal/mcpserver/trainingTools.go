@@ -61,7 +61,7 @@ type gateTrainArgs struct {
 	MaxClassShare   float64 `json:"max_class_share,omitempty" jsonschema:"最大类别占比门槛（0-1，默认 0.7；超过拒绝，--force 例外）"`
 	MinAccuracy     float64 `json:"min_accuracy,omitempty" jsonschema:"留出集准确率门槛（默认 0.8）"`
 	Epochs          int     `json:"epochs,omitempty" jsonschema:"训练轮数（默认 400）"`
-	ITADir          string  `json:"ita_dir,omitempty" jsonschema:"算法导论仓库路径（默认 $ITA_DIR 或 /home/ruicat/Desktop/算法导论）"`
+	ITADir          string  `json:"ita_dir,omitempty" jsonschema:"算法导论仓库路径（默认 $ITA_DIR）"`
 }
 
 // addTrainingTools 注册 gate_status / gate_teach / gate_train 三个工具。
