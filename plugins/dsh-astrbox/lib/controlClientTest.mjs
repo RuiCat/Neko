@@ -169,43 +169,69 @@ test('/tick 只在 advanceMinutes>0 时带该字段（旧协议兼容）', async
   assert.equal(bodies[2].advanceMinutes, undefined)
 })
 
-test('/blackboard 无参数走 GET 且返回 boards；?entity= 只带实体参数（K3/K7）', async (t) => {
+test('/v2/observations 走 GET 并带 scope/since（契约 §3.1）', async (t) => {
   const server = await startControlServer((req, res) => {
-    const entity = new URL(req.url, 'http://localhost').searchParams.get('entity')
-    if (entity === null) {
-      writeJson(res, 200, { ok: true, boards: [{ entity: '梦梦', version: 2, entries: [] }] })
-      return
-    }
-    writeJson(res, 200, { ok: true, board: entity === '梦梦' ? { entity, version: 2, entries: [] } : null })
+    writeJson(res, 200, { ok: true, scope: 'entity:猫', version: 12, cursor: 12, events: [], budget: { maxItems: 12, maxChars: 1200 } })
   })
   t.after(() => server.close())
   const client = createControlClient({ socketPath: server.socketPath, requestTimeoutMs: 2000 })
   t.after(() => client.dispose())
 
-  const all = await client.getBlackboard()
-  assert.equal(all.ok, true)
-  assert.equal(all.boards.length, 1)
+  const body = await client.fetchObservations('entity:猫', 7)
+  assert.equal(body.ok, true)
   assert.equal(server.requests[0].method, 'GET')
-  assert.equal(server.requests[0].url, '/blackboard')
+  const url = new URL(server.requests[0].url, 'http://localhost')
+  assert.equal(url.pathname, '/v2/observations')
+  assert.equal(url.searchParams.get('scope'), 'entity:猫')
+  assert.equal(url.searchParams.get('since'), '7')
 
-  const one = await client.getBlackboard({ entity: '梦梦' })
-  assert.equal(one.board.version, 2)
-  assert.deepEqual(server.requests[1].url, `/blackboard?entity=${encodeURIComponent('梦梦')}`)
-
-  const missing = await client.getBlackboard({ entity: 'unknown' })
-  assert.equal(missing.board, null)
+  // since 缺省/0：不带 since 参数（服务端默认 0）。
+  await client.fetchObservations('entity:猫')
+  await client.fetchObservations('entity:猫', 0)
+  assert.equal(new URL(server.requests[1].url, 'http://localhost').searchParams.has('since'), false)
+  assert.equal(new URL(server.requests[2].url, 'http://localhost').searchParams.has('since'), false)
 })
 
-test('/blackboard 非 200 映射为带 K1 错误码的 ControlError', async (t) => {
+test('/v2/observations 非 200 映射为带 K1 错误码的 ControlError', async (t) => {
   const server = await startControlServer((req, res) => {
-    writeJson(res, 405, { ok: false, error: { code: 'method_not_allowed', message: '只支持 GET' } })
+    writeJson(res, 400, { ok: false, error: { code: 'bad_request', message: 'scope 必填' } })
   })
   t.after(() => server.close())
   const client = createControlClient({ socketPath: server.socketPath, requestTimeoutMs: 2000 })
   t.after(() => client.dispose())
 
   await assert.rejects(
-    () => client.getBlackboard({ entity: '梦梦' }),
-    (error) => error instanceof ControlError && error.code === 'method_not_allowed',
+    () => client.fetchObservations('entity:猫', 1),
+    (error) => error instanceof ControlError && error.code === 'bad_request',
+  )
+})
+
+test('/v2/observations/state 走 GET 并带 scope（契约 §3.2）', async (t) => {
+  const server = await startControlServer((req, res) => {
+    writeJson(res, 200, { ok: true, scope: 'entity:猫', version: 12, entries: [{ path: '状态.身体', value: '虚弱' }] })
+  })
+  t.after(() => server.close())
+  const client = createControlClient({ socketPath: server.socketPath, requestTimeoutMs: 2000 })
+  t.after(() => client.dispose())
+
+  const body = await client.fetchObservationState('entity:猫')
+  assert.equal(body.entries[0].path, '状态.身体')
+  const url = new URL(server.requests[0].url, 'http://localhost')
+  assert.equal(server.requests[0].method, 'GET')
+  assert.equal(url.pathname, '/v2/observations/state')
+  assert.equal(url.searchParams.get('scope'), 'entity:猫')
+})
+
+test('/v2/observations/state 非 200 映射为带 K1 错误码的 ControlError', async (t) => {
+  const server = await startControlServer((req, res) => {
+    writeJson(res, 500, { ok: false, error: { code: 'internal', message: 'observation boom' } })
+  })
+  t.after(() => server.close())
+  const client = createControlClient({ socketPath: server.socketPath, requestTimeoutMs: 2000 })
+  t.after(() => client.dispose())
+
+  await assert.rejects(
+    () => client.fetchObservationState('entity:猫'),
+    (error) => error instanceof ControlError && error.code === 'internal',
   )
 })

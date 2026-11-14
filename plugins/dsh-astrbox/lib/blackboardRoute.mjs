@@ -1,12 +1,12 @@
 /**
  * K7 面板数据路由：`GET /astrbox/blackboard`（挂在 DSH `webServer` 上的具名路由）。
  *
- * - 无参数 → `{ok:true, primary, paths, boards:[{entity, board}]}`（实体升序，来自
- *   `astrboxBridge.blackboards()`；`primary`/`paths` 是快照条元数据，即生效实体与白名单路径）
- * - `?entity=<id>` → `{ok:true, entity, board}`（无黑板时 `board:null`，不返回 404）
+ * - 无参数 → `{ok:true, primary, paths, boards:[{entity, board}]}`（实体升序，数据源由
+ *   Observation v2 的 `/v2/observations/state` 投影而来；`primary`/`paths` 是面板快照条元数据）
+ * - `?entity=<id>` → `{ok:true, entity, board}`（无数据时 `board:null`，不返回 404）
  * - 非 GET/HEAD → 405；数据源异常 → 500（面板据此显示「黑板不可用」）
  *
- * 只读、无副作用；路由注册失败由调用方兜底（bridge 缺少 webServer 时整段跳过）。
+ * 数据源可以是同步函数或返回 Promise 的函数（v2 需要拉控制面）；只读、无副作用。
  */
 
 /** 黑板面板路由路径（K7）。 */
@@ -45,16 +45,16 @@ function entityOf(requestUrl) {
 const MAX_META_PATHS = 32
 
 /**
- * 面板元数据（K7b）：生效实体 id + 快照白名单路径；数据源缺失或非法时返回空对象。
+ * 面板元数据（K7b）：生效实体 id + 快照路径；数据源缺失或非法时返回空对象。
  * 只做形状收敛，不抛错（元数据坏掉只应让面板少显示快照条，不应让黑板不可用）。
- * @param {(() => {primary?: unknown, paths?: unknown}) | undefined} getMeta 元数据数据源
- * @returns {{primary?: string, paths?: string[]}} 收敛后的元数据（可能为空对象）
+ * @param {(() => object | Promise<object>) | undefined} getMeta 元数据数据源
+ * @returns {Promise<{primary?: string, paths?: string[]}>} 收敛后的元数据（可能为空对象）
  */
-function panelMetaOf(getMeta) {
+async function panelMetaOf(getMeta) {
   if (typeof getMeta !== 'function') return {}
   let raw
   try {
-    raw = getMeta()
+    raw = await getMeta()
   } catch {
     return {}
   }
@@ -74,12 +74,13 @@ function panelMetaOf(getMeta) {
 }
 
 /**
- * 处理一次黑板请求（导出供路由测试直接调用）；getMeta 为可选快照元数据，不抛错。
+ * 处理一次黑板请求（导出供路由测试直接调用）；getBoards/getMeta 可为异步，异常都收敛成响应。
  * @param {{method?: string, url?: string}} req 请求 @param {object} res 响应
- * @param {() => Array<{entity: string, board: object|null}>} getBoards 黑板数据源
- * @returns {void}
+ * @param {() => Array<{entity: string, board: object|null}> | Promise<Array<{entity: string, board: object|null}>>} getBoards 黑板数据源
+ * @param {() => object | Promise<object>} [getMeta] 面板元数据数据源
+ * @returns {Promise<void>} 响应写完后 resolve
  */
-export function handleBlackboardRequest(req, res, getBoards, getMeta) {
+export async function handleBlackboardRequest(req, res, getBoards, getMeta) {
   const method = typeof req?.method === 'string' ? req.method : 'GET'
   if (method !== 'GET' && method !== 'HEAD') {
     sendJson(res, 405, { ok: false, error: { code: 'method_not_allowed', message: '只支持 GET' } })
@@ -87,7 +88,7 @@ export function handleBlackboardRequest(req, res, getBoards, getMeta) {
   }
   let boards
   try {
-    boards = typeof getBoards === 'function' ? getBoards() : []
+    boards = typeof getBoards === 'function' ? await getBoards() : []
   } catch {
     sendJson(res, 500, { ok: false, error: { code: 'internal', message: 'board source failed' } })
     return
@@ -99,7 +100,7 @@ export function handleBlackboardRequest(req, res, getBoards, getMeta) {
     sendJson(res, 200, { ok: true, entity, board: found?.board ?? null })
     return
   }
-  sendJson(res, 200, { ok: true, ...panelMetaOf(getMeta), boards: list })
+  sendJson(res, 200, { ok: true, ...(await panelMetaOf(getMeta)), boards: list })
 }
 
 /**
@@ -118,7 +119,16 @@ export function registerBlackboardRoute(webServer, options) {
       kind: 'exact',
       path: BLACKBOARD_PATH,
       handler: (req, res) => {
-        handleBlackboardRequest(req, res, getBoards, getMeta)
+        // 数据源是异步的：内部已收敛数据源异常；兜底未预期异常，避免响应悬挂。
+        return handleBlackboardRequest(req, res, getBoards, getMeta).catch(() => {
+          try {
+            if (res?.headersSent !== true) {
+              sendJson(res, 500, { ok: false, error: { code: 'internal', message: 'board route failed' } })
+            }
+          } catch {
+            // 响应已关闭：忽略。
+          }
+        })
       },
     })
     try {

@@ -4,15 +4,15 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { composePersona, createHostBridge } from './astrboxService.mjs'
-import { DEFAULT_PERSONA_PATHS, normalizeConfig } from './config.mjs'
+import { PERSONA_PATHS, composePersona, createHostBridge } from './astrboxService.mjs'
+import { normalizeConfig } from './config.mjs'
 import { TRUNCATION_SUFFIX } from './prompt.mjs'
 import { nextMacroTask } from './testHarness.mjs'
 
 const R18_TERMS = ['性行为', '器官状态', '外翻', '生殖', '体液追踪', '肉棒']
 
-/** 默认测试配置：3 条人设路径，与 K5 默认值解耦。 */
-const CONFIG = Object.freeze({ personaPaths: ['种族', '体型', '自称'], personaMaxChars: 600, promptRefreshMs: 5000 })
+/** 默认测试配置：人设路径固定为 PERSONA_PATHS（contract §5：personaPaths 配置键已退役）。 */
+const CONFIG = Object.freeze({ personaMaxChars: 600, promptRefreshMs: 5000 })
 
 /** 假控制面客户端：记录 /entities 与 /state 调用，可注入失败。 */
 function fakeClient(options = {}) {
@@ -135,16 +135,13 @@ test('persona() 同步返回 string：未就绪为 ""，refresh() 预取绑定�
   assert.equal(client.calls.state.length, callsBefore)
 })
 
-test('persona() 组合 personaPaths 并按 personaMaxChars 截断', async () => {
-  const client = fakeClient({ stateValues: { 猫猫: personaValues() } })
-  const host = createHostBridge({
-    client,
-    config: { ...CONFIG, personaPaths: ['人格.MBTI', '人格.气质类型', '种族'], personaMaxChars: 120 },
-    logger: fakeLogger(),
+test('composePersona：按给定路径顺序渲染并按 personaMaxChars 截断', () => {
+  const text = composePersona({
+    entityId: '猫猫',
+    paths: ['人格.MBTI', '人格.气质类型', '种族'],
+    values: personaValues(),
+    maxChars: 120,
   })
-  host.persona('猫猫')
-  await nextMacroTask()
-  const text = host.persona('猫猫')
   assert.ok(text.includes('- 人格.MBTI="INFP"'), text)
   assert.ok(text.includes('- 人格.气质类型="黏液质"'), text)
   assert.equal(text.length, 120)
@@ -158,13 +155,13 @@ test('composePersona：无可用路径 / 关闭人设 / 非法实体返回 ""', 
   assert.equal(composePersona(undefined), '')
 })
 
-test('personaPaths=[] 关闭人设：persona 返回 "" 且不发 /state', async () => {
+test('persona 服务固定读取 PERSONA_PATHS：/state 请求带全部 7 条路径', async () => {
   const client = fakeClient({ stateValues: { 猫猫: personaValues() } })
-  const host = createHostBridge({ client, config: { ...CONFIG, personaPaths: [] }, logger: fakeLogger() })
+  const host = createHostBridge({ client, config: CONFIG, logger: fakeLogger() })
   host.persona('猫猫')
   await nextMacroTask()
-  assert.equal(host.persona('猫猫'), '')
-  assert.equal(client.calls.state.length, 0)
+  const request = client.calls.state.at(-1)
+  assert.deepEqual(request.paths, [...PERSONA_PATHS])
 })
 
 test('persona 缓存 TTL：窗口内复用，promptRefreshMs=0 时每次请求', async () => {
@@ -243,22 +240,19 @@ test('refresh()：重拉实体目录并预取绑定实体人设；绑定读取�
   await assert.doesNotReject(() => throwing.refresh())
 })
 
-test('K5 配置：personaPaths/personaMaxChars 默认值与校验', () => {
+test('K5 配置：人设路径是固定常量，personaMaxChars 仍可配置', () => {
   const config = normalizeConfig()
-  assert.deepEqual([...config.personaPaths], [...DEFAULT_PERSONA_PATHS])
-  assert.equal(DEFAULT_PERSONA_PATHS.length, 7)
-  assert.ok(DEFAULT_PERSONA_PATHS.includes('人格.MBTI'))
+  assert.equal(PERSONA_PATHS.length, 7)
+  assert.ok(PERSONA_PATHS.includes('人格.MBTI'))
   assert.equal(config.personaMaxChars, 600)
-  for (const path of DEFAULT_PERSONA_PATHS) {
+  for (const path of PERSONA_PATHS) {
     for (const term of R18_TERMS) assert.ok(!path.includes(term), `${path} 不应含 ${term}`)
   }
-  assert.deepEqual([...normalizeConfig({ personaPaths: [] }).personaPaths], [])
   assert.equal(normalizeConfig({ personaMaxChars: 1 }).personaMaxChars, 1)
+  // 已退役的配置键被忽略（旧配置仍能启动），不会成为配置项。
+  assert.equal(Object.hasOwn(normalizeConfig({ personaPaths: ['种族'] }), 'personaPaths'), false)
 
   const cases = [
-    [{ personaPaths: '种族' }, 'personaPaths'],
-    [{ personaPaths: [''] }, 'personaPaths[0]'],
-    [{ personaPaths: [7] }, 'personaPaths[0]'],
     [{ personaMaxChars: 0 }, 'personaMaxChars'],
     [{ personaMaxChars: 1.5 }, 'personaMaxChars'],
     [{ personaMaxChars: '600' }, 'personaMaxChars'],

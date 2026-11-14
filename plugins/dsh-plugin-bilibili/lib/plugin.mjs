@@ -7,6 +7,7 @@
  *
  * 纯运行时：不监听事件；`DSH_BILIBILI=off` 可整体关闭。
  */
+import { loadFileConfig } from "./fileConfig.mjs";
 import { buildBilibiliTools } from "./bilibiliTools.mjs";
 import { createBilibiliRuntime } from "./bilibiliRuntime.mjs";
 import { buildSocialTools } from "./bilibiliSocialTools.mjs";
@@ -22,8 +23,10 @@ export const inject = ["tools"];
  * @param {{cookie?:string, statePath?:string, allowPost?:boolean, dryRun?:boolean,
  *   timeoutMs?:number, maxChars?:number}} [config] 行配置
  */
-export function apply(ctx, config = {}) {
+export function apply(ctx, rawConfig = {}) {
   if (process.env.DSH_BILIBILI === "off") return;
+  // patch 只声明加载；运行配置缺省时从 ~/.dsh-neko/Neko/data/bilibili.config.json 读取。
+  const config = loadFileConfig("bilibili", rawConfig);
   const runtime = createBilibiliRuntime(config);
   const readConfig = {
     fetchImpl: runtime.fetchImpl,

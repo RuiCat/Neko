@@ -55,7 +55,7 @@ function errorFromResponse(response) {
 /**
  * 建控制面客户端。
  * @param {{socketPath: string, requestTimeoutMs?: number, tickTimeoutMs?: number}} options 配置
- * @returns {object} 客户端（getState / postTick / postSessionEvent / dispose）
+ * @returns {object} 客户端（getState / fetchObservations / fetchObservationState / postTick / dispose）
  */
 export function createControlClient(options) {
   const { socketPath, requestTimeoutMs = 2000, tickTimeoutMs = 15000 } = options
@@ -135,19 +135,6 @@ export function createControlClient(options) {
     },
 
     /**
-     * `GET /turn-context`：取当前补偿包（只读投影，不写经历日志）。
-     * @param {{entity: string}} query 查询参数
-     * @returns {Promise<any>} 响应体
-     */
-    async getTurnContext(query) {
-      const params = new URLSearchParams()
-      params.set('entity', query.entity)
-      const response = await send({ method: 'GET', path: `/turn-context?${params.toString()}`, timeoutMs: requestTimeoutMs })
-      if (response.status !== 200) throw errorFromResponse(response)
-      return response.body
-    },
-
-    /**
      * `GET /entities`：只读 NPC 实体目录（K3）。
      * @returns {Promise<any>} 响应体 `{entities: [{id, type}]}`（id 升序，不含 data）
      */
@@ -158,14 +145,43 @@ export function createControlClient(options) {
     },
 
     /**
-     * `GET /blackboard`：事件黑板（只读，K3 控制面契约）。
-     * @param {{entity?: string}} [query] 实体；缺省时返回全部黑板（`{ok, boards}`）
-     * @returns {Promise<any>} 响应体：`{ok, board}` 或 `{ok, boards}`
+     * `GET /v2/observations`：按 scope 拉 Observation v2 变化流（契约 §3.1）。
+     * @param {string} scope 例如 `entity:猫`
+     * @param {number} [since] 只返回 `seq > since` 的事件；缺省/0 表示不限
+     * @returns {Promise<any>} 响应体 `{ok, scope, version, cursor, events, budget, …}`
      */
-    async getBlackboard(query = {}) {
-      const entity = typeof query?.entity === 'string' && query.entity !== '' ? query.entity : undefined
-      const path = entity === undefined ? '/blackboard' : `/blackboard?${new URLSearchParams({ entity }).toString()}`
-      const response = await send({ method: 'GET', path, timeoutMs: requestTimeoutMs })
+    async fetchObservations(scope, since) {
+      const params = new URLSearchParams({ scope })
+      if (Number.isInteger(since) && since > 0) params.set('since', String(since))
+      const response = await send({ method: 'GET', path: `/v2/observations?${params.toString()}`, timeoutMs: requestTimeoutMs })
+      if (response.status !== 200) throw errorFromResponse(response)
+      return response.body
+    },
+
+    /**
+     * `GET /v2/observations/state`：把事件流折叠成每个 path 的当前值（契约 §3.2）。
+     * @param {string} scope 例如 `entity:猫`
+     * @returns {Promise<any>} 响应体 `{ok, scope, version, entries, budget}`
+     */
+    async fetchObservationState(scope) {
+      const params = new URLSearchParams({ scope })
+      const response = await send({
+        method: 'GET',
+        path: `/v2/observations/state?${params.toString()}`,
+        timeoutMs: requestTimeoutMs,
+      })
+      if (response.status !== 200) throw errorFromResponse(response)
+      return response.body
+    },
+
+    /**
+     * `GET /turn-context`：取该实体的补偿包（记忆/约束/情境/激活专家）。
+     * @param {{entity: string}} query 查询
+     * @returns {Promise<any>} 响应体 `{ok, compensation, gate}`
+     */
+    async getTurnContext(query) {
+      const params = new URLSearchParams({ entity: query.entity })
+      const response = await send({ method: 'GET', path: `/turn-context?${params.toString()}`, timeoutMs: requestTimeoutMs })
       if (response.status !== 200) throw errorFromResponse(response)
       return response.body
     },

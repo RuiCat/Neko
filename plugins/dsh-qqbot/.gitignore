@@ -1,0 +1,10 @@
+node_modules/
+dist/
+docs/
+.env
+.dsh-sessions/
+*.tsbuildinfo
+cordis.dev.yml
+
+# lib/ 为构建产物，不入库；安装前先 `npm ci && npm run build`
+lib/

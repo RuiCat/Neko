@@ -1,15 +1,17 @@
 /**
  * dsh-astrbox 桥接插件入口。
  *
- * 只做六件事（K2/K4–K7 冻结）：
+ * 主链路（Observation v2 冻结，contract §4/§5）：
  * ① 注册常量系统提示段 `astrbox-usage`（C1：动态状态绝不进入系统提示段）；
- * ② `agent/pre-step` 每轮至多追加一条 `[astrbox]` 状态快照 user 消息（C12），按 agent 会话 cwd 解析生效实体（K6）；
+ * ② `agent/pre-step`：每轮至多追加一条 `[astrbox-state]` 现状卡（拉 `/v2/observations/state` 后
+ *    用 `renderState` 渲染；按 agent 会话 cwd 解析生效实体，K6）；
  * ③ `ctx.interval` 每 `tickEveryMs` 发 `POST /tick`（单飞，409 跳过）；
  * ④ `session/created` / `agent/turn-stopping` 发 `POST /session-event`（C2；绑定命中的 cwd 带 entity）；
  * ⑤ `ctx.provide('astrboxBridge', host)` 提供 NPC 实体目录/人设服务（K2），
  *    以及 K28 主会话提示词（`mainSessionPrompt(entityId)`）；
- * ⑥ 事件黑板订阅（K4–K7）：tick 成功后主会话按版本+间隔 `followup` 订阅文本；
- *    pre-step 对绑定实体的子会话注入一次；`astrboxBridge.blackboards()` 与 `GET /astrbox/blackboard` 供面板读取；
+ * ⑥ tick 成功后主会话按**实体游标**拉 `/v2/observations` delta，`renderDelta` 渲染后推送
+ *    （对话摘要随同一条消息附带）；`astrboxBridge.blackboards()` 与 `GET /astrbox/blackboard`
+ *    由 `/v2/observations/state` 投影供数；
  *    另注册 `astrbox_relay`（K14 跨会话转达）、`astrbox_subscription`（K17 订阅间隔）、
  *    `astrbox_main_prompt`（K29 自行维护主提示词）与 `astrbox_board`（K30 会话黑板）工具。
  *
@@ -19,8 +21,9 @@ import { randomUUID } from 'node:crypto'
 import { createHostBridge } from './astrboxService.mjs'
 import { registerBlackboardRoute } from './blackboardRoute.mjs'
 import { registerControlRoutes } from './controlRoutes.mjs'
-import { countBoardChanges, formatSubscriptionText, sceneInfoLines } from './blackboardText.mjs'
-import { createDialogFeed, dialogKind, turnDialogExcerpt } from './dialogFeed.mjs'
+import { boardFromObservationState, statePathsOf } from './observationBoard.mjs'
+import { renderDelta, renderState } from './observationRender.mjs'
+import { createDialogFeed, dialogKind, formatDialogLine, turnDialogExcerpt } from './dialogFeed.mjs'
 import { createRelayTool } from './relayTool.mjs'
 import { createIntervalStore, isValidIntervalMinutes } from './subscriptionInterval.mjs'
 import { createSubscriptionTool } from './subscriptionTool.mjs'
@@ -31,17 +34,15 @@ import { planBoardInjection } from './sessionBoardText.mjs'
 import { registerMainSessionPromptRoute } from './mainSessionPromptRoute.mjs'
 import { registerSessionBoardRoute } from './sessionBoardRoute.mjs'
 import { createMainPromptTool } from './mainPromptTool.mjs'
-import { normalizeConfig } from './config.mjs'
+import { existsSync, readFileSync } from 'node:fs'
+import { DEFAULT_CONFIG_PATH, normalizeConfig } from './config.mjs'
 import { createControlClient } from './controlClient.mjs'
 import { normalizeBindings, resolveEntityForCwd } from './entityBindings.mjs'
 import { createLogger } from './logger.mjs'
-import { STATIC_USAGE_TEXT, composePackage, composeSnapshot, createSnapshotMessage } from './prompt.mjs'
+import { STATIC_USAGE_TEXT, composeCompensation, truncateText } from './prompt.mjs'
 import { createSessionEventSender } from './sessionEvents.mjs'
 
 export const name = 'astrbox-bridge'
-
-/** 世界实体 id：世界/环境黑板的变化也进入主会话推送（场景感知扩展）。 */
-const WORLD_BOARD_ENTITY = '世界'
 
 /**
  * 必须等 systemPrompt 与 timer 服务就绪：前者注册提示段，后者提供 ctx.interval。
@@ -52,7 +53,7 @@ export const inject = ['systemPrompt', 'timer']
 /** 提示段固定元数据（K2）。 */
 const SECTION = Object.freeze({ name: 'astrbox-usage', order: 2500, interpolate: false })
 
-/** 某实体连续失败达到该次数后本轮不注入动态快照。 */
+/** 某实体现状连续失败达到该次数后本轮不注入现状卡。 */
 const STATE_FAILURE_LIMIT = 3
 
 /** 桥接回落 agent 缓存的条数上限（K5：`agents` 注册表不可用时按会话 id 索引）。 */
@@ -67,8 +68,33 @@ const runtimes = new WeakMap()
  * @param {object} [rawConfig] 行配置；非法时抛出并指名键（C11）
  * @returns {{dispose: Function}} 运行时句柄
  */
+/**
+ * 行配置 = 文件配置（configPath 指向的 JSON）覆盖默认值，再被行内字段覆盖。
+ * 这样 bundle patch 只负责插件加载与启动参数，运行时配置落在 .dsh-neko/Neko/。
+ * @param {object} [rawConfig] Cordis 行配置
+ * @returns {object} 合并后的原始配置
+ */
+function loadRowConfig(rawConfig = {}) {
+  const inline = rawConfig ?? {}
+  const explicit = typeof inline.configPath === 'string' && inline.configPath.trim() !== ''
+  const path = explicit ? inline.configPath : DEFAULT_CONFIG_PATH
+  if (!existsSync(path)) {
+    if (explicit) {
+      throw new Error(`astrbox-bridge: 指定的配置文件不存在: ${path}`)
+    }
+    return inline
+  }
+  let fileConfig
+  try {
+    fileConfig = JSON.parse(readFileSync(path, 'utf8'))
+  } catch (err) {
+    throw new Error(`astrbox-bridge: 配置文件不是合法 JSON: ${path}: ${err.message}`)
+  }
+  return { ...fileConfig, ...inline }
+}
+
 export function apply(ctx, rawConfig = {}) {
-  const config = normalizeConfig(rawConfig)
+  const config = normalizeConfig(loadRowConfig(rawConfig))
   runtimes.get(ctx)?.dispose()
   const logger = createLogger({ ctx, warningAfterMs: config.warningAfterMs })
   const client = createControlClient({
@@ -104,15 +130,17 @@ function createRuntime(options) {
   let lastActivityAt = 0
   /** 最近一次非空合法绑定（K6：服务缺失/HMR 空窗继续用它）。 */
   let lastBindings = []
-  /** 每实体快照缓存：entity → { text, checkedAt, failures, inflight }（K6/C4）。 */
-  const snapshots = new Map()
-  /** 每会话上次注入的状态快照签名（去掉时间戳的正文）：相同则默认跳过注入。 */
-  const lastSnapshotSignatures = new Map()
+  /** 每实体现状卡缓存：entity → { text, checkedAt, failures, inflight }（Observation v2）。 */
+  const observationStates = new Map()
+  /** 每会话上次注入的现状卡文本：相同则默认跳过注入。 */
+  const lastStateTexts = new Map()
+  /** 每实体补偿包缓存：entity → { text, checkedAt, failures, inflight }（记忆/约束/情境/专家）。 */
+  const compensationPackages = new Map()
+  /** 每会话上次注入的补偿包文本：相同则跳过。 */
+  const lastCompensationTexts = new Map()
   const lastTurnByAgent = new WeakMap()
-  /** 主会话推送状态：`entity\0sessionId` → { boardVersion, feedVersion, pushedAt }（K12）。 */
+  /** 主会话推送游标：`entity\0sessionId` → { cursor, feedVersion, pushedAt }（Observation v2）。 */
   const mainPushes = new Map()
-  /** 子会话注入状态：sessionId → 最近注入过的 { boardVersion, feedVersion }（K13）。 */
-  const lastInjected = new Map()
   /** 每实体对话摘要 Feed（K10，内存态）。 */
   const dialogFeed = createDialogFeed({
     maxEntries: config.dialogFeedSize,
@@ -120,8 +148,8 @@ function createRuntime(options) {
   })
   /** 桥接见过的 agent 缓存：sessionId → agent（K5 回落）。 */
   const seenAgentCache = new Map()
-  /** 每实体黑板缓存：entity → { board, checkedAt, failures, inflight }（K7）。 */
-  const boardCache = new Map()
+  /** 每实体面板投影缓存：entity → { board, paths, checkedAt, failures, inflight }（Observation v2）。 */
+  const panelBoards = new Map()
   let disposeBlackboardRoute
   let disposeControlRoutes
   let disposeMainSessionPromptRoute
@@ -221,66 +249,51 @@ function createRuntime(options) {
   }
 
   /**
-   * 取（或建）某实体的黑板缓存条目（K7）。
+   * 取（或建）某实体的面板投影缓存条目（Observation v2）。
    * @param {string} entity 实体 id
-   * @returns {{board: object|null, checkedAt: number, failures: number, inflight: Promise<void> | undefined}} 缓存条目
+   * @returns {{board: object|null, paths: string[], checkedAt: number, failures: number, inflight: Promise<void> | undefined}} 缓存条目
    */
-  function boardEntry(entity) {
-    let entry = boardCache.get(entity)
+  function panelBoardEntry(entity) {
+    let entry = panelBoards.get(entity)
     if (entry === undefined) {
-      entry = { board: null, checkedAt: 0, failures: 0, inflight: undefined }
-      boardCache.set(entity, entry)
+      entry = { board: null, paths: [], checkedAt: 0, failures: 0, inflight: undefined }
+      panelBoards.set(entity, entry)
     }
     return entry
   }
 
   /**
-   * 校验并规范化 `/blackboard` 响应里的 board（K1 形状；非法/空返回 null）。
-   * @param {unknown} raw 响应体里的 board
-   * @returns {object | null} 黑板
-   */
-  function normalizeBoard(raw) {
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
-    if (typeof raw.entity !== 'string' || raw.entity.trim() === '') return null
-    return {
-      ...raw,
-      entity: raw.entity,
-      version: Number.isInteger(raw.version) ? raw.version : 0,
-      entries: Array.isArray(raw.entries) ? raw.entries : [],
-    }
-  }
-
-  /**
-   * 拉一次某实体的黑板；失败保留上一版并限频告警（K7）。
+   * 拉一次某实体的现状并投影成面板 board；失败保留上一版并限频告警。
    * @param {string} entity 实体 id
    * @param {object} entry 缓存条目
    */
-  async function loadBoard(entity, entry) {
+  async function loadPanelBoard(entity, entry) {
     try {
-      const response = await client.getBlackboard({ entity })
+      const payload = await client.fetchObservationState(`entity:${entity}`)
       if (disposed) return
-      entry.board = normalizeBoard(response?.board)
+      entry.board = boardFromObservationState(entity, payload)
+      entry.paths = statePathsOf(payload)
       entry.failures = 0
     } catch (error) {
       entry.failures += 1
       logger.warnOnce(
-        `board:${entity}`,
-        `控制面 /blackboard 拉取失败 ${entry.failures} 次（实体 ${entity}，只记日志）：${errorMessage(error)}`,
+        `observation-state:${entity}`,
+        `控制面 /v2/observations/state 拉取失败 ${entry.failures} 次（实体 ${entity}，只记日志）：${errorMessage(error)}`,
       )
     }
   }
 
   /**
-   * 取某实体当前黑板：窗口内复用缓存；并发复用同一在飞请求；`force` 忽略窗口（主会话推送用）。
+   * 取某实体当前面板投影：窗口内复用缓存；并发复用同一在飞请求；`force` 忽略窗口。
    * @param {string} entity 实体 id
    * @param {boolean} [force] 是否强制刷新
-   * @returns {Promise<object | null>} 黑板（无黑板/失败时为 null 或上一版）
+   * @returns {Promise<object | null>} 面板 board（无数据/失败时为 null 或上一版）
    */
-  async function currentBoard(entity, force = false) {
+  async function currentPanelBoard(entity, force = false) {
     if (disposed) return null
-    const entry = boardEntry(entity)
+    const entry = panelBoardEntry(entity)
     if (force) {
-      await loadBoard(entity, entry)
+      await loadPanelBoard(entity, entry)
       return entry.board
     }
     const at = Date.now()
@@ -288,7 +301,7 @@ function createRuntime(options) {
     entry.checkedAt = at
     if (entry.inflight === undefined) {
       entry.inflight = Promise.resolve()
-        .then(() => loadBoard(entity, entry))
+        .then(() => loadPanelBoard(entity, entry))
         .finally(() => {
           entry.inflight = undefined
         })
@@ -314,12 +327,22 @@ function createRuntime(options) {
     return [...ids].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
   }
 
-  /** `astrboxBridge.blackboards()`（K7）：同步返回缓存快照，后台按刷新窗口更新。 */
+  /**
+   * 面板数据源（异步）：先按刷新窗口更新全部实体的投影，再返回缓存。
+   * @returns {Promise<Array<{entity: string, board: object|null}>>} 面板数据
+   */
+  async function blackboardListAsync() {
+    const ids = boardEntityIds()
+    await Promise.all(ids.map((entity) => currentPanelBoard(entity)))
+    return ids.map((entity) => ({ entity, board: panelBoardEntry(entity).board }))
+  }
+
+  /** `astrboxBridge.blackboards()`：同步返回缓存快照，后台按刷新窗口更新。 */
   function blackboardList() {
     try {
       return boardEntityIds().map((entity) => {
-        void currentBoard(entity).catch(() => {})
-        return { entity, board: boardEntry(entity).board }
+        void currentPanelBoard(entity).catch(() => {})
+        return { entity, board: panelBoardEntry(entity).board }
       })
     } catch {
       return []
@@ -327,12 +350,12 @@ function createRuntime(options) {
   }
 
   /**
-   * 面板快照条元数据（K7b）：生效实体 + 白名单路径（与 pre-step 快照同源，来自 config）。
+   * 面板快照条元数据（K7b）：生效实体 + 观测现状里的路径（最多 32 条）。
    * 同步、不抛错；配置异常由路由侧再兜一层。
    * @returns {{primary: string, paths: string[]}} 元数据
    */
   function panelMeta() {
-    return { primary: config.entity, paths: config.paths }
+    return { primary: config.entity, paths: [...panelBoardEntry(config.entity).paths] }
   }
 
   /**
@@ -370,11 +393,11 @@ function createRuntime(options) {
   }
 
   /**
-   * 造一条订阅 user 消息（形状与宿主 `createUserMessage` 一致；本插件零依赖）。
-   * @param {string} text 订阅文本
+   * 造一条注入 user 消息（现状卡 / 变化推送共用；形状与宿主 `createUserMessage` 一致）。
+   * @param {string} text 注入文本
    * @returns {object} user 消息
    */
-  function createSubscriptionMessage(text) {
+  function createInjectedMessage(text) {
     return {
       id: randomUUID(),
       role: 'user',
@@ -394,115 +417,82 @@ function createRuntime(options) {
   }
 
   /**
-   * 黑板占位：控制面没有黑板但对话 feed 有变化时，仍按 K5 头部渲染订阅文本。
-   * @param {string} entity 实体 id
-   * @returns {object} 形状与 K1 黑板一致的占位对象
+   * 主会话推送文本：renderDelta 正文 + 新增对话段（同一条消息附带，不再独立链路）。
+   * @param {string} deltaText renderDelta 正文
+   * @param {Array<object>} dialogs 上次推送之后新增的对话条目
+   * @returns {string} 推送文本
    */
-  function emptyBoard(entity) {
-    return { entity, version: 0, updated_at: '', tick_id: '', entries: [] }
-  }
-
-  /**
-   * 黑板版本号（缺失/非法记 0）。
-   * @param {unknown} board 黑板
-   * @returns {number} 版本
-   */
-  function boardVersionOf(board) {
-    if (board === null || typeof board !== 'object') return 0
-    return Number.isInteger(board.version) ? board.version : 0
-  }
-
-  /**
-   * 取实体当前所在场景 id（状态 `位置.场景`）；读取失败返回空串（不阻断推送）。
-   * @param {string} entity 实体 id
-   * @returns {Promise<string>} 场景实体 id
-   */
-  async function currentSceneEntity(entity) {
-    try {
-      const state = await client.getState({ entity, paths: ['位置.场景'] })
-      const value = state?.values?.['位置.场景']
-      return typeof value === 'string' && value.trim() !== '' ? value.trim() : ''
-    } catch {
-      return ''
+  function composePushText(deltaText, dialogs) {
+    const lines = []
+    for (const entry of dialogs) {
+      const line = formatDialogLine(entry)
+      if (line !== '') lines.push(line)
     }
+    if (lines.length === 0) return deltaText
+    return `${deltaText}\n最近对话：\n${lines.join('\n')}`
   }
 
   /**
-   * 实体进入新场景时抓一份有界场景信息（只读当前场景实体的配置字段）。
-   * 读失败返回 null——场景信息是附加内容，绝不能阻断推送。
-   * @param {string} sceneEntity 场景实体 id
-   * @returns {Promise<{title: string, lines: string[]} | null>} 场景信息段
+   * 从 `/v2/observations` 响应取下一次的 `since`：优先 `cursor`（服务端跳过噪声），
+   * 再回落 `version`（契约 §3.1）。
+   * @param {unknown} payload 响应体
+   * @returns {number} 下一次 since
    */
-  async function sceneInfoSection(sceneEntity) {
-    if (sceneEntity === '' || !Array.isArray(config.scenePaths) || config.scenePaths.length === 0) return null
-    try {
-      const state = await client.getState({ entity: sceneEntity, paths: config.scenePaths })
-      const lines = sceneInfoLines(state?.values ?? {}, config.scenePaths)
-      return lines.length === 0 ? null : { title: `场景信息（${sceneEntity}）`, lines }
-    } catch {
-      return null
-    }
+  function cursorOf(payload) {
+    if (payload === null || typeof payload !== 'object') return 0
+    if (Number.isInteger(payload.cursor) && payload.cursor >= 0) return payload.cursor
+    if (Number.isInteger(payload.version) && payload.version >= 0) return payload.version
+    return 0
   }
 
   /**
-   * 主会话主动读取（K12 扩展 K5）：tick 成功后**本体 / 当前场景 / 世界**任一黑板
-   * 版本前进才推送给主会话；文本只含上次推送之后变化的条目（entry.version），
-   * 不再重复整块历史。对话 feed 不单独触发推送，只在推送时附带新增条目。
-   * 实体进入新场景时额外带一段「场景信息」（名称/类型/氛围/物品…，可配 scenePaths），
-   * 让智能体进入场景就拿到场景内容。成功才推进三个黑板版本、场景 id、`lastMainFeedVer`
-   * 与时间；失败/agent 不在线只 debug。
+   * 主会话变化推送（Observation v2）：tick 成功后按实体游标拉 delta 并 followup。
+   *
+   * 首次见到某目标时只以当前 `version` 建立游标、**不回放历史**；之后只推 `seq > cursor` 的变化。
+   * 对话 feed 不单独触发，只在有变化时作为同一条消息的「最近对话」段附带。
+   * 成功才推进游标与 `feedVersion`/时间；agent 不在线、拉取失败、followup 抛错都下个 tick 重试。
    * @returns {Promise<void>} 完成信号
    */
   async function pushMainSubscriptions() {
     if (disposed || !config.subscriptionEnabled) return
     for (const target of mainPushTargets()) {
       if (disposed) return
-      const pushed = mainPushes.get(target.key)
-      if (pushed !== undefined && Date.now() - pushed.pushedAt < effectiveInterval(target.sessionId)) continue
+      const entry = mainPushes.get(target.key)
+      if (entry !== undefined && Date.now() - entry.pushedAt < effectiveInterval(target.sessionId)) continue
       try {
         const agent = agentOf(target.sessionId)
         if (agent === undefined || typeof agent.followup !== 'function') {
-          logger.debug(`主会话订阅跳过（agent 不在线）：${target.entity}/${target.sessionId}`)
+          logger.debug(`主会话推送跳过（agent 不在线）：${target.entity}/${target.sessionId}`)
           continue
         }
-        const board = await currentBoard(target.entity, true)
-        const sceneEntity = await currentSceneEntity(target.entity)
-        const sceneBoard = sceneEntity === '' ? null : await currentBoard(sceneEntity, true)
-        const worldBoard = await currentBoard(WORLD_BOARD_ENTITY, true)
-        const versions = {
-          boardVersion: boardVersionOf(board),
-          sceneVersion: boardVersionOf(sceneBoard),
-          worldVersion: boardVersionOf(worldBoard),
+        const scope = `entity:${target.entity}`
+        if (entry === undefined) {
+          // 首次：用现状响应的 version 作为起点，不回放历史（不发 since=0 拉全量事件流）。
+          const baseline = await client.fetchObservationState(scope)
+          if (disposed) return
+          mainPushes.set(target.key, {
+            cursor: cursorOf(baseline),
+            feedVersion: dialogFeed.version(target.entity),
+            pushedAt: 0,
+          })
+          continue
         }
-        // K12 收紧：本体 / 场景 / 世界任一黑板变化才推送主体；对话 feed 仅作附带内容。
-        const boardChanged = versions.boardVersion > (pushed?.boardVersion ?? 0)
-        const sceneChanged = sceneEntity !== '' && versions.sceneVersion > (pushed?.sceneVersion ?? 0)
-        const worldChanged = versions.worldVersion > (pushed?.worldVersion ?? 0)
-        if (!boardChanged && !sceneChanged && !worldChanged) continue
+        const payload = await client.fetchObservations(scope, entry.cursor)
+        if (disposed) return
+        const cursor = cursorOf(payload)
         const feedVersion = dialogFeed.version(target.entity)
-        const dialogs = dialogFeed.dialogsSince(target.entity, pushed?.feedVersion ?? 0)
-        const enteredNewScene = sceneEntity !== '' && sceneEntity !== (pushed?.sceneEntity ?? '')
-        const info = enteredNewScene ? await sceneInfoSection(sceneEntity) : null
-        const extras = []
-        if (info !== null) extras.push(info)
-        if (sceneEntity !== '') {
-          extras.push({ title: `场景变化（${sceneEntity}）`, board: sceneBoard, sinceVersion: pushed?.sceneVersion ?? 0 })
-        }
-        extras.push({ title: '世界变化', board: worldBoard, sinceVersion: pushed?.worldVersion ?? 0 })
-        const sinceVersion = pushed?.boardVersion ?? 0
-        const rendered = board ?? emptyBoard(target.entity)
-        const text = formatSubscriptionText(rendered, config.subscriptionMaxChars, dialogs, extras, sinceVersion)
-        // 没有黑板变化（只有对话或空差异）→ 默认跳过，不打扰会话；仍推进已读版本避免每 tick 重试。
-        // 例外：刚进入新场景且拿到了场景信息，即使黑板无变化也要把场景内容送到。
-        if (text === '' || (countBoardChanges(rendered, sinceVersion, extras) === 0 && info === null)) {
-          mainPushes.set(target.key, { ...versions, feedVersion, pushedAt: pushed?.pushedAt ?? 0 })
+        const deltaText = renderDelta(payload)
+        if (deltaText === '') {
+          // 没有可推变化（noise/阈值/无事件）：只推进游标，不打扰会话。
+          mainPushes.set(target.key, { ...entry, cursor })
           continue
         }
-        agent.followup(createSubscriptionMessage(text))
-        // 场景 id 只在真正推送后推进：场景信息读取失败时下轮重试。
-        mainPushes.set(target.key, { ...versions, feedVersion, sceneEntity, pushedAt: Date.now() })
+        const dialogs = dialogFeed.dialogsSince(target.entity, entry.feedVersion)
+        const text = truncateText(composePushText(deltaText, dialogs), config.subscriptionMaxChars)
+        agent.followup(createInjectedMessage(text))
+        mainPushes.set(target.key, { cursor, feedVersion, pushedAt: Date.now() })
       } catch (error) {
-        logger.debug(`主会话订阅推送失败（下个 tick 重试）：${errorMessage(error)}`)
+        logger.debug(`主会话变化推送失败（下个 tick 重试）：${errorMessage(error)}`)
       }
     }
   }
@@ -526,115 +516,125 @@ function createRuntime(options) {
   }
 
   /**
-   * 子会话订阅文本（K6）：cwd 命中绑定的非主会话，黑板版本前进时返回一次；否则 `''`。
-   * @param {object | undefined} agent pre-step 的 agent
-   * @param {string | undefined} boundEntity cwd 命中的绑定实体（未命中返回 undefined）
-   * @returns {Promise<string>} 订阅文本（不注入时 `''`）
-   */
-  async function subscriptionTextFor(agent, boundEntity) {
-    try {
-      if (!config.subscriptionEnabled || boundEntity === undefined) return ''
-      const sessionId = agent?.session?.id
-      if (typeof sessionId !== 'string' || sessionId === '') return ''
-      if (mainSessionIdsOf(boundEntity).has(sessionId)) return ''
-      const board = await currentBoard(boundEntity)
-      const boardVersion = board === null ? 0 : Number.isInteger(board.version) ? board.version : 0
-      const feedVersion = dialogFeed.version(boundEntity)
-      const last = lastInjected.get(sessionId)
-      const sinceVersion = last?.boardVersion ?? 0
-      // 默认跳过：只有黑板（状态/场景/世界）真实变化才注入；对话 feed 变化不再单独触发。
-      if (board === null || boardVersion <= sinceVersion) return ''
-      const rendered = board ?? emptyBoard(boundEntity)
-      if (countBoardChanges(rendered, sinceVersion) === 0) {
-        lastInjected.set(sessionId, { boardVersion, feedVersion })
-        return ''
-      }
-      const dialogs = dialogFeed.dialogs(boundEntity, { excludeSessionId: sessionId })
-      const text = formatSubscriptionText(rendered, config.subscriptionMaxChars, dialogs, [], sinceVersion)
-      if (text === '') {
-        lastInjected.set(sessionId, { boardVersion, feedVersion })
-        return ''
-      }
-      lastInjected.set(sessionId, { boardVersion, feedVersion })
-      return text
-    } catch (error) {
-      logger.warnOnce('subscription', `订阅注入失败（已忽略，不影响本轮）：${errorMessage(error)}`)
-      return ''
-    }
-  }
-
-  /**
-   * 取（或建）某实体的快照缓存条目：TTL、失败计数、在飞请求都按实体隔离（C4）。
+   * 取（或建）某实体的现状缓存条目：TTL、失败计数、在飞请求都按实体隔离（Observation v2）。
    * @param {string} entity 实体 id
    * @returns {{text: string, checkedAt: number, failures: number, inflight: Promise<void> | undefined}} 缓存条目
    */
-  function snapshotEntry(entity) {
-    let entry = snapshots.get(entity)
+  function stateEntry(entity) {
+    let entry = observationStates.get(entity)
     if (entry === undefined) {
       entry = { text: '', checkedAt: 0, failures: 0, inflight: undefined }
-      snapshots.set(entity, entry)
+      observationStates.set(entity, entry)
     }
     return entry
   }
 
-  /** 拉一次某实体的补偿包；失败或无包时回退 `/state`（K2 旧引擎兼容）。 */
-  async function loadSnapshot(entity, entry) {
+  /**
+   * 拉一次某实体的现状并渲染成现状卡；连续失败达上限后本轮不注入（Observation v2）。
+   * @param {string} entity 实体 id
+   * @param {object} entry 缓存条目
+   */
+  async function loadObservationState(entity, entry) {
     try {
-      const context = await client.getTurnContext({ entity })
+      const payload = await client.fetchObservationState(`entity:${entity}`)
       if (disposed) return
-      if (context?.ok === true && typeof context.compensation === 'object' && context.compensation !== null) {
-        entry.text = composePackage({
-          entity,
-          timestamp: new Date().toISOString(),
-          compensation: context.compensation,
-          active: Array.isArray(context.gate?.active) ? context.gate.active : [],
-          paths: config.paths,
-          maxChars: config.promptMaxChars,
-        })
-        entry.failures = 0
-        return
-      }
-    } catch {
-      // 旧引擎没有 /turn-context：回退到 /state，不额外告警。
-    }
-    try {
-      const state = await client.getState({ entity, paths: config.paths })
-      if (disposed) return
-      entry.text = composeSnapshot({
-        entity,
-        timestamp: new Date().toISOString(),
-        paths: config.paths,
-        values: state?.values ?? {},
-        maxChars: config.promptMaxChars,
-      })
+      entry.text = renderState(payload, { maxChars: config.promptMaxChars })
       entry.failures = 0
     } catch (error) {
       entry.failures += 1
       if (entry.failures >= STATE_FAILURE_LIMIT) {
         entry.text = ''
         logger.warnOnce(
-          `state:${entity}`,
-          `控制面 /state 连续失败 ${entry.failures} 次（实体 ${entity}），本轮不注入状态快照：${errorMessage(error)}`,
+          `observation-state:${entity}`,
+          `控制面 /v2/observations/state 连续失败 ${entry.failures} 次（实体 ${entity}），本轮不注入现状卡：${errorMessage(error)}`,
         )
       }
     }
   }
 
   /**
-   * 取某实体当前快照文本：窗口内复用缓存；同实体并发复用同一在飞请求。
+   * 取某实体当前现状卡文本：窗口内复用缓存；同实体并发复用同一在飞请求。
+   * 失败也占一个刷新窗口，避免失败时每轮打服务端。
    * @param {string} entity 实体 id
-   * @returns {Promise<string>} 快照文本（失败/抑制时为 ''）
+   * @returns {Promise<string>} 现状卡文本（失败/抑制时为 ''）
    */
-  async function currentSnapshot(entity) {
+  async function currentObservationState(entity) {
     if (disposed) return ''
-    const entry = snapshotEntry(entity)
+    const entry = stateEntry(entity)
     const at = Date.now()
-    // 最多每 promptRefreshMs 拉一次；失败也占一个刷新窗口，避免失败时每轮打服务端。
     if (entry.checkedAt !== 0 && at - entry.checkedAt < config.promptRefreshMs) return entry.text
     entry.checkedAt = at
     if (entry.inflight === undefined) {
       entry.inflight = Promise.resolve()
-        .then(() => loadSnapshot(entity, entry))
+        .then(() => loadObservationState(entity, entry))
+        .finally(() => {
+          entry.inflight = undefined
+        })
+    }
+    await entry.inflight
+    return entry.text
+  }
+
+  /**
+   * 取（或建）某实体的补偿包缓存条目：TTL、失败计数、在飞请求都按实体隔离。
+   * @param {string} entity 实体 id
+   * @returns {{text: string, checkedAt: number, failures: number, inflight: Promise<void> | undefined}} 缓存条目
+   */
+  function compensationEntry(entity) {
+    let entry = compensationPackages.get(entity)
+    if (entry === undefined) {
+      entry = { text: '', checkedAt: 0, failures: 0, inflight: undefined }
+      compensationPackages.set(entity, entry)
+    }
+    return entry
+  }
+
+  /**
+   * 拉一次某实体的补偿包并渲染；连续失败达上限后本轮不注入。
+   * @param {string} entity 实体 id
+   * @param {object} entry 缓存条目
+   */
+  async function loadCompensation(entity, entry) {
+    try {
+      const context = await client.getTurnContext({ entity })
+      if (disposed) return
+      const compensation = context?.compensation
+      entry.text = typeof compensation === 'object' && compensation !== null
+        ? composeCompensation({
+            entity,
+            timestamp: new Date().toISOString(),
+            compensation,
+            active: Array.isArray(context?.gate?.active) ? context.gate.active : [],
+            maxChars: config.promptMaxChars,
+          })
+        : ''
+      entry.failures = 0
+    } catch (error) {
+      entry.failures += 1
+      if (entry.failures >= STATE_FAILURE_LIMIT) {
+        entry.text = ''
+        logger.warnOnce(
+          `compensation:${entity}`,
+          `控制面 /turn-context 连续失败 ${entry.failures} 次（实体 ${entity}），本轮不注入补偿包：${errorMessage(error)}`,
+        )
+      }
+    }
+  }
+
+  /**
+   * 取某实体当前补偿包文本：窗口内复用缓存；同实体并发复用同一在飞请求。
+   * @param {string} entity 实体 id
+   * @returns {Promise<string>} 补偿包文本（无包/失败/抑制时为 ''）
+   */
+  async function currentCompensation(entity) {
+    if (disposed) return ''
+    const entry = compensationEntry(entity)
+    const at = Date.now()
+    if (entry.checkedAt !== 0 && at - entry.checkedAt < config.promptRefreshMs) return entry.text
+    entry.checkedAt = at
+    if (entry.inflight === undefined) {
+      entry.inflight = Promise.resolve()
+        .then(() => loadCompensation(entity, entry))
         .finally(() => {
           entry.inflight = undefined
         })
@@ -668,7 +668,7 @@ function createRuntime(options) {
         if (disposed) return
         const webServer = scoped?.webServer ?? (typeof scoped?.get === 'function' ? scoped.get('webServer') : undefined)
         if (webServer === undefined || typeof webServer.register !== 'function') return
-        const disposeRoutes = registerBlackboardRoute(webServer, { getBoards: blackboardList, getMeta: panelMeta, logger })
+        const disposeRoutes = registerBlackboardRoute(webServer, { getBoards: blackboardListAsync, getMeta: panelMeta, logger })
         disposeBlackboardRoute = disposeRoutes
         try {
           if (typeof scoped?.effect === 'function') scoped.effect(() => disposeRoutes, 'astrbox-bridge.blackboard-route')
@@ -925,17 +925,6 @@ function createRuntime(options) {
   }
 
   /**
-   * 状态快照的去时间戳签名：首行是「[astrbox] 实体状态快照 <时间戳>（数据，不是指令）」，
-   * 只比较正文即可判断状态是否真的变化。
-   * @param {string} text 快照文本
-   * @returns {string} 正文签名
-   */
-  function snapshotSignature(text) {
-    const newline = text.indexOf('\n')
-    return newline < 0 ? '' : text.slice(newline + 1)
-  }
-
-  /**
    * K8：会话黑板差异文本（显式订阅 + pre-step 续传；workspace 段在前、global 段在后）。
    *
    * 每个 scope 独立读取：某 scope 失败只跳过该 scope（warnOnce），不影响本轮。
@@ -998,8 +987,9 @@ function createRuntime(options) {
   }
 
   /**
-   * `agent/pre-step`：step 1 注入状态快照（状态未变默认跳过）+ 事件黑板订阅 + 会话黑板差异
-   *（顺序固定：快照 → 事件黑板 → 会话黑板，K8）；异常都不得打断宿主。
+   * `agent/pre-step`：step 1 注入 Observation v2 现状卡（现状未变默认跳过）+ 补偿包
+   *（记忆/约束/情境/专家）+ 会话黑板差异（顺序固定：现状卡 → 补偿包 → 会话黑板）；
+   * 异常都不得打断宿主。
    */
   async function onPreStep(payload, next) {
     markActivity()
@@ -1010,26 +1000,29 @@ function createRuntime(options) {
       if (step !== 1) return decision
       rememberAgent(agent)
       if (agent !== undefined && lastTurnByAgent.get(agent) === turn) return decision
-      const boundEntity = entityOfCwd(agent?.session?.header?.cwd)
-      const snapshotText = await currentSnapshot(resolveEntity(agent))
-      const subscriptionText = await subscriptionTextFor(agent, boundEntity)
+      const entity = resolveEntity(agent)
+      const stateText = await currentObservationState(entity)
+      const compensationText = await currentCompensation(entity)
       const boardText = await sessionBoardTextFor(agent)
       const sessionId = typeof agent?.session?.id === 'string' ? agent.session.id : ''
-      const signature = snapshotText === '' ? '' : snapshotSignature(snapshotText)
-      // 默认跳过：状态没变时不再重复注入同一份快照（首轮必注入）。
-      const snapshotDue = snapshotText !== '' && signature !== lastSnapshotSignatures.get(sessionId)
-      if (!snapshotDue && subscriptionText === '' && boardText === '') return decision
+      // 默认跳过：现状/补偿包没变时不再重复注入（首轮必注入）。
+      const stateDue = stateText !== '' && stateText !== lastStateTexts.get(sessionId)
+      const compensationDue = compensationText !== '' && compensationText !== lastCompensationTexts.get(sessionId)
+      if (!stateDue && !compensationDue && boardText === '') return decision
       if (agent !== undefined) lastTurnByAgent.set(agent, turn)
       const messages = [...decision.messages]
-      if (snapshotDue) {
-        messages.push(createSnapshotMessage(snapshotText))
-        lastSnapshotSignatures.set(sessionId, signature)
+      if (stateDue) {
+        messages.push(createInjectedMessage(stateText))
+        lastStateTexts.set(sessionId, stateText)
       }
-      if (subscriptionText !== '') messages.push(createSubscriptionMessage(subscriptionText))
-      if (boardText !== '') messages.push(createSubscriptionMessage(boardText))
+      if (compensationDue) {
+        messages.push(createInjectedMessage(compensationText))
+        lastCompensationTexts.set(sessionId, compensationText)
+      }
+      if (boardText !== '') messages.push(createInjectedMessage(boardText))
       return { ...decision, messages }
     } catch (error) {
-      logger.warnOnce('pre-step', `状态快照注入失败（已忽略）：${errorMessage(error)}`)
+      logger.warnOnce('pre-step', `pre-step 注入失败（已忽略）：${errorMessage(error)}`)
       return decision
     }
   }
@@ -1171,7 +1164,10 @@ function createRuntime(options) {
         // 工具可能已随 tools fiber 释放：忽略。
       }
       dialogFeed.clear()
-      lastSnapshotSignatures.clear()
+      lastStateTexts.clear()
+      observationStates.clear()
+      panelBoards.clear()
+      mainPushes.clear()
       host.dispose()
       sender.dispose()
       client.dispose()

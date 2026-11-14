@@ -105,7 +105,7 @@ async function startFixture() {
   })
   const store = createBoardSubscriptionStore({ path: join(TEST_DIR, `sub-${seq}.json`) })
   const client = createControlClient({ socketPath: server.socketPath, requestTimeoutMs: 2000 })
-  const bindings = [{ botId: 'bot1', cwd: '/home/ruicat/Desktop/Neko', entity: '猫猫', label: 'Neko' }]
+  const bindings = [{ botId: 'bot1', cwd: '/work/Neko', entity: '猫猫', label: 'Neko' }]
   const tool = createSessionBoardTool({ client, store, getBindings: () => bindings })
   return { server, control, store, client, tool, requests: server.requests }
 }
@@ -123,7 +123,7 @@ test('身份只从 exec.agent：read 的 workspace/session 参数来自 cwd 与�
   t.after(() => fixture.server.close())
   const result = await fixture.tool.execute(
     { op: 'read', scope: 'workspace', since: 6 },
-    makeExec('session-caller', '/home/ruicat/Desktop/Neko'),
+    makeExec('session-caller', '/work/Neko'),
   )
   assert.equal(result.ok, true)
   assert.equal(result.version, 7)
@@ -133,7 +133,7 @@ test('身份只从 exec.agent：read 的 workspace/session 参数来自 cwd 与�
   assert.equal(result.entries[0].region, 'session-other')
   const request = fixture.requests.find((item) => item.method === 'GET')
   assert.match(request.url, /scope=workspace/)
-  assert.match(request.url, /workspace=%2Fhome%2Fruicat%2FDesktop%2FNeko/)
+  assert.match(request.url, /workspace=%2Fwork%2FNeko/)
   assert.match(request.url, /since=6/)
 })
 

@@ -197,3 +197,120 @@ export async function runPreStep(handler, payload) {
   const messages = payload.messages ?? []
   return handler({ messages, ...payload }, async () => ({ kind: 'enter', messages }))
 }
+
+/** 假控制面默认的 Observation v2 预算（契约 §2）。 */
+const OBSERVATION_BUDGET = Object.freeze({ maxItems: 12, maxChars: 1200, coalesceMs: 60000 })
+
+/**
+ * 建一个模拟 K1 控制面 + Observation v2 的 UDS 服务（插件测试共用）。
+ *
+ * 支持 `/tick`、`/session-event`、`/entities`、`/state`、`/turn-context`、
+ * `/v2/observations`、`/v2/observations/state`；其余路径 404。`control.observations` / `control.observationStates`
+ * 按实体提供夹具（`{version, events|entries}`）。
+ * @param {{stateBody?: object}} [options] 初始 `/state` 响应
+ * @returns {Promise<{server: object, control: object}>} 服务与服务端开关
+ */
+export async function startBridgeServer(options = {}) {
+  const control = {
+    stateMode: 'ok',
+    stateBody: options.stateBody ?? { ok: true, entity: '猫猫', values: {}, missing: [], bytes: 0 },
+    stateByEntity: null,
+    entitiesBody: { entities: [] },
+    tickStatus: 200,
+    tickDelayMs: 5,
+    ticksCompleted: 0,
+    /** 变化流夹具：entity → `{version, events}`；缺失 = 空流（version 0）。 */
+    observations: {},
+    /** 现状夹具：entity → `{version, entries}`；缺失 = 无现状。 */
+    observationStates: {},
+    /** 补偿包夹具：`{ok, compensation, gate}`；默认无补偿包。 */
+    turnContext: { ok: true, compensation: null },
+    /** `fail` 时两个 v2 端点都返回 500（模拟控制面不可用）。 */
+    observationMode: 'ok',
+  }
+  const server = await startControlServer((req, res) => {
+    const url = new URL(req.url, 'http://localhost')
+    if (url.pathname === '/tick') {
+      setTimeout(() => {
+        try {
+          if (control.tickStatus === 409) {
+            writeJson(res, 409, { ok: false, error: { code: 'tick_busy', message: 'busy' } })
+          } else {
+            writeJson(res, 200, { ok: true, tickId: 't', status: 'ok', transitions: 0, conflicts: 0, errors: [] })
+          }
+        } catch {
+          // 客户端已断开（dispose 场景）：忽略。
+        } finally {
+          control.ticksCompleted += 1
+        }
+      }, control.tickDelayMs)
+      return
+    }
+    if (url.pathname === '/turn-context') {
+      writeJson(res, 200, control.turnContext)
+      return
+    }
+    if (url.pathname === '/session-event') {
+      writeJson(res, 200, { ok: true, applied: 'logged' })
+      return
+    }
+    if (url.pathname === '/entities') {
+      writeJson(res, 200, control.entitiesBody)
+      return
+    }
+    if (url.pathname === '/state') {
+      if (control.stateMode === 'fail') {
+        writeJson(res, 500, { ok: false, error: { code: 'internal', message: 'boom' } })
+        return
+      }
+      const entity = url.searchParams.get('entity')
+      const perEntity = control.stateByEntity !== null && entity !== null ? control.stateByEntity[entity] : undefined
+      writeJson(res, 200, perEntity ?? control.stateBody)
+      return
+    }
+    if (url.pathname === '/v2/observations' || url.pathname === '/v2/observations/state') {
+      if (control.observationMode === 'fail') {
+        writeJson(res, 500, { ok: false, error: { code: 'internal', message: 'observation boom' } })
+        return
+      }
+      const scope = url.searchParams.get('scope') ?? ''
+      if (scope.trim() === '') {
+        writeJson(res, 400, { ok: false, error: { code: 'bad_request', message: 'scope 必填' } })
+        return
+      }
+      const entity = scope.startsWith('entity:') ? scope.slice('entity:'.length) : ''
+      if (url.pathname === '/v2/observations/state') {
+        const source = control.observationStates[entity] ?? { version: 0, entries: [] }
+        writeJson(res, 200, {
+          ok: true,
+          scope,
+          version: Number.isInteger(source.version) ? source.version : 0,
+          entries: Array.isArray(source.entries) ? source.entries : [],
+          truncated: false,
+          budget: OBSERVATION_BUDGET,
+        })
+        return
+      }
+      const since = Number(url.searchParams.get('since') ?? 0)
+      const source = control.observations[entity] ?? { version: 0, events: [] }
+      const version = Number.isInteger(source.version) ? source.version : 0
+      const events = (Array.isArray(source.events) ? source.events : []).filter((event) => (event.seq ?? 0) > (Number.isFinite(since) ? since : 0))
+      writeJson(res, 200, {
+        ok: true,
+        scope,
+        version,
+        since: Number.isFinite(since) ? since : 0,
+        cursor: events.length > 0 ? events.at(-1).seq : version,
+        events,
+        truncated: false,
+        dropped: 0,
+        budget: OBSERVATION_BUDGET,
+        policyVersion: 2,
+      })
+      return
+    }
+    writeJson(res, 404, { ok: false, error: { code: 'not_found', message: url.pathname } })
+  })
+  return { server, control }
+}
+

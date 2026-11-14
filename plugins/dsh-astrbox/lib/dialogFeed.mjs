@@ -15,8 +15,8 @@ export const DEFAULT_DIALOG_EXCERPT_CHARS = 160
 /** 默认每实体保留的最近对话条数（K10：dialogFeedSize）。 */
 export const DEFAULT_DIALOG_FEED_SIZE = 20
 
-/** 桥接自己注入的文本前缀：这些 user 消息不算「用户说的话」（避免订阅/转达回灌）。 */
-const INJECTED_PREFIXES = Object.freeze(['[astrbox]', '[astrbox-subscription]', '[astrbox-relay]', '[context-guard]'])
+/** 桥接自己注入的文本前缀：这些 user 消息不算「用户说的话」（避免推送回灌）。 */
+const INJECTED_PREFIXES = Object.freeze(['[astrbox-observation]', '[astrbox-state]', '[astrbox-board]', '[astrbox-relay]', '[context-guard]'])
 
 /**
  * 取一条消息的纯文本（text 块拼接；空白视为无文本）。
@@ -53,6 +53,36 @@ export function truncateDialogExcerpt(text, maxChars) {
  */
 function isInjectedText(text) {
   return INJECTED_PREFIXES.some((prefix) => text.startsWith(prefix))
+}
+
+/**
+ * 时间戳 → 本地 `HH:MM:SS`；非法值返回 `--:--:--`（对话行的时间部分）。
+ * @param {unknown} at epoch 毫秒
+ * @returns {string} 时间文本
+ */
+function formatDialogTime(at) {
+  const date = new Date(Number.isFinite(at) ? at : NaN)
+  if (Number.isNaN(date.getTime())) return '--:--:--'
+  const pad = (value) => String(value).padStart(2, '0')
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+/**
+ * 一条对话摘要行：`- <label>：用户「…」→ 回复「…」（HH:MM:SS）`；两侧都空返回空串。
+ * label 取条目的会话标记（如 `私聊(85D47757)`），缺省回退 `主体`/`QQ`。
+ * @param {unknown} entry 对话条目（record 写入的形状）
+ * @returns {string} 行文本
+ */
+export function formatDialogLine(entry) {
+  if (entry === null || typeof entry !== 'object') return ''
+  const kind = entry.kind === '主体' ? '主体' : 'QQ'
+  const label = typeof entry.label === 'string' && entry.label.trim() !== '' ? entry.label.trim() : kind
+  const userText = typeof entry.userText === 'string' && entry.userText.trim() !== '' ? entry.userText.trim() : '—'
+  const assistantText = typeof entry.assistantText === 'string' && entry.assistantText.trim() !== ''
+    ? entry.assistantText.trim()
+    : '—'
+  if (userText === '—' && assistantText === '—') return ''
+  return `- ${label}：用户「${userText}」→ 回复「${assistantText}」（${formatDialogTime(entry.at)}）`
 }
 
 /**

@@ -3,6 +3,9 @@
  *
  * 零依赖、不引入 schemastery：未知键、类型错、负数、路径无分隔符一律抛错并指名键；
  * 合法配置补齐 K2 冻结的默认值。默认值只在此处维护。
+ *
+ * 推送过滤/预算已由服务端 `observation.json` 策略接管：本文件不再有
+ * `paths/personaPaths/scenePaths/subscriptionPaths/subscriptionIgnore/subscriptionMaxEntries`。
  */
 import { dirname, resolve } from 'node:path'
 import { homedir } from 'node:os'
@@ -14,55 +17,20 @@ export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', 
 /**
  * 统一插件数据根（与 qqbot 插件共用）：`~/.dsh-neko`。
  *
- * - `Neko/data/`：Neko 运行状态（entities/blackboard/scripts/socket…）
+ * - `Neko/data/`：Neko 运行状态（entities/scripts/socket…）
  * - `Neko/scripts|bin/`：共享 Neko 脚本系统
  * - `bots/<entity>/workspace/`：每个机器人（实体）的工作区
  * - `state/`：桥接插件的会话级状态（订阅间隔、主会话提示词、黑板游标）
  */
 export const NEKO_HOME = resolve(homedir(), '.dsh-neko')
 
-/** 默认 8 条白名单路径（C12；均不含 R18 字段）。 */
-export const DEFAULT_PATHS = Object.freeze([
-  '状态.情绪',
-  '身体.体力',
-  '心情.当前',
-  '关系.亲密',
-  '位置.场景',
-  '睡眠.疲劳',
-  '社交.互动需求',
-  '任务.当前任务',
-])
-
-/** 默认场景信息路径（进入场景时随推送带出；空数组 = 关闭场景信息）。 */
-export const DEFAULT_SCENE_PATHS = Object.freeze([
-  '名称',
-  '类型',
-  '特征',
-  '氛围',
-  '物品',
-  '连接',
-  '在场',
-])
-
-/** 默认人设路径（K5；4 项基础人设 + `人格` 子集，默认不含 R18 字段）。 */
-export const DEFAULT_PERSONA_PATHS = Object.freeze([
-  '种族',
-  '体型',
-  '毛色',
-  '自称',
-  '对主人称呼',
-  '人格.MBTI',
-  '人格.气质类型',
-])
+/** 固定运行配置：`~/.dsh-neko/Neko/data/bridge.config.json`（patch 不再承载）。 */
+export const DEFAULT_CONFIG_PATH = resolve(NEKO_HOME, 'Neko', 'data', 'bridge.config.json')
 
 /** K2 冻结的默认配置。 */
 export const DEFAULT_CONFIG = Object.freeze({
   socketPath: resolve(NEKO_HOME, 'Neko', 'data', 'dsh-control.sock'),
   entity: '猫猫',
-  paths: DEFAULT_PATHS,
-  personaPaths: DEFAULT_PERSONA_PATHS,
-  /** 进入新场景时推送的场景字段（`位置.场景` 变化触发）。 */
-  scenePaths: DEFAULT_SCENE_PATHS,
   personaMaxChars: 600,
   promptMaxChars: 1200,
   promptRefreshMs: 5000,
@@ -74,11 +42,11 @@ export const DEFAULT_CONFIG = Object.freeze({
   clockIdleStepMinutes: 1,
   /** 最近多久内有会话活动算「活跃」（毫秒）。 */
   clockActiveWindowMs: 600000,
-  /** 事件黑板订阅总开关（K4）：false = 不推主会话、不注入子会话。 */
+  /** 变化推送总开关：false = 不推主会话。 */
   subscriptionEnabled: true,
-  /** 主会话主动读取黑板的最小间隔（毫秒，K5）。 */
+  /** 主会话主动拉取变化流的最小间隔（毫秒，Observation v2）。 */
   subscriptionMainIntervalMs: 600000,
-  /** 单条订阅文本上限（字符，超限截断并追加 `…（截断）`，K4）。 */
+  /** 单条变化推送文本上限（字符，含附带对话段，Observation v2）。 */
   subscriptionMaxChars: 2000,
   /** 对话摘要每条 user/assistant 文本的字符上限（K10）。 */
   dialogExcerptChars: 160,
@@ -120,7 +88,7 @@ const INTEGER_KEYS = Object.freeze({
   warningAfterMs: 0,
 })
 
-/** 布尔键（K4 订阅开关）。 */
+/** 布尔键（变化推送开关 / 会话黑板开关）。 */
 const BOOLEAN_KEYS = Object.freeze(['subscriptionEnabled', 'boardEnabled'])
 
 /** 必须为非空字符串的键。 */
@@ -132,11 +100,26 @@ const STRING_KEYS = Object.freeze(['tickScope', 'subscriptionStatePath', 'mainSe
 /** 必须是绝对或相对路径且含分隔符的键。 */
 const PATH_KEYS = Object.freeze(['socketPath', 'workspacePrefix'])
 
-const KNOWN_KEYS = new Set(Object.keys(DEFAULT_CONFIG))
+const KNOWN_KEYS = new Set([...Object.keys(DEFAULT_CONFIG), 'configPath'])
+
+/**
+ * 已退役的旧键：读到就忽略，不按 unknown key 抛错。
+ *
+ * 推送过滤/预算已移到服务端 `observation.json`；生产环境的 `bridge.config.json`
+ * 可能还带着这些键，插件启动不能因此失败。
+ */
+const RETIRED_KEYS = new Set([
+  'paths',
+  'personaPaths',
+  'scenePaths',
+  'subscriptionPaths',
+  'subscriptionIgnore',
+  'subscriptionMaxEntries',
+])
 
 /**
  * 抛出一条指名键的配置错误。
- * @param {string} key 配置键（paths 元素写成 `paths[0]`）
+ * @param {string} key 配置键
  * @param {string} reason 原因
  */
 function invalid(key, reason) {
@@ -184,23 +167,6 @@ function checkInteger(key, value, min) {
 }
 
 /**
- * 校验并规范化点分路径数组：元素必须是非空字符串；空数组合法（`personaPaths=[]` 关闭人设）。
- * @param {string} key 配置键名（错误信息与元素下标都用它）
- * @param {unknown} value 原始值
- * @returns {string[]} 冻结的路径数组
- */
-function checkDotPaths(key, value) {
-  if (!Array.isArray(value)) invalid(key, `expected an array of dot paths, got ${describeValue(value)}`)
-  const paths = value.map((item, index) => {
-    if (typeof item !== 'string' || item.trim() === '') {
-      invalid(`${key}[${index}]`, `expected a non-empty dot path, got ${describeValue(item)}`)
-    }
-    return item
-  })
-  return Object.freeze(paths)
-}
-
-/**
  * 把行配置规范化为带默认值的完整配置；非法输入抛错并指名键（C11）。
  * @param {object | undefined} raw 行配置
  * @returns {Readonly<object>} 冻结的完整配置
@@ -211,15 +177,11 @@ export function normalizeConfig(raw = {}) {
     throw new Error(`astrbox-bridge: invalid config: expected an object, got ${describeValue(source)}`)
   }
   for (const key of Object.keys(source)) {
-    if (!KNOWN_KEYS.has(key)) invalid(key, 'unknown key')
+    if (KNOWN_KEYS.has(key) || RETIRED_KEYS.has(key)) continue
+    invalid(key, 'unknown key')
   }
 
-  const config = {
-    ...DEFAULT_CONFIG,
-    paths: [...DEFAULT_PATHS],
-    personaPaths: [...DEFAULT_PERSONA_PATHS],
-    scenePaths: [...DEFAULT_SCENE_PATHS],
-  }
+  const config = { ...DEFAULT_CONFIG }
   for (const key of PATH_KEYS) {
     if (source[key] !== undefined) config[key] = checkPath(key, source[key])
   }
@@ -231,9 +193,6 @@ export function normalizeConfig(raw = {}) {
     if (typeof source[key] !== 'string') invalid(key, `expected a string, got ${describeValue(source[key])}`)
     config[key] = source[key]
   }
-  if (source.paths !== undefined) config.paths = checkDotPaths('paths', source.paths)
-  if (source.personaPaths !== undefined) config.personaPaths = checkDotPaths('personaPaths', source.personaPaths)
-  if (source.scenePaths !== undefined) config.scenePaths = checkDotPaths('scenePaths', source.scenePaths)
   for (const key of BOOLEAN_KEYS) {
     if (source[key] !== undefined && typeof source[key] !== 'boolean') {
       invalid(key, `expected a boolean, got ${describeValue(source[key])}`)

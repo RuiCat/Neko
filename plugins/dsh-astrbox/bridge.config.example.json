@@ -1,0 +1,18 @@
+{
+  "entity": "测试猫",
+  "promptMaxChars": 1200,
+  "promptRefreshMs": 5000,
+  "tickEveryMs": 60000,
+  "tickScope": "",
+  "clockStepMinutes": 1,
+  "clockIdleStepMinutes": 1,
+  "clockActiveWindowMs": 600000,
+  "subscriptionEnabled": true,
+  "subscriptionMainIntervalMs": 600000,
+  "subscriptionMaxChars": 2000,
+  "workspacePrefix": "__WORKSPACE_PREFIX__",
+  "functionName": "dsh_on_event",
+  "requestTimeoutMs": 2000,
+  "tickTimeoutMs": 15000,
+  "warningAfterMs": 30000
+}

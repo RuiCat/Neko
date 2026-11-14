@@ -44,16 +44,17 @@ function readSubscriptions(path) {
   return JSON.parse(readFileSync(path, 'utf8')).subscriptions
 }
 
-/** 伪控制面：`/state` 供快照、`/turn-context` 404、`/boards` 由回调决定。 */
+/** 伪控制面：`/v2/observations/state` 供现状卡、`/boards` 由回调决定。 */
 async function startBoardServer(onBoards) {
   const state = { boardsCalls: 0 }
   const server = await startControlServer((req, res) => {
-    if (req.url.startsWith('/state')) {
-      writeJson(res, 200, { ok: true, entity: '猫猫', values: { '状态.情绪': '平静' }, missing: [], bytes: 10 })
-      return
-    }
-    if (req.url.startsWith('/turn-context')) {
-      writeJson(res, 404, { ok: false, error: { code: 'not_found', message: 'no turn context' } })
+    if (req.url.startsWith('/v2/observations/state')) {
+      writeJson(res, 200, {
+        ok: true,
+        scope: 'entity:猫猫',
+        version: 1,
+        entries: [{ path: '状态.情绪', value: '平静', from: null, tier: 'normal', seq: 1, at: '2026-11-10T12:50:00Z' }],
+      })
       return
     }
     if (req.url.startsWith('/boards')) {
@@ -259,7 +260,7 @@ test('注入顺序（K8）：快照在前、会话黑板在后，每轮最多一
   const decision = await runPreStep(stub.handler('agent/pre-step'), { agent: agentOf('session-caller'), turn: 1, step: 1 })
   const texts = decision.messages.map((message) => message.content[0].text)
   assert.equal(texts.filter((text) => text.startsWith('[astrbox-board]')).length, 1)
-  const snapshotIndex = texts.findIndex((text) => text.startsWith('[astrbox]'))
+  const snapshotIndex = texts.findIndex((text) => text.startsWith('[astrbox-state]'))
   const boardIndex = texts.findIndex((text) => text.startsWith('[astrbox-board]'))
   assert.ok(snapshotIndex >= 0, texts.join('\n---\n'))
   assert.ok(boardIndex > snapshotIndex, texts.join('\n---\n'))

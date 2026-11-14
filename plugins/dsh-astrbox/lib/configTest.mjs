@@ -1,18 +1,15 @@
 /**
  * C11：配置校验（未知键 / 类型错 / 负数 / 路径无分隔符 → 抛错并指名键）
- * 与 K2 默认值（8 条非 R18 路径）。
+ * 与 K2 默认值；Observation v2 退役的配置键必须按未知键拒绝。
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { DEFAULT_PATHS, NEKO_HOME, REPO_ROOT, normalizeConfig } from './config.mjs'
-
-const R18_TERMS = ['性行为', '器官状态', '外翻', '生殖', '体液追踪', '肉棒']
+import { NEKO_HOME, REPO_ROOT, normalizeConfig } from './config.mjs'
 
 test('默认配置与 K2 冻结值一致', () => {
   const config = normalizeConfig()
   assert.equal(config.socketPath, `${NEKO_HOME}/Neko/data/dsh-control.sock`)
   assert.equal(config.entity, '猫猫')
-  assert.deepEqual([...config.paths], [...DEFAULT_PATHS])
   assert.equal(config.promptMaxChars, 1200)
   assert.equal(config.promptRefreshMs, 5000)
   assert.equal(config.tickEveryMs, 60000)
@@ -25,11 +22,20 @@ test('默认配置与 K2 冻结值一致', () => {
   assert.ok(Object.isFrozen(config))
 })
 
-test('默认 paths 为 8 条且不含 R18 字段', () => {
-  assert.equal(DEFAULT_PATHS.length, 8)
-  assert.equal(normalizeConfig().paths.length, 8)
-  for (const path of DEFAULT_PATHS) {
-    for (const term of R18_TERMS) assert.ok(!path.includes(term), `${path} 不应含 ${term}`)
+test('退役的推送配置键被忽略而不是报错（旧 bridge.config.json 仍能启动）', () => {
+  const retired = [
+    { paths: ['状态.情绪'] },
+    { personaPaths: ['种族'] },
+    { scenePaths: ['名称'] },
+    { subscriptionPaths: ['状态.情绪'] },
+    { subscriptionIgnore: ['代谢.心率'] },
+    { subscriptionMaxEntries: 3 },
+  ]
+  for (const raw of retired) {
+    const key = Object.keys(raw)[0]
+    const config = normalizeConfig({ ...raw, entity: '猫猫' })
+    assert.equal(config.entity, '猫猫', key)
+    assert.equal(Object.hasOwn(config, key), false, key)
   }
 })
 
@@ -42,8 +48,6 @@ test('类型错逐键抛错并指名键', () => {
     [{ socketPath: 42 }, 'socketPath'],
     [{ entity: '' }, 'entity'],
     [{ entity: 3 }, 'entity'],
-    [{ paths: '状态.情绪' }, 'paths'],
-    [{ paths: ['状态.情绪', 7] }, 'paths[1]'],
     [{ promptMaxChars: 1.5 }, 'promptMaxChars'],
     [{ promptRefreshMs: -1 }, 'promptRefreshMs'],
     [{ tickEveryMs: -5 }, 'tickEveryMs'],
@@ -71,15 +75,10 @@ test('tickEveryMs=0 与 promptRefreshMs=0 合法', () => {
   assert.equal(config.tickScope, '实体.猫猫')
 })
 
-test('自定义合法配置被接受且 paths 被复制', () => {
-  const paths = ['状态.情绪']
-  const config = normalizeConfig({ paths, promptMaxChars: 300, entity: '测试猫' })
-  assert.deepEqual([...config.paths], paths)
+test('自定义合法配置被接受', () => {
+  const config = normalizeConfig({ promptMaxChars: 300, entity: '测试猫' })
   assert.equal(config.promptMaxChars, 300)
   assert.equal(config.entity, '测试猫')
-  // 必须复制数组：调用方后续改动入参不得影响已规范化的配置。
-  assert.notEqual(config.paths, paths)
-  assert.ok(Object.isFrozen(config.paths))
 })
 
 test('世界时钟（K12）：新配置键的默认值与校验', () => {
@@ -102,7 +101,7 @@ test('世界时钟（K12）：新配置键的默认值与校验', () => {
   }
 })
 
-test('事件黑板订阅（K4）：3 个新键的默认值、合法覆盖与非法值', () => {
+test('变化推送（Observation v2）：开关 / 间隔 / 文本上限的默认值、合法覆盖与非法值', () => {
   const defaults = normalizeConfig({})
   assert.equal(defaults.subscriptionEnabled, true)
   assert.equal(defaults.subscriptionMainIntervalMs, 600000)
@@ -130,6 +129,7 @@ test('事件黑板订阅（K4）：3 个新键的默认值、合法覆盖与非�
     )
   }
 })
+
 test('对话摘要 Feed（K10）：dialogExcerptChars / dialogFeedSize 默认值、覆盖与非法值', () => {
   const defaults = normalizeConfig({})
   assert.equal(defaults.dialogExcerptChars, 160)
@@ -155,6 +155,7 @@ test('对话摘要 Feed（K10）：dialogExcerptChars / dialogFeedSize 默认值
     )
   }
 })
+
 test('K28 主会话提示词状态路径：默认空串、自定义字符串、非法类型', () => {
   assert.equal(normalizeConfig({}).mainSessionPromptStatePath, '')
   assert.equal(normalizeConfig({ mainSessionPromptStatePath: '/tmp/astrbox/msp.json' }).mainSessionPromptStatePath, '/tmp/astrbox/msp.json')
@@ -212,13 +213,4 @@ test('K11 会话黑板：boardEnabled / boardSubscriptionMaxChars / boardSubscri
       JSON.stringify(raw),
     )
   }
-})
-
-test('scenePaths：默认 7 个场景字段；可覆盖；非法元素指名报错', () => {
-  const defaults = normalizeConfig({})
-  assert.deepEqual(defaults.scenePaths, ['名称', '类型', '特征', '氛围', '物品', '连接', '在场'])
-  const custom = normalizeConfig({ scenePaths: ['名称', '物品'] })
-  assert.deepEqual(custom.scenePaths, ['名称', '物品'])
-  assert.throws(() => normalizeConfig({ scenePaths: '名称' }), /invalid config key scenePaths/)
-  assert.throws(() => normalizeConfig({ scenePaths: [''] }), /invalid config key scenePaths\[0\]/)
 })

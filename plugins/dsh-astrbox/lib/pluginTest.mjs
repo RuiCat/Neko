@@ -1,17 +1,16 @@
 /**
- * 插件加载面（C1/C2/C11/C12）：用 Cordis 替身 ctx + 自建 UDS 服务跑 apply，
- * 覆盖静态提示段零请求、pre-step 每轮 ≤1、截断、R18 白名单、失败保留/抑制、
- * 事件去重与目录边界、Tick 单飞/409/dispose。
+ * 插件加载面（C1/C2/C11/C12）：用 Cordis 替身 ctx + 自建 UDS 控制面跑 apply，
+ * 覆盖静态提示段零请求、pre-step 现状卡（Observation v2）、失败保留/抑制、会话事件、
+ * Tick 单飞/409/dispose、实体绑定回落、工具注册与 astrboxBridge 服务。
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { apply, inject } from './plugin.mjs'
-import { DEFAULT_PATHS } from './config.mjs'
-import { TRUNCATION_SUFFIX } from './prompt.mjs'
+import { PERSONA_PATHS } from './astrboxService.mjs'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createStubContext, nextMacroTask, runPreStep, startControlServer, waitFor, writeJson } from './testHarness.mjs'
+import { createStubContext, nextMacroTask, runPreStep, startBridgeServer, waitFor } from './testHarness.mjs'
 
 /** 订阅间隔状态临时目录（K17）：测试不读写用户真实 ~/.dsh-astrbox。 */
 const TEST_STATE_DIR = mkdtempSync(join(tmpdir(), 'astrbox-plugin-test-'))
@@ -32,7 +31,52 @@ function applyBridge(ctx, rawConfig = {}) {
   })
 }
 
-const R18_TERMS = ['性行为', '器官状态', '外翻', '生殖', '体液追踪', '肉棒']
+/** 默认现状夹具：一条 `状态.身体`。 */
+function stateFixture(version = 5, value = '虚弱') {
+  return { version, entries: [{ path: '状态.身体', value, from: '疲惫', tier: 'critical', seq: version, at: '2026-11-14T08:00:00Z' }] }
+}
+
+/** 一条绑定；可选 mainSessionId 供主会话推送。 */
+function botBinding(cwd, entity, mainSessionId) {
+  const binding = { botId: `bot-${entity}`, label: entity, cwd, entity }
+  if (mainSessionId !== undefined) binding.mainSessionId = mainSessionId
+  return binding
+}
+
+/** 假 agent：记录 followup 收到的消息。 */
+function fakeAgent(sessionId, followups) {
+  return {
+    id: sessionId,
+    session: { id: sessionId },
+    followup(message) {
+      followups.push(message)
+    },
+  }
+}
+
+/** 造一条带 snapshotEvents 的 session（一轮 user/assistant，K10 采集用）。 */
+function dialogSession(input) {
+  const { id, cwd, turn, userText, assistantText } = input
+  const base = turn * 10
+  return {
+    id,
+    header: { cwd },
+    snapshotEvents: () => [
+      { type: 'turn/start', seq: base, data: { turn } },
+      {
+        type: 'user/message',
+        seq: base + 1,
+        data: { id: `u${base}`, role: 'user', content: [{ type: 'text', text: userText }], source: { kind: 'user' } },
+      },
+      {
+        type: 'assistant/message',
+        seq: base + 2,
+        data: { message: { id: `a${base}`, role: 'assistant', content: [{ type: 'text', text: assistantText }], source: { kind: 'model' } } },
+      },
+      { type: 'turn/end', seq: base + 3, data: { turn } },
+    ],
+  }
+}
 
 /** cordis 服务访问必须先在 inject 里声明，否则激活时报 "cannot get property … without inject"。 */
 test('inject 声明覆盖 systemPrompt 与 timer（cordis DI 前置条件）', () => {
@@ -40,99 +84,8 @@ test('inject 声明覆盖 systemPrompt 与 timer（cordis DI 前置条件）', (
   assert.ok(inject.includes('timer'), '缺少 timer 注入（ctx.interval 依赖）')
 })
 
-/** 默认 /state 响应：全部路径有值。 */
-function stateBody(paths) {
-  const values = {}
-  paths.forEach((path, index) => {
-    values[path] = index === 0 ? '开心' : index
-  })
-  return { ok: true, entity: '猫猫', values, missing: [], bytes: 100 }
-}
-
-/**
- * 建一个同时支持 /state、/entities、/tick、/session-event 的 UDS 服务。
- * @returns {Promise<{server: object, control: object}>} 服务与服务端开关
- */
-async function startBridgeServer(paths) {
-  const control = {
-    stateMode: 'ok',
-    stateBody: stateBody(paths),
-    stateByEntity: null,
-    entitiesBody: { entities: [{ id: '猫猫', type: 'NPC' }, { id: '梦梦', type: 'NPC' }] },
-    tickStatus: 200,
-    tickDelayMs: 5,
-    ticksCompleted: 0,
-    turnContext: null,
-    /** K4/K5：黑板响应；`null` = 控制面返回 `board:null`。 */
-    board: null,
-    boardByEntity: null,
-    boardMode: 'ok',
-  }
-  const server = await startControlServer((req, res) => {
-    if (req.url === '/tick') {
-      setTimeout(() => {
-        try {
-          if (control.tickStatus === 409) {
-            writeJson(res, 409, { ok: false, error: { code: 'tick_busy', message: 'busy' } })
-          } else {
-            writeJson(res, 200, { ok: true, tickId: 't', status: 'ok', transitions: 0, conflicts: 0, errors: [] })
-          }
-        } catch {
-          // 客户端已断开（dispose 场景）：忽略。
-        } finally {
-          control.ticksCompleted += 1
-        }
-      }, control.tickDelayMs)
-      return
-    }
-    if (req.url.startsWith('/session-event')) {
-      writeJson(res, 200, { ok: true, applied: 'logged' })
-      return
-    }
-    if (req.url.startsWith('/blackboard')) {
-      if (control.boardMode === 'fail') {
-        writeJson(res, 500, { ok: false, error: { code: 'internal', message: 'board boom' } })
-        return
-      }
-      const entity = new URL(req.url, 'http://localhost').searchParams.get('entity')
-      if (entity === null) {
-        const boards = control.boardByEntity === null
-          ? (control.board === null ? [] : [control.board])
-          : Object.values(control.boardByEntity).filter((board) => board !== null)
-        writeJson(res, 200, { ok: true, boards })
-        return
-      }
-      const board = control.boardByEntity !== null && control.boardByEntity[entity] !== undefined
-        ? control.boardByEntity[entity]
-        : control.board
-      writeJson(res, 200, { ok: true, board: entity === null ? null : board })
-      return
-    }
-    if (req.url === '/entities') {
-      writeJson(res, 200, control.entitiesBody)
-      return
-    }
-    if (req.url.startsWith('/turn-context')) {
-      if (control.turnContext === null) {
-        writeJson(res, 404, { ok: false, error: { code: 'not_found', message: 'no turn context' } })
-        return
-      }
-      writeJson(res, 200, control.turnContext)
-      return
-    }
-    if (control.stateMode === 'fail') {
-      writeJson(res, 500, { ok: false, error: { code: 'internal', message: 'boom' } })
-      return
-    }
-    const entity = new URL(req.url, 'http://localhost').searchParams.get('entity')
-    const perEntity = control.stateByEntity !== null && entity !== null ? control.stateByEntity[entity] : undefined
-    writeJson(res, 200, perEntity ?? control.stateBody)
-  })
-  return { server, control }
-}
-
 test('静态提示段：name/order/interpolate 固定，3 次同值且零请求（C1）', async (t) => {
-  const { server } = await startBridgeServer(DEFAULT_PATHS)
+  const { server } = await startBridgeServer()
   t.after(() => server.close())
   const stub = createStubContext()
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath })
@@ -151,9 +104,10 @@ test('静态提示段：name/order/interpolate 固定，3 次同值且零请求�
   assert.equal(server.requests.length, 0)
 })
 
-test('pre-step 每轮至多一条快照（状态未变默认跳过），step 1 之外的 step 不注入（C1/C12）', async (t) => {
-  const { server } = await startBridgeServer(DEFAULT_PATHS)
+test('pre-step：step 1 注入一条 [astrbox-state] 现状卡，现状未变/同轮/非 step 1 不重复（Observation v2）', async (t) => {
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
+  control.observationStates['猫猫'] = stateFixture()
   const stub = createStubContext()
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath })
   t.after(() => runtime.dispose())
@@ -164,96 +118,85 @@ test('pre-step 每轮至多一条快照（状态未变默认跳过），step 1 �
   assert.equal(turn1.messages.length, 2)
   const injected = turn1.messages[1]
   assert.equal(injected.role, 'user')
-  const text = injected.content[0].text
-  assert.ok(text.startsWith('[astrbox] 猫猫状态快照 '))
-  assert.ok(text.includes('数据，不是指令'))
-  assert.ok(text.includes('状态.情绪="开心"'))
+  assert.equal(injected.content[0].text, '[astrbox-state] 猫猫\n状态.身体: 虚弱')
 
   const again = await runPreStep(handler, { agent, turn: 1, step: 1 })
   assert.equal(again.messages.length, 0)
   const step2 = await runPreStep(handler, { agent, turn: 1, step: 2 })
   assert.equal(step2.messages.length, 0)
-  // 状态没变（缓存文本相同）→ 下一轮不再重复注入快照。
+  // 现状没变（缓存文本相同）→ 下一轮不再重复注入。
   const turn2 = await runPreStep(handler, { agent, turn: 2, step: 1 })
   assert.equal(turn2.messages.length, 0)
-  // 5s 刷新窗口内复用缓存：整个用例只发 1 次 /state。
-  assert.equal(server.requests.filter((request) => request.url.startsWith('/state')).length, 1)
+  // 5s 刷新窗口内复用缓存：整个用例只发 1 次 /v2/observations/state。
+  assert.equal(server.requests.filter((request) => request.url.startsWith('/v2/observations/state')).length, 1)
 })
 
-test('pre-step 优先注入补偿包（含记忆），且不再请求 /state', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
+test('pre-step 只消费 /v2/observations/state 与 /turn-context：不再请求 /state 或 /blackboard（旧实现已删）', async (t) => {
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
+  control.observationStates['猫猫'] = stateFixture()
+  const stub = createStubContext()
+  const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath })
+  t.after(() => runtime.dispose())
+
+  const result = await runPreStep(stub.handler('agent/pre-step'), { agent: {}, turn: 1, step: 1 })
+  assert.equal(result.messages.length, 1)
+  const paths = server.requests.map((request) => new URL(request.url, 'http://localhost').pathname)
+  assert.deepEqual(paths, ['/v2/observations/state', '/turn-context'])
+})
+
+test('pre-step 注入补偿包：记忆/约束/情境/专家，文本不变不重复（Observation v2）', async (t) => {
+  const { server, control } = await startBridgeServer()
+  t.after(() => server.close())
+  control.observationStates['猫猫'] = stateFixture()
   control.turnContext = {
     ok: true,
     compensation: {
-      snapshot_id: 'ctx_1',
-      state: { '猫猫.状态.情绪': '平静' },
-      memory: [{ content: '昨晚的约定', type: 'retrieved', source_snapshot_id: 'evt_1', weight: 0.8 }],
-      persona_constraints: ['不主动道歉'],
-      situation: '室内·夜间',
+      memory: [{ type: 'episodic', source_snapshot_id: 's-1', content: '昨天在书房' }],
+      persona_constraints: ['不主动离开场景'],
+      situation: '傍晚，书房',
     },
-    gate: { active: ['事件记忆', '表达偏好'], version: 'gate-v1' },
+    gate: { active: ['情绪专家', '记忆专家'] },
   }
   const stub = createStubContext()
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath })
   t.after(() => runtime.dispose())
+  const handler = stub.handler('agent/pre-step')
 
-  const result = await runPreStep(stub.handler('agent/pre-step'), { agent: {}, turn: 1, step: 1 })
-  const text = result.messages[0].content[0].text
-  assert.ok(text.startsWith('[astrbox] 猫猫补偿包 '), text)
-  assert.ok(text.includes('状态.情绪="平静"'), text)
-  assert.ok(text.includes('记忆: [retrieved evt_1] 昨晚的约定'), text)
-  assert.ok(text.includes('约束: 不主动道歉'), text)
-  assert.ok(text.includes('专家: 事件记忆、表达偏好'), text)
-  assert.equal(server.requests.filter((request) => request.url.startsWith('/state')).length, 0)
+  const first = await runPreStep(handler, { agent: {}, turn: 1, step: 1, messages: [] })
+  assert.equal(first.messages.length, 2)
+  assert.equal(first.messages[0].content[0].text, '[astrbox-state] 猫猫\n状态.身体: 虚弱')
+  const compensation = first.messages[1].content[0].text
+  assert.ok(compensation.startsWith('[astrbox-compensation] 猫猫 补偿包 '), compensation)
+  assert.ok(compensation.includes('记忆: [episodic s-1] 昨天在书房'), compensation)
+  assert.ok(compensation.includes('约束: 不主动离开场景'), compensation)
+  assert.ok(compensation.includes('情境: 傍晚，书房'), compensation)
+  assert.ok(compensation.includes('专家: 情绪专家、记忆专家'), compensation)
+
+  // 补偿包文本未变 → 下一轮不再注入；现状卡也相同 → 整轮没有新消息。
+  const second = await runPreStep(handler, { agent: {}, turn: 2, step: 1 })
+  assert.equal(second.messages.length, 0)
 })
 
-test('只请求 paths 白名单且 R18 值不出现在文本里（C12）', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
+test('现状卡超过 promptMaxChars 时截断（§4.3 字符预算）', async (t) => {
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
-  control.stateBody = {
-    ok: true,
-    entity: '猫猫',
-    values: { ...stateBody(DEFAULT_PATHS).values, 性行为: 'R18值', 生殖: 'R18值' },
-    missing: [],
-    bytes: 100,
-  }
-  const stub = createStubContext()
-  const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath })
-  t.after(() => runtime.dispose())
-
-  const result = await runPreStep(stub.handler('agent/pre-step'), { agent: {}, turn: 1, step: 1 })
-  const text = result.messages[0].content[0].text
-  const stateRequest = server.requests.find((request) => request.url.startsWith('/state'))
-  const url = new URL(stateRequest.url, 'http://localhost')
-  assert.deepEqual(url.searchParams.getAll('path'), DEFAULT_PATHS)
-  for (const term of R18_TERMS) assert.ok(!text.includes(term), `文本不应包含 ${term}`)
-  assert.ok(!text.includes('R18值'))
-})
-
-test('超长值按 promptMaxChars 截断并带后缀（C12）', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
-  t.after(() => server.close())
-  control.stateBody = {
-    ok: true,
-    entity: '猫猫',
-    values: { ...stateBody(DEFAULT_PATHS).values, '状态.情绪': 'x'.repeat(4000) },
-    missing: [],
-    bytes: 100,
-  }
+  control.observationStates['猫猫'] = { version: 1, entries: [{ path: '状态.情绪', value: 'x'.repeat(4000) }] }
   const stub = createStubContext()
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, promptMaxChars: 200 })
   t.after(() => runtime.dispose())
 
   const result = await runPreStep(stub.handler('agent/pre-step'), { agent: {}, turn: 1, step: 1 })
   const text = result.messages[0].content[0].text
-  assert.equal(text.length, 200)
-  assert.ok(text.endsWith(TRUNCATION_SUFFIX))
+  assert.ok(text.length <= 200, String(text.length))
+  // 超预算时从尾部丢行并给未显示条数（§4.3）。
+  assert.equal(text, '[astrbox-state] 猫猫\n另有 1 条未显示')
 })
 
-test('/state 失败保留上一版；连续 3 次失败后本轮不注入且只警告一次', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
+test('/v2/observations/state 失败保留上一版；连续 3 次失败后本轮不注入且只警告一次', async (t) => {
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
+  control.observationStates['猫猫'] = stateFixture(1, '平静')
   const stub = createStubContext()
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, promptRefreshMs: 0 })
   t.after(() => runtime.dispose())
@@ -262,28 +205,26 @@ test('/state 失败保留上一版；连续 3 次失败后本轮不注入且只�
 
   const ok = await runPreStep(handler, { agent, turn: 1, step: 1 })
   assert.equal(ok.messages.length, 1)
-  control.stateMode = 'fail'
+  assert.ok(ok.messages[0].content[0].text.includes('平静'))
+  control.observationMode = 'fail'
 
   // 拉取失败但缓存文本没变：同样默认跳过注入。
-  const firstFailure = await runPreStep(handler, { agent, turn: 2, step: 1 })
-  assert.equal(firstFailure.messages.length, 0)
-  const secondFailure = await runPreStep(handler, { agent, turn: 3, step: 1 })
-  assert.equal(secondFailure.messages.length, 0)
-  const thirdFailure = await runPreStep(handler, { agent, turn: 4, step: 1 })
-  assert.equal(thirdFailure.messages.length, 0)
+  for (const turn of [2, 3, 4]) {
+    const decision = await runPreStep(handler, { agent, turn, step: 1 })
+    assert.equal(decision.messages.length, 0)
+  }
+  const warnings = stub.logs.filter(([level, message]) => level === 'warn' && message.includes('连续失败'))
+  assert.equal(warnings.length, 1)
 
-  const stateWarnings = stub.logs.filter(([level, message]) => level === 'warn' && message.includes('连续失败'))
-  assert.equal(stateWarnings.length, 1)
-
-  control.stateMode = 'ok'
-  control.stateBody = { ...stateBody(DEFAULT_PATHS), values: { ...stateBody(DEFAULT_PATHS).values, '状态.情绪': '恢复' } }
+  control.observationMode = 'ok'
+  control.observationStates['猫猫'] = stateFixture(2, '恢复')
   const recovered = await runPreStep(handler, { agent, turn: 5, step: 1 })
   assert.equal(recovered.messages.length, 1)
   assert.ok(recovered.messages[0].content[0].text.includes('恢复'))
 })
 
 test('会话事件：cwd undefined / <prefix>-old 不命中，重复事件只发一次（C2）', async (t) => {
-  const { server } = await startBridgeServer(DEFAULT_PATHS)
+  const { server } = await startBridgeServer()
   t.after(() => server.close())
   const marker = '/tmp/astrbox-workspace'
   const stub = createStubContext()
@@ -320,7 +261,7 @@ test('会话事件：cwd undefined / <prefix>-old 不命中，重复事件只发
 })
 
 test('Tick：单飞、409 记为跳过、dispose 后不再发送且中止在飞请求（K2）', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
   const stub = createStubContext()
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, tickEveryMs: 20 })
@@ -360,7 +301,7 @@ test('Tick：单飞、409 记为跳过、dispose 后不再发送且中止在飞�
 })
 
 test('世界时钟（K12）：无活动不发 advanceMinutes；有会话活动后按 clockStepMinutes 推进', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
   const stub = createStubContext()
   const runtime = applyBridge(stub.ctx, {
@@ -406,7 +347,7 @@ test('世界时钟（K12）：无活动不发 advanceMinutes；有会话活动�
 })
 
 test('世界时钟（K12）：clockIdleStepMinutes 让空闲也按周期推进；双 0 关闭时钟', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
   const stub = createStubContext()
   const runtime = applyBridge(stub.ctx, {
@@ -437,10 +378,9 @@ test('世界时钟（K12）：clockIdleStepMinutes 让空闲也按周期推进�
   assert.equal(second.body.advanceMinutes, undefined)
 })
 
-test('promptRefreshMs 刷新窗口内不重复拉 /state（失败也节流）', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
+test('promptRefreshMs 刷新窗口内不重复拉 /v2/observations/state（失败也节流）', async (t) => {
+  const { server } = await startBridgeServer()
   t.after(() => server.close())
-  control.stateMode = 'fail'
   const stub = createStubContext()
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, promptRefreshMs: 60000 })
   t.after(() => runtime.dispose())
@@ -451,11 +391,11 @@ test('promptRefreshMs 刷新窗口内不重复拉 /state（失败也节流）', 
   assert.equal(first.messages.length, 0)
   const second = await runPreStep(handler, { agent, turn: 2, step: 1 })
   assert.equal(second.messages.length, 0)
-  assert.equal(server.requests.filter((request) => request.url.startsWith('/state')).length, 1)
+  assert.equal(server.requests.filter((request) => request.url.startsWith('/v2/observations/state')).length, 1)
 })
 
-test('dispose 后 pre-step 不再注入、也不再请求 /state', async (t) => {
-  const { server } = await startBridgeServer(DEFAULT_PATHS)
+test('dispose 后 pre-step 不再注入、也不再请求', async (t) => {
+  const { server } = await startBridgeServer()
   t.after(() => server.close())
   const stub = createStubContext()
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath })
@@ -479,20 +419,13 @@ test('坏配置在 apply 抛错并指名键，且不注册任何监听器（C11�
 })
 
 test('tickEveryMs=0 不注册定时器', async (t) => {
-  const { server } = await startBridgeServer(DEFAULT_PATHS)
+  const { server } = await startBridgeServer()
   t.after(() => server.close())
   const stub = createStubContext()
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, tickEveryMs: 0 })
   t.after(() => runtime.dispose())
   assert.equal(stub.intervals.length, 0)
 })
-
-/** K1 形状的一条绑定；测试关心 cwd/entity（可选 mainSessionId 供 K5 主会话推送）。 */
-function botBinding(cwd, entity, mainSessionId) {
-  const binding = { botId: `bot-${entity}`, label: entity, cwd, entity }
-  if (mainSessionId !== undefined) binding.mainSessionId = mainSessionId
-  return binding
-}
 
 test('inject 不声明 qqbotBots；服务缺失仍提供 astrboxBridge 且不抛错（C6/K1/K2）', () => {
   assert.ok(!inject.includes('qqbotBots'), 'qqbotBots 不得进 inject（C6）')
@@ -507,9 +440,11 @@ test('inject 不声明 qqbotBots；服务缺失仍提供 astrboxBridge 且不抛
   assert.equal(stub.provided.has('astrboxBridge'), false, 'dispose 后服务应注销')
 })
 
-test('绑定命中：pre-step 按绑定实体注入并请求对应 /state（K6/C13）', async (t) => {
-  const { server } = await startBridgeServer(DEFAULT_PATHS)
+test('绑定命中：pre-step 按绑定实体拉 /v2/observations/state（K6/C13）', async (t) => {
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
+  control.observationStates['梦梦'] = stateFixture(2, '梦梦状态')
+  control.observationStates['猫猫'] = stateFixture(1, '猫猫状态')
   const stub = createStubContext()
   stub.setService('qqbotBots', { bindings: () => [botBinding('/srv/bots/cat', '梦梦')] })
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath })
@@ -521,19 +456,16 @@ test('绑定命中：pre-step 按绑定实体注入并请求对应 /state（K6/C
     step: 1,
   })
   const text = result.messages[0].content[0].text
-  assert.ok(text.startsWith('[astrbox] 梦梦状态快照 '), text)
-  const stateRequest = server.requests.find((request) => request.url.startsWith('/state'))
-  assert.equal(new URL(stateRequest.url, 'http://localhost').searchParams.get('entity'), '梦梦')
+  assert.equal(text, '[astrbox-state] 梦梦\n状态.身体: 梦梦状态')
+  const stateRequest = server.requests.find((request) => request.url.startsWith('/v2/observations/state'))
+  assert.equal(new URL(stateRequest.url, 'http://localhost').searchParams.get('scope'), 'entity:梦梦')
 })
 
 test('同一刷新窗口内 cat→helper 不串实体（C4/K6）', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
-  const baseValues = stateBody(DEFAULT_PATHS).values
-  control.stateByEntity = {
-    梦梦: { ok: true, entity: '梦梦', values: { ...baseValues, '状态.情绪': '梦梦情绪' }, missing: [], bytes: 100 },
-    猫猫: { ok: true, entity: '猫猫', values: { ...baseValues, '状态.情绪': '猫猫情绪' }, missing: [], bytes: 100 },
-  }
+  control.observationStates['梦梦'] = stateFixture(1, '梦梦情绪')
+  control.observationStates['猫猫'] = stateFixture(1, '猫猫情绪')
   const stub = createStubContext()
   stub.setService('qqbotBots', {
     bindings: () => [botBinding('/srv/bots/cat', '梦梦'), botBinding('/srv/bots/helper', '猫猫')],
@@ -554,21 +486,19 @@ test('同一刷新窗口内 cat→helper 不串实体（C4/K6）', async (t) => 
   })
   const catText = cat.messages[0].content[0].text
   const helperText = helper.messages[0].content[0].text
-  assert.ok(catText.startsWith('[astrbox] 梦梦状态快照 '), catText)
-  assert.ok(catText.includes('梦梦情绪'), catText)
-  assert.ok(!catText.includes('猫猫情绪'), catText)
-  assert.ok(helperText.startsWith('[astrbox] 猫猫状态快照 '), helperText)
-  assert.ok(helperText.includes('猫猫情绪'), helperText)
-  assert.ok(!helperText.includes('梦梦情绪'), helperText)
+  assert.equal(catText, '[astrbox-state] 梦梦\n状态.身体: 梦梦情绪')
+  assert.equal(helperText, '[astrbox-state] 猫猫\n状态.身体: 猫猫情绪')
   const entities = server.requests
-    .filter((request) => request.url.startsWith('/state'))
-    .map((request) => new URL(request.url, 'http://localhost').searchParams.get('entity'))
-  assert.deepEqual(entities, ['梦梦', '猫猫'])
+    .filter((request) => request.url.startsWith('/v2/observations/state'))
+    .map((request) => new URL(request.url, 'http://localhost').searchParams.get('scope'))
+  assert.deepEqual(entities, ['entity:梦梦', 'entity:猫猫'])
 })
 
 test('未命中绑定回落全局 config.entity（K6）', async (t) => {
-  const { server } = await startBridgeServer(DEFAULT_PATHS)
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
+  control.observationStates['猫猫'] = stateFixture(1, '猫猫状态')
+  control.observationStates['梦梦'] = stateFixture(1, '梦梦状态')
   const stub = createStubContext()
   stub.setService('qqbotBots', { bindings: () => [botBinding('/srv/bots/cat', '梦梦')] })
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath })
@@ -579,15 +509,15 @@ test('未命中绑定回落全局 config.entity（K6）', async (t) => {
     turn: 1,
     step: 1,
   })
-  const text = result.messages[0].content[0].text
-  assert.ok(text.startsWith('[astrbox] 猫猫状态快照 '), text)
-  const stateRequest = server.requests.find((request) => request.url.startsWith('/state'))
-  assert.equal(new URL(stateRequest.url, 'http://localhost').searchParams.get('entity'), '猫猫')
+  assert.equal(result.messages[0].content[0].text, '[astrbox-state] 猫猫\n状态.身体: 猫猫状态')
+  const stateRequest = server.requests.find((request) => request.url.startsWith('/v2/observations/state'))
+  assert.equal(new URL(stateRequest.url, 'http://localhost').searchParams.get('scope'), 'entity:猫猫')
 })
 
 test('绑定服务返回空/HMR 空窗时继续用最近一次非空绑定（K6）', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
+  control.observationStates['梦梦'] = stateFixture(1, '初始')
   let bindings = [botBinding('/srv/bots/cat', '梦梦')]
   const stub = createStubContext()
   stub.setService('qqbotBots', { bindings: () => bindings })
@@ -597,19 +527,20 @@ test('绑定服务返回空/HMR 空窗时继续用最近一次非空绑定（K6�
   const agent = { session: { id: 's-cat', header: { cwd: '/srv/bots/cat' } } }
 
   const first = await runPreStep(handler, { agent, turn: 1, step: 1 })
-  assert.ok(first.messages[0].content[0].text.startsWith('[astrbox] 梦梦状态快照 '))
-  // 状态没变：默认跳过注入。
+  assert.ok(first.messages[0].content[0].text.startsWith('[astrbox-state] 梦梦'), first.messages[0].content[0].text)
+  // 现状没变：默认跳过注入。
   bindings = []
+  control.observationStates['梦梦'] = stateFixture(2, '初始')
   const second = await runPreStep(handler, { agent, turn: 2, step: 1 })
   assert.equal(second.messages.length, 0)
-  // 状态变化后仍按「最近一次非空绑定」解析到梦梦（HMR 空窗回落）。
-  control.stateBody = { ...stateBody(DEFAULT_PATHS), values: { ...stateBody(DEFAULT_PATHS).values, '状态.情绪': '恢复' } }
+  // 现状变化后仍按「最近一次非空绑定」解析到梦梦（HMR 空窗回落）。
+  control.observationStates['梦梦'] = stateFixture(3, '恢复')
   const third = await runPreStep(handler, { agent, turn: 3, step: 1 })
-  assert.ok(third.messages[0].content[0].text.startsWith('[astrbox] 梦梦状态快照 '), third.messages[0].content[0].text)
+  assert.ok(third.messages[0].content[0].text.startsWith('[astrbox-state] 梦梦'), third.messages[0].content[0].text)
 })
 
 test('绑定 cwd 的会话事件带 entity 且不被 workspacePrefix 丢弃（K6/C1）', async (t) => {
-  const { server } = await startBridgeServer(DEFAULT_PATHS)
+  const { server } = await startBridgeServer()
   t.after(() => server.close())
   const marker = '/tmp/astrbox-workspace'
   const stub = createStubContext()
@@ -655,24 +586,14 @@ test('绑定 cwd 的会话事件带 entity 且不被 workspacePrefix 丢弃（K6
 })
 
 test('astrboxBridge 服务：entities/persona/refresh 可读，refresh 后 persona 非空（K2/C3）', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
-  control.stateBody = {
-    ok: true,
-    entity: '猫猫',
-    values: {
-      ...stateBody(DEFAULT_PATHS).values,
-      种族: '猫',
-      体型: '娇小',
-      毛色: '三花',
-      自称: '咱',
-      对主人称呼: '主人',
-      '人格.MBTI': 'INFP',
-      '人格.气质类型': '黏液质',
-    },
-    missing: [],
-    bytes: 100,
-  }
+  control.entitiesBody = { entities: [{ id: '猫猫', type: 'NPC' }, { id: '梦梦', type: 'NPC' }] }
+  const values = {}
+  for (const path of PERSONA_PATHS) values[path] = `值-${path}`
+  values['种族'] = '猫'
+  values['人格.MBTI'] = 'INFP'
+  control.stateBody = { ok: true, entity: '猫猫', values, missing: [], bytes: 100 }
   const stub = createStubContext()
   stub.setService('qqbotBots', { bindings: () => [botBinding('/srv/bots/cat', '猫猫')] })
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath })
@@ -692,13 +613,14 @@ test('astrboxBridge 服务：entities/persona/refresh 可读，refresh 后 perso
   assert.equal(typeof persona, 'string')
   assert.ok(persona.startsWith('## 你的角色（AstrBox NPC 实体：猫猫）'), persona)
   assert.ok(persona.includes('- 种族="猫"'), persona)
+  assert.ok(persona.includes('- 人格.MBTI="INFP"'), persona)
 
   runtime.dispose()
   assert.equal(stub.provided.has('astrboxBridge'), false)
 })
 
 test('astrboxBridge.mainSessionPrompt：按实体读提示词，未配置/空实体回空串（K28）', async (t) => {
-  const { server } = await startBridgeServer(DEFAULT_PATHS)
+  const { server } = await startBridgeServer()
   t.after(() => server.close())
   const promptPath = join(TEST_STATE_DIR, `main-session-prompt-${process.pid}.json`)
   writeFileSync(promptPath, JSON.stringify({ prompts: { 猫猫: '  你是猫猫，这里是你自己的主会话。  ' } }), 'utf8')
@@ -716,166 +638,8 @@ test('astrboxBridge.mainSessionPrompt：按实体读提示词，未配置/空实
   runtime.dispose()
 })
 
-/* ─────────────── 对话 Feed / 跨会话转达（K10/K12/K13/K14） ─────────────── */
-
-/**
- * 假 agent：记录 followup 收到的消息（原事件黑板用例拆到 blackboardPluginTest.mjs 后此处保留）。
- * @param {string} sessionId 会话 id
- * @param {object[]} followups 收集数组
- * @returns {object} agent
- */
-function fakeAgent(sessionId, followups) {
-  return {
-    id: sessionId,
-    session: { id: sessionId },
-    followup(message) {
-      followups.push(message)
-    },
-  }
-}
-
-/**
- * 造一条带 snapshotEvents 的 session（一轮 user/assistant 事件，K10 采集用）。
- * @param {{id: string, cwd: string, turn: number, userText: string, assistantText: string}} input 参数
- * @returns {object} session
- */
-function dialogSession(input) {
-  const { id, cwd, turn, userText, assistantText } = input
-  const base = turn * 10
-  return {
-    id,
-    header: { cwd },
-    snapshotEvents: () => [
-      { type: 'turn/start', seq: base, data: { turn } },
-      {
-        type: 'user/message',
-        seq: base + 1,
-        data: { id: `u${base}`, role: 'user', content: [{ type: 'text', text: userText }], source: { kind: 'user' } },
-      },
-      {
-        type: 'assistant/message',
-        seq: base + 2,
-        data: { message: { id: `a${base}`, role: 'assistant', content: [{ type: 'text', text: assistantText }], source: { kind: 'model' } } },
-      },
-      { type: 'turn/end', seq: base + 3, data: { turn } },
-    ],
-  }
-}
-
-test('子会话注入（K13）：黑板变化时附带对话并排除本会话自己；仅对话变化默认跳过', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
-  t.after(() => server.close())
-  const stub = createStubContext()
-  stub.setService('qqbotBots', { bindings: () => [botBinding('/srv/bots/cat', '梦梦', 'qqbot:cat:main')] })
-  control.board = {
-    entity: '梦梦',
-    version: 3,
-    updated_at: '2026-11-06T16:20:00+08:00',
-    tick_id: 't3',
-    entries: [{ path: '心情.当前', from: '满足', to: '开心', rule_ids: ['r1'], updated_at: '2026-11-06T16:20:00+08:00' }],
-  }
-  const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, promptRefreshMs: 0 })
-  t.after(() => runtime.dispose())
-  const onTurnStopping = stub.handler('agent/turn-stopping')
-  onTurnStopping({
-    agent: { session: dialogSession({ id: 'qqbot:cat:group:g2', cwd: '/srv/bots/cat', turn: 1, userText: '别人说的话', assistantText: '别人的回复' }) },
-    turn: 1,
-  })
-  onTurnStopping({
-    agent: { session: dialogSession({ id: 'qqbot:cat:group:g1', cwd: '/srv/bots/cat', turn: 1, userText: '自己的话', assistantText: '自己的回复' }) },
-    turn: 1,
-  })
-  const agent = { session: { id: 'qqbot:cat:group:g1', header: { cwd: '/srv/bots/cat' } } }
-  const first = await runPreStep(stub.handler('agent/pre-step'), { agent, turn: 1, step: 1 })
-  assert.equal(first.messages.length, 2)
-  const text = first.messages[1].content[0].text
-  assert.ok(text.startsWith('[astrbox-subscription] 梦梦 事件黑板'), text)
-  assert.ok(text.includes('最近对话：'), text)
-  assert.ok(text.includes('别人说的话'), text)
-  assert.ok(!text.includes('自己的话'), '应排除本会话自己的对话')
-  assert.ok(!text.includes('自己的回复'), '应排除本会话自己的回复')
-
-  // 只有新的对话 feed 变化、黑板版本没动 → 默认跳过，只注入快照。
-  onTurnStopping({
-    agent: { session: dialogSession({ id: 'qqbot:cat:group:g2', cwd: '/srv/bots/cat', turn: 2, userText: '又说一句', assistantText: '嗯' }) },
-    turn: 2,
-  })
-  const second = await runPreStep(stub.handler('agent/pre-step'), { agent, turn: 2, step: 1 })
-  assert.equal(second.messages.length, 0, '仅对话变化不应注入（快照也没变）')
-})
-
-test('主会话推送（K12）：仅黑板变化才推；对话 feed 只附带新增条目不单独触发', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
-  t.after(() => server.close())
-  const mainSessionId = 'qqbot:cat:main'
-  const followups = []
-  const stub = createStubContext()
-  stub.setService('qqbotBots', { bindings: () => [botBinding('/srv/bots/cat', '梦梦', mainSessionId)] })
-  stub.setService('agents', { get: () => fakeAgent(mainSessionId, followups) })
-  const boardWith = (version, to) => ({
-    entity: '梦梦',
-    version,
-    updated_at: '2026-11-06T20:00:00+08:00',
-    tick_id: `t${version}`,
-    entries: [{ path: '心情.当前', from: '满足', to, rule_ids: ['r_0cb76329'], updated_at: '2026-11-06T20:00:00+08:00' }],
-  })
-  control.board = boardWith(1, '开心')
-  const runtime = applyBridge(stub.ctx, {
-    socketPath: server.socketPath,
-    tickEveryMs: 20,
-    subscriptionMainIntervalMs: 0,
-    promptRefreshMs: 0,
-  })
-  t.after(() => runtime.dispose())
-  const tick = stub.intervals[0].callback
-  const runTickOnce = async (count) => {
-    tick()
-    await waitFor(() => control.ticksCompleted === count && runtime.tickInFlight === false)
-  }
-
-  // 1) 黑板变化 → 推送；此时 feed 为空，不带对话段。
-  await runTickOnce(1)
-  assert.equal(followups.length, 1, '黑板变化应推送')
-  const first = followups[0].content[0].text
-  assert.ok(first.includes('变化（1 条）：'), first)
-  assert.ok(!first.includes('最近对话：'), first)
-
-  // 2) 只有对话 feed 变化（黑板版本不变）→ 不推送主体。
-  stub.handler('agent/turn-stopping')({
-    agent: { session: dialogSession({ id: mainSessionId, cwd: '/srv/bots/cat', turn: 1, userText: '主人问', assistantText: '猫答' }) },
-    turn: 1,
-  })
-  await runTickOnce(2)
-  assert.equal(followups.length, 1, '黑板没有变化则不推送到主体')
-
-  // 3) 黑板再次变化 → 推送，并附带新增对话（主人问）。
-  control.board = boardWith(2, '超开心')
-  await runTickOnce(3)
-  assert.equal(followups.length, 2)
-  const second = followups[1].content[0].text
-  assert.ok(second.includes('最近对话：'), second)
-  assert.ok(second.includes('- 主体：用户「主人问」→ 回复「猫答」'), second)
-
-  // 4) 新对话 + 黑板变化 → 只附带 feedVersion 之后的新增条目（不含重复的旧对话）。
-  stub.handler('agent/turn-stopping')({
-    agent: { session: dialogSession({ id: mainSessionId, cwd: '/srv/bots/cat', turn: 2, userText: '第二轮', assistantText: '第二轮回复' }) },
-    turn: 2,
-  })
-  control.board = boardWith(3, '平静')
-  await runTickOnce(4)
-  assert.equal(followups.length, 3)
-  const third = followups[2].content[0].text
-  assert.ok(third.includes('最近对话：'), third)
-  assert.ok(third.includes('第二轮'), third)
-  assert.ok(!third.includes('主人问'), '已推送过的旧对话不应重复附带')
-
-  // 5) 黑板版本不变 → 不再推送。
-  await runTickOnce(5)
-  assert.equal(followups.length, 3)
-})
-
 test('astrbox_relay（K14）：tools 服务可用时注册，execute 转达到实体主会话', async (t) => {
-  const { server } = await startBridgeServer(DEFAULT_PATHS)
+  const { server } = await startBridgeServer()
   t.after(() => server.close())
   const registered = []
   const followups = []
@@ -926,8 +690,9 @@ test('astrbox_relay（K14）：tools 服务可用时注册，execute 转达到�
 })
 
 test('astrbox_relay（K14）：无 tools 服务只 warn 一次且插件照常工作', async (t) => {
-  const { server } = await startBridgeServer(DEFAULT_PATHS)
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
+  control.observationStates['梦梦'] = stateFixture(1, '平静')
   const stub = createStubContext()
   stub.setService('qqbotBots', { bindings: () => [botBinding('/srv/bots/cat', '梦梦', 'qqbot:cat:main')] })
   const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, tickEveryMs: 0 })
@@ -939,11 +704,11 @@ test('astrbox_relay（K14）：无 tools 服务只 warn 一次且插件照常工
     turn: 1,
     step: 1,
   })
-  assert.equal(result.messages.length, 1, '插件照常注入快照')
+  assert.equal(result.messages.length, 1, '插件照常注入现状卡')
 })
 
 test('工具注册：冷启动 tools 尚未就绪时经 ctx.inject 延迟注册（不重复、dispose 注销）', async (t) => {
-  const { server } = await startBridgeServer(DEFAULT_PATHS)
+  const { server } = await startBridgeServer()
   t.after(() => server.close())
   const stub = createStubContext()
   stub.setService('qqbotBots', { bindings: () => [] })
@@ -968,125 +733,69 @@ test('工具注册：冷启动 tools 尚未就绪时经 ctx.inject 延迟注册�
   assert.equal(scopeDisposed, true, 'dispose 应释放 inject 作用域')
 })
 
-test('K10/K11：assistant-only 轮次不记 feed；对话行带 sessionTitle label（私聊/群聊）', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
+test('K10：assistant-only / 注入文本轮次不记 feed；真实对话行带 sessionTitle label', async (t) => {
+  const { server, control } = await startBridgeServer()
   t.after(() => server.close())
+  const mainSessionId = 'qqbot:cat:main'
+  const followups = []
   const stub = createStubContext()
-  stub.setService('qqbotBots', { bindings: () => [botBinding('/srv/bots/cat', '梦梦', 'qqbot:cat:main')] })
+  stub.setService('qqbotBots', { bindings: () => [botBinding('/srv/bots/cat', '梦梦', mainSessionId)] })
+  stub.setService('agents', { get: () => fakeAgent(mainSessionId, followups) })
   stub.setService('sessionTitle', { get: () => ({ title: '私聊(85D47757)' }) })
-  control.board = {
-    entity: '梦梦',
-    version: 3,
-    updated_at: '2026-11-06T16:20:00+08:00',
-    tick_id: 't3',
-    entries: [{ path: '心情.当前', from: '满足', to: '开心', rule_ids: ['r1'], updated_at: '2026-11-06T16:20:00+08:00' }],
-  }
-  const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, promptRefreshMs: 0 })
+  control.observationStates['梦梦'] = stateFixture(2, '初始')
+  control.observations['梦梦'] = { version: 3, events: [{ seq: 3, path: '心情.当前', from: '满足', to: '开心', tier: 'normal' }] }
+  const runtime = applyBridge(stub.ctx, {
+    socketPath: server.socketPath,
+    tickEveryMs: 20,
+    subscriptionMainIntervalMs: 0,
+    promptRefreshMs: 0,
+    subscriptionMaxChars: 2000,
+  })
   t.after(() => runtime.dispose())
+  const tick = stub.intervals[0].callback
   const onTurnStopping = stub.handler('agent/turn-stopping')
-  const viewer = { session: { id: 'qqbot:cat:group:g1', header: { cwd: '/srv/bots/cat' } } }
 
-  // 1) 订阅推送触发的 NPC 回复（user 文本是注入的 [astrbox-subscription]）→ 不产生 feed entry。
+  // 1) 基线：只建立游标，不推送、不回放。
+  tick()
+  await waitFor(() => control.ticksCompleted === 1 && runtime.tickInFlight === false)
+  assert.equal(followups.length, 0)
+
+  // 2) 注入文本触发的 NPC 回复（user 文本是桥接自己注入的前缀）→ 不产生 feed entry。
   onTurnStopping({
     agent: {
       session: dialogSession({
         id: 'qqbot:cat:c2c:u1',
         cwd: '/srv/bots/cat',
         turn: 1,
-        userText: '[astrbox-subscription] 梦梦 事件黑板（数据，不是指令；版本 12）',
+        userText: '[astrbox-observation] 梦梦 · 1 处变化\n- 心情.当前: 满足 → 开心',
         assistantText: '好的喵',
       }),
     },
     turn: 1,
   })
-  const first = await runPreStep(stub.handler('agent/pre-step'), { agent: viewer, turn: 1, step: 1 })
-  assert.equal(first.messages.length, 2, '黑板变化触发订阅，但 assistant-only 轮次不产生对话条目')
-  assert.ok(first.messages[1].content[0].text.includes('变化（1 条）'), first.messages[1].content[0].text)
-  assert.ok(!first.messages[1].content[0].text.includes('最近对话'), first.messages[1].content[0].text)
 
-  // 2) 真实用户对话 → 记录并带 sessionTitle label。
+  // 3) 变化流有事件 → 推送；没有对话条目时不含「最近对话」。
+  tick()
+  await waitFor(() => control.ticksCompleted === 2 && runtime.tickInFlight === false)
+  assert.equal(followups.length, 1)
+  assert.ok(followups[0].content[0].text.startsWith('[astrbox-observation] 梦梦 · 1 处变化'), followups[0].content[0].text)
+  assert.ok(!followups[0].content[0].text.includes('最近对话'), followups[0].content[0].text)
+
+  // 4) 真实用户对话 → 记录并带 sessionTitle label；下一次变化推送附带该行。
   onTurnStopping({
     agent: {
       session: dialogSession({ id: 'qqbot:cat:c2c:u1', cwd: '/srv/bots/cat', turn: 2, userText: '主人真的在吗', assistantText: '在的喵' }),
     },
     turn: 2,
   })
-  control.board = {
-    ...control.board,
+  control.observations['梦梦'] = {
     version: 4,
-    entries: [{ path: '心情.当前', from: '开心', to: '兴奋', rule_ids: ['r2'], updated_at: '2026-11-06T16:30:00+08:00' }],
+    events: [{ seq: 4, path: '心情.当前', from: '开心', to: '兴奋', tier: 'normal' }],
   }
-  const second = await runPreStep(stub.handler('agent/pre-step'), { agent: viewer, turn: 2, step: 1 })
-  assert.equal(second.messages.length, 1, '快照未变默认跳过，只剩订阅')
-  const text = second.messages[0].content[0].text
+  tick()
+  await waitFor(() => control.ticksCompleted === 3 && runtime.tickInFlight === false)
+  assert.equal(followups.length, 2)
+  const text = followups[1].content[0].text
   assert.ok(text.includes('最近对话：'), text)
   assert.ok(text.includes('- 私聊(85D47757)：用户「主人真的在吗」→ 回复「在的喵」'), text)
-})
-
-test('K17 订阅间隔覆盖：工具设置后按覆盖值门控推送，reset 后恢复全局', async (t) => {
-  const { server, control } = await startBridgeServer(DEFAULT_PATHS)
-  t.after(() => server.close())
-  const mainSessionId = 'qqbot:cat:main'
-  const followups = []
-  const registered = []
-  const statePath = join(TEST_STATE_DIR, `k17-${process.pid}.json`)
-  const boardWith = (version, to) => ({
-    entity: '梦梦',
-    version,
-    updated_at: '2026-11-07T03:00:00+08:00',
-    tick_id: `t${version}`,
-    entries: [{ path: '心情.当前', from: '满足', to, rule_ids: ['r1'], updated_at: '2026-11-07T03:00:00+08:00' }],
-  })
-  control.board = boardWith(1, '开心')
-  const stub = createStubContext()
-  stub.setService('tools', {
-    register(definition) {
-      registered.push(definition)
-      return () => {
-        definition.disposed = true
-      }
-    },
-  })
-  stub.setService('qqbotBots', { bindings: () => [botBinding('/srv/bots/cat', '梦梦', mainSessionId)] })
-  stub.setService('agents', { get: () => fakeAgent(mainSessionId, followups) })
-  const runtime = applyBridge(stub.ctx, {
-    socketPath: server.socketPath,
-    tickEveryMs: 20,
-    subscriptionMainIntervalMs: 0,
-    promptRefreshMs: 0,
-    subscriptionStatePath: statePath,
-  })
-  t.after(() => runtime.dispose())
-  const tick = stub.intervals[0].callback
-  const runTickOnce = async (count) => {
-    tick()
-    await waitFor(() => control.ticksCompleted === count && runtime.tickInFlight === false)
-  }
-  const definition = registered.find((item) => item.name === 'astrbox_subscription')
-  const mainExec = { agent: { session: { id: mainSessionId, header: { cwd: '/srv/bots/cat' } } } }
-
-  // 全局间隔 0：首次推送立即发生。
-  await runTickOnce(1)
-  assert.equal(followups.length, 1)
-
-  // 主会话把间隔覆盖为 1 分钟 → 立即再推会被覆盖值挡住（0 全局值失效）。
-  const set = await definition.execute({ minutes: 1 }, mainExec)
-  assert.deepEqual(set, { ok: true, minutes: 1, intervalMs: 60000, sessionId: mainSessionId, source: 'override' })
-  assert.deepEqual(JSON.parse(readFileSync(statePath, 'utf8')), { intervals: { [mainSessionId]: 1 } })
-  control.board = boardWith(2, '超开心')
-  await runTickOnce(2)
-  assert.equal(followups.length, 1, '覆盖间隔未到不应推送')
-
-  // 读取生效值 → 1 分钟 / override。
-  const read = await definition.execute({}, mainExec)
-  assert.equal(read.minutes, 1)
-  assert.equal(read.source, 'override')
-
-  // reset → 回到全局 0（下一次 tick 立即满足间隔），黑板版本前进即可推。
-  const reset = await definition.execute({ reset: true }, mainExec)
-  assert.equal(reset.ok, true)
-  assert.equal(reset.source, 'default')
-  control.board = boardWith(3, '平静')
-  await runTickOnce(3)
-  assert.equal(followups.length, 2, 'reset 后应恢复全局间隔并推送')
 })

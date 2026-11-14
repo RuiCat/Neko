@@ -36,5 +36,11 @@
         "@deepseek-ai/dsh-api-remotes"
       ]
     }
+  },
+  "dependencies": {
+    "dsh-mcp-client": "file:../dsh-mcp-client",
+    "@tencent-connect/dsh-qqbot": "file:../dsh-qqbot",
+    "dsh-plugin-diary": "file:../dsh-plugin-diary",
+    "dsh-plugin-bilibili": "file:../dsh-plugin-bilibili"
   }
 }

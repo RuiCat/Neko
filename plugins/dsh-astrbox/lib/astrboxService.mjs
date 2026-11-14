@@ -9,6 +9,21 @@ import { truncateText } from './prompt.mjs'
 /** 默认人设字符上限（K5）；配置缺失时兜底。 */
 const DEFAULT_PERSONA_MAX_CHARS = 600
 
+/**
+ * 人设路径（K5）：4 项基础人设 + `人格` 子集，固定不含 R18 字段。
+ *
+ * 配置键 `personaPaths` 已随旧推送实现退役（contract §5），人设路径不再由 bridge.config 配置。
+ */
+export const PERSONA_PATHS = Object.freeze([
+  '种族',
+  '体型',
+  '毛色',
+  '自称',
+  '对主人称呼',
+  '人格.MBTI',
+  '人格.气质类型',
+])
+
 /** 默认刷新窗口（与 K2 默认 `promptRefreshMs` 一致）。 */
 const DEFAULT_REFRESH_MS = 5000
 
@@ -89,7 +104,7 @@ export function createHostBridge(options = {}) {
   const { client, config = {}, logger, getBindings = () => [], now = Date.now } = options
   const refreshMs = Number.isInteger(config.promptRefreshMs) ? config.promptRefreshMs : DEFAULT_REFRESH_MS
   const maxChars = Number.isInteger(config.personaMaxChars) && config.personaMaxChars >= 1 ? config.personaMaxChars : DEFAULT_PERSONA_MAX_CHARS
-  const paths = Array.isArray(config.personaPaths) ? [...config.personaPaths] : []
+  const paths = [...PERSONA_PATHS]
   const personas = new Map()
   let entityIds = []
   let entitiesCheckedAt = 0

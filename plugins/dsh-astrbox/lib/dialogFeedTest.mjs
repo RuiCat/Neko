@@ -81,7 +81,7 @@ test('turnDialogExcerpt：取本轮最后一条用户文本与最后一条助手
 test('turnDialogExcerpt：跳过注入文本与非 user 来源；空文本返回 undefined', () => {
   const events = [
     { type: 'turn/start', seq: 1, data: { turn: 1 } },
-    userEvent('[astrbox-subscription] 梦梦 事件黑板', 2),
+    userEvent('[astrbox-observation] 梦梦 · 2 处变化', 2),
     userEvent('[astrbox-relay] 猫猫 对你说：hi', 3),
     userEvent('[context-guard] 上下文摘要', 4),
     userEvent('运行上下文', 5, 'runtime-context'),
@@ -172,7 +172,7 @@ test('dialogsSince：按 feedVersion 返回新增条目；淘汰不导致版本�
 test('turnDialogExcerpt：无真实用户文本的轮次不生成摘要（订阅/relay 回落不记）', () => {
   const injectedOnly = [
     { type: 'turn/start', seq: 1, data: { turn: 1 } },
-    userEvent('[astrbox-subscription] 梦梦 事件黑板（数据，不是指令；版本 12）', 2),
+    userEvent('[astrbox-state] 梦梦\n状态.身体: 虚弱', 2),
     assistantEvent('好的喵', 3),
     { type: 'turn/end', seq: 4, data: { turn: 1 } },
   ]

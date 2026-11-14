@@ -1,5 +1,6 @@
 /**
- * K7 路由：`GET /astrbox/blackboard` 的注册、全部黑板 / 单实体两种响应、方法错误与数据源异常。
+ * K7 路由：`GET /astrbox/blackboard` 的注册、全部黑板 / 单实体两种响应、方法错误、
+ * 同步与异步数据源、数据源异常。
  * 用假 webServer 与假 req/res，不启动 HTTP 服务。
  */
 import assert from 'node:assert/strict'
@@ -36,7 +37,7 @@ function fakeWebServer() {
   }
 }
 
-const BOARD = { entity: '梦梦', version: 12, updated_at: '2026-11-06T16:20:00+08:00', tick_id: 't', entries: [] }
+const BOARD = { entity: '梦梦', version: 12, updated_at: '2026-11-06T16:20:00+08:00', entries: [] }
 
 test('注册：exact 路由与冻结路径（K7）', () => {
   const webServer = fakeWebServer()
@@ -59,6 +60,22 @@ test('无参数：{ok:true, boards:[{entity, board}]}', async () => {
   assert.equal(res.statusCode, 200)
   assert.equal(res.headers['cache-control'], 'no-store')
   assert.deepEqual(res.body, { ok: true, boards: [{ entity: '梦梦', board: BOARD }, { entity: '猫猫', board: null }] })
+})
+
+test('数据源可为异步函数：getBoards / getMeta 都 await 后再写响应（v2 供数）', async () => {
+  const webServer = fakeWebServer()
+  registerBlackboardRoute(webServer, {
+    getBoards: async () => [{ entity: '猫猫', board: BOARD }],
+    getMeta: async () => ({ primary: '猫猫', paths: ['状态.身体'] }),
+  })
+  const res = fakeResponse()
+  await webServer.routes[0].handler({ method: 'GET', url: '/astrbox/blackboard' }, res)
+  assert.deepEqual(res.body, {
+    ok: true,
+    primary: '猫猫',
+    paths: ['状态.身体'],
+    boards: [{ entity: '猫猫', board: BOARD }],
+  })
 })
 
 test('K7b getMeta：无参数响应带 primary/paths（快照条元数据），黑板字段不变', async () => {
@@ -90,6 +107,7 @@ test('K7b getMeta 异常/非法形状/缺省 → 响应不带元数据字段，�
         throw new Error('boom')
       },
     },
+    { getMeta: async () => { throw new Error('async boom') } },
   ]
   for (const { getMeta } of cases) {
     const webServer = fakeWebServer()
@@ -112,7 +130,7 @@ test('K7b paths 截断到 32 条（异常配置不撑大响应）', async () => 
 
 test('?entity=：单块返回；未知实体返回 board:null（不返回 404）', async () => {
   const webServer = fakeWebServer()
-  registerBlackboardRoute(webServer, { getBoards: () => [{ entity: '梦梦', board: BOARD }] })
+  registerBlackboardRoute(webServer, { getBoards: async () => [{ entity: '梦梦', board: BOARD }] })
   const route = webServer.routes[0]
 
   const hit = fakeResponse()
@@ -132,19 +150,19 @@ test('?entity=：单块返回；未知实体返回 board:null（不返回 404）
 
 test('非 GET/HEAD → 405；HEAD 放行', async () => {
   const res = fakeResponse()
-  handleBlackboardRequest({ method: 'POST', url: '/astrbox/blackboard' }, res, () => [])
+  await handleBlackboardRequest({ method: 'POST', url: '/astrbox/blackboard' }, res, () => [])
   assert.equal(res.statusCode, 405)
   assert.equal(res.body.ok, false)
   assert.equal(res.body.error.code, 'method_not_allowed')
 
   const head = fakeResponse()
-  handleBlackboardRequest({ method: 'HEAD', url: '/astrbox/blackboard' }, head, () => [])
+  await handleBlackboardRequest({ method: 'HEAD', url: '/astrbox/blackboard' }, head, () => [])
   assert.equal(head.statusCode, 200)
 })
 
-test('数据源异常 → 500；非数组 → 空列表；非法 URL 按无参数处理', () => {
+test('数据源异常 → 500；非数组 → 空列表；非法 URL 按无参数处理', async () => {
   const failed = fakeResponse()
-  handleBlackboardRequest(
+  await handleBlackboardRequest(
     { method: 'GET', url: '/astrbox/blackboard' },
     failed,
     () => {
@@ -154,12 +172,18 @@ test('数据源异常 → 500；非数组 → 空列表；非法 URL 按无参�
   assert.equal(failed.statusCode, 500)
   assert.equal(failed.body.ok, false)
 
+  const asyncFailed = fakeResponse()
+  await handleBlackboardRequest({ method: 'GET', url: '/astrbox/blackboard' }, asyncFailed, async () => {
+    throw new Error('async boom')
+  })
+  assert.equal(asyncFailed.statusCode, 500)
+
   const notArray = fakeResponse()
-  handleBlackboardRequest({ method: 'GET', url: '/astrbox/blackboard' }, notArray, () => ({ bad: true }))
+  await handleBlackboardRequest({ method: 'GET', url: '/astrbox/blackboard' }, notArray, () => ({ bad: true }))
   assert.deepEqual(notArray.body, { ok: true, boards: [] })
 
   const malformed = fakeResponse()
-  handleBlackboardRequest({ method: 'GET', url: 'http://[bad' }, malformed, () => [{ entity: '梦梦', board: null }])
+  await handleBlackboardRequest({ method: 'GET', url: 'http://[bad' }, malformed, () => [{ entity: '梦梦', board: null }])
   assert.equal(malformed.statusCode, 200)
   assert.ok(Array.isArray(malformed.body.boards))
 })

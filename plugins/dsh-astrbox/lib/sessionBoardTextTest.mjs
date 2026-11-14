@@ -72,7 +72,7 @@ test('差异渲染（K8 形状）：workspace 段 + global 段，from → to，�
           updated_at: '',
           min_retained_version: 0,
           regions: [
-            { id: '/home/ruicat/Desktop/Neko', owner: { kind: 'workspace', id: '/home/ruicat/Desktop/Neko' }, version: 12, entries: [{ key: '项目.状态', to: '进行中', by: 'session-cccccccc', version: 12 }] },
+            { id: '/work/Neko', owner: { kind: 'workspace', id: '/work/Neko' }, version: 12, entries: [{ key: '项目.状态', to: '进行中', by: 'session-cccccccc', version: 12 }] },
           ],
         },
         deltas: [deltaEntry('项目.状态', null, '进行中', 'session-cccccccc', 12)],
@@ -209,7 +209,7 @@ test('sanitizeInline：控制字符与连续空白收敛为单空格，超限截
 test('短标识与工作区标签：去掉 session- 前缀、取路径末段、根目录记 /', () => {
   assert.equal(shortSessionId('session-1234567890'), '12345678')
   assert.equal(shortSessionId(''), '未知')
-  assert.equal(workspaceLabel('/home/ruicat/Desktop/Neko/'), 'Neko')
+  assert.equal(workspaceLabel('/work/Neko/'), 'Neko')
   assert.equal(workspaceLabel('/'), '/')
   assert.equal(workspaceLabel(''), '未知')
 })
