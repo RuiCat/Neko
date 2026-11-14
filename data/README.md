@@ -19,9 +19,9 @@
 
 实体状态有两类来源：
 
-- **内容蓝图**（进版本库）：`neko-data -data-dir data -scripts-dir ../scripts apply`
-  把 `@data` 实例块物化成实体；已存在的实体默认跳过，不覆盖运行时状态。
-  私有角色数据在 `../scripts/private/`（不进版本库），apply 时存在才读。
+- **内容蓝图**（不进版本库）：`neko-data -data-dir data -scripts-dir ../scripts apply`
+  读仓库根 `private/`（角色/事件数据，gitignored）把 `@data` 实例块物化成实体；
+  已存在的实体默认跳过，不覆盖运行时状态。
 - **运行时存档**（本目录，需要单独备份）：tick 产生的状态变化写入 `entities.json` / `user/entities.json`。
 
 ## 备份

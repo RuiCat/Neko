@@ -31,9 +31,9 @@ func TestSplitInstanceName(t *testing.T) {
 	}
 }
 
-// newApplyRuntime assembles a runtime over the repo's own scripts and a temp
-// data dir, so content files resolved from scripts/entities and scripts/scenes
-// are the real ones.
+// newApplyRuntime assembles a runtime over the repo's kernel scripts and a temp
+// data dir. Content always comes from a temp blueprint dir: the repo holds no
+// entity data.
 func newApplyRuntime(t *testing.T) *bootstrap.Runtime {
 	t.Helper()
 	runtime, err := bootstrap.New(bootstrap.Options{
@@ -46,9 +46,21 @@ func newApplyRuntime(t *testing.T) *bootstrap.Runtime {
 	return runtime
 }
 
+// writeAppleContent writes one content blueprint file into a temp dir.
+func writeAppleContent(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	payload := "@data 食物:苹果 {\n  \"名称\": \"苹果\",\n  \"类别\": \"食物\",\n  \"数量\": 3,\n  \"价格\": 5,\n  \"食物\": { \"热量\": 95, \"可食\": true }\n}\n"
+	if err := os.WriteFile(filepath.Join(dir, "food.neko"), []byte(payload), 0o644); err != nil {
+		t.Fatalf("write content: %v", err)
+	}
+	return dir
+}
+
 func TestApplyCreatesInstancesAndIsIdempotent(t *testing.T) {
 	runtime := newApplyRuntime(t)
-	if err := runApply(runtime, nil); err != nil {
+	contentDir := writeAppleContent(t)
+	if err := runApply(runtime, []string{"-content", contentDir}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	apple := runtime.Store.Get("苹果")
@@ -69,7 +81,7 @@ func TestApplyCreatesInstancesAndIsIdempotent(t *testing.T) {
 	if err := apple.Set("数量", 1); err != nil {
 		t.Fatalf("set 数量: %v", err)
 	}
-	if err := runApply(runtime, nil); err != nil {
+	if err := runApply(runtime, []string{"-content", contentDir}); err != nil {
 		t.Fatalf("second apply: %v", err)
 	}
 	if count, _ := apple.Get("数量"); toNum(count) != 1 {
@@ -79,7 +91,8 @@ func TestApplyCreatesInstancesAndIsIdempotent(t *testing.T) {
 
 func TestApplyOverwriteOnlyTouchesContentFields(t *testing.T) {
 	runtime := newApplyRuntime(t)
-	if err := runApply(runtime, nil); err != nil {
+	contentDir := writeAppleContent(t)
+	if err := runApply(runtime, []string{"-content", contentDir}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	apple := runtime.Store.Get("苹果")
@@ -89,7 +102,7 @@ func TestApplyOverwriteOnlyTouchesContentFields(t *testing.T) {
 	if err := apple.Set("持有人", "猫猫"); err != nil {
 		t.Fatalf("set 持有人: %v", err)
 	}
-	if err := runApply(runtime, []string{"-overwrite"}); err != nil {
+	if err := runApply(runtime, []string{"-content", contentDir, "-overwrite"}); err != nil {
 		t.Fatalf("overwrite apply: %v", err)
 	}
 	if count, _ := apple.Get("数量"); toNum(count) != 3 {

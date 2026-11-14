@@ -115,6 +115,7 @@ install-runtime: build
 	@if [ "$(PRUNE)" = "1" ]; then rm -rf "$(NEKO_HOME)/scripts"; mkdir -p "$(NEKO_HOME)/scripts"; fi
 	@if command -v rsync >/dev/null 2>&1; then rsync -a --exclude '.git' scripts/ "$(NEKO_HOME)/scripts/"; else cp -a scripts/. "$(NEKO_HOME)/scripts/"; fi
 	@if [ -f config.json ]; then cp -f config.json "$(NEKO_HOME)/config.json"; fi
+	@if [ -d private ]; then mkdir -p "$(NEKO_HOME)/private"; rsync -a --exclude '.git' private/ "$(NEKO_HOME)/private/"; fi
 	@if [ -f observation.example.json ] && [ ! -f "$(NEKO_HOME)/data/observation.json" ]; then \
 		cp -f observation.example.json "$(NEKO_HOME)/data/observation.json"; \
 	fi

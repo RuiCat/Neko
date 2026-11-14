@@ -1,25 +1,26 @@
 # 脚本目录分层与内容层（scripts/）
 
-`scripts/` 分两块：**内核定义**（可执行规则/模板/函数）与**内容**（具体实体实例）。
+`scripts/` 只放**规则与内核定义**；实际实体数据（角色/物品/场景/事件条目）不放进来。
 
 ```text
 scripts/
-  kernel/                       # 内核定义：只放 @定义/@实体/@函数/@规则
+  kernel/                       # 规则与内核定义（唯一会被注册为脚本的部分）
     base/ metabolism/ physiology/ organs/ injury/ reproductive/ status/
     material/ interact/ action/ plan/ education/ trade/ memory/
     behavior/ sleep/ events/ world/ scene/ location/ relation/ task/ traits/
-  entities/                     # 内容：具体实体（@data 实例块）
-    characters/                 # 角色
-    items/                      # 物品（工具/容器/衣物…）
-    foods/                      # 食物 / 饮品
-  scenes/                       # 内容：场景
-  private/                      # 内容：私有（不进版本库）：猫猫/梦梦、私有人设/称呼
+    personality/ growth/ curiosity/ social/ environment/ expression/
+    event/                      # 事件底层（L13，事件数据在 private/events）
+rules/                        # 规则库（L14）：任务/行为等业务规则，只写 @规则/@函数
+private/                        # 私有内容蓝图（.gitignore，不进版本库）
+  characters/                   # 私有角色数据
+  events/                       # 私有事件数据（事件模板实例）
 ```
 
 - `scripts/kernel/**` 会被注册表扫描并 apply（规则/模板/函数）。
-- `scripts/private/**` 与 `scripts/entities/**`、`scripts/scenes/**` **不会被注册为脚本**（`internal/registry/registry.go` 的
-  `CONTENT_DIRS` 会跳过它们），它们只由 `neko-data apply` 读取。
-- `data/` 仍是运行时存档（不进版本库）；`content → 实体` 的物化是单向的，见 §3。
+- `private/**` **不在 scripts 下、不注册为脚本**，只由 `neko-data apply` 读取。
+- 仓库里没有任何角色/物品/场景/事件的实例数据；它们要么是本机 `private/`，要么由数据层工具生成。
+- **任务与行为用规则表达**：写在 `scripts/rules/`（`@规则`/`@函数`），不写 `@data`，也不放进 `scripts/kernel/`；
+  状态字段由内核提供（如 `任务状态`、`行为.主动`），规则只做状态机与结算。
 
 ## 1. 内容文件格式
 
@@ -47,17 +48,19 @@ scripts/
 4. **内容文件里不要写 `@规则`/`@函数`/`@定义`**：规则属于 `kernel/`，内容只描述实例。
 5. `类型` 是 `素材` 内核的普通字段（`"物品"`），不是实体类型；实体类型只由块名决定。
 
-## 2. 私有内容（猫猫/梦梦）
+## 2. 私有内容（角色与事件数据）
 
-`scripts/private/` 被 `.gitignore` 排除，只在本机存在：
+`private/` 被 `.gitignore` 排除，只在本机存在：
 
-- `private/characters/*.neko`：私有角色数据（`@data NPC:猫猫 { ... }`），由 `neko-data extract`
-  从旧语料抽取，字段按当前内核分组；
+- `private/characters/*.neko`：私有角色数据（`@data NPC:猫猫 { ... }`）；
+- `private/events/*.neko`：私有事件数据（`@data 事件模板:<名称> { 阶段流程/对话/效果 }`），
+  由旧语料抽出，**与角色无关**：事件底层 `scripts/kernel/event/` 只按「角色自己的 事件.当前」
+  推进阶段，任何组合了 `事件内核` 的实体都能用；
 - 私有人设/称呼/对话偏好也放这里；
-- `neko-data apply` 默认也会读 `private/`（存在才读），所以本机可以把私有角色物化；
-- **备份**：整仓 tar 备份必须排除 `scripts/private/`，否则私密数据会进备份包。
+- `neko-data apply` 默认只读 `private/`（存在才读），`-content` 可指定别的蓝图目录；
+- **备份**：整仓 tar 备份必须排除 `private/`。
 
-## 3. 内容 → 实体：`neko-data apply`
+## 3. 内容 → 实体：`neko-data apply`（内容蓝图在 private/）
 
 ```bash
 make build                      # 产出 bin/neko-data
@@ -65,7 +68,7 @@ make build                      # 产出 bin/neko-data
 ./bin/neko-data -data-dir ~/.dsh-neko/Neko/data -scripts-dir ~/.dsh-neko/Neko/scripts apply
 ```
 
-- 默认读 `scripts/entities` + `scripts/scenes`；`-content <dir>` 可只处理一个目录。
+- 默认只读 `<repo>/private`；`-content <dir>` 可指定其他蓝图目录。
 - **幂等且不覆盖**：已存在的实体默认 `skip`，不会把角色/物品的运行时状态（持有、耐久、腐败、位置）洗掉。
 - `-overwrite` 只写内容块里出现的字段（叶子路径逐个 `Set`），其余状态保留。
 - `-dry-run` 只校验并列出 would create / would update。
@@ -75,8 +78,8 @@ make build                      # 产出 bin/neko-data
 
 | 位置 | 性质 | 谁写 |
 |---|---|---|
-| `scripts/kernel/**` | 内核（规则/模板/函数） | 人写、进版本库 |
-| `scripts/entities/**`、`scripts/scenes/**` | 内容蓝图（初始字段） | 人写、进版本库 |
+| `scripts/kernel/**` | 规则与内核（含事件底层、类型账本） | 人写、进版本库 |
+| `private/**`（本机） | 内容蓝图（初始字段，私密） | 人写、**不进版本库** |
 | `data/entities.json`、`data/user/entities.json` | 运行时存档（状态） | 引擎写、不进版本库 |
 | `data/templates/`、`data/scripts.json` | 派生索引（从 kernel 重建） | 引擎写、可删 |
 
