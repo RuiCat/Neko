@@ -1,4 +1,4 @@
-// apply：把 scripts/entities 与 scripts/scenes 下的 @data 实例块物化成实体
+// apply：把内容蓝图目录（默认 <repo>/private）下的 @data 实例块物化成实体
 // （幂等，默认不覆盖已有实体）。
 package main
 
@@ -32,10 +32,8 @@ func runApply(runtime *bootstrap.Runtime, args []string) error {
 	overwrite := fs.Bool("overwrite", false, "已有实体也写入内容块里的字段（其余状态保留）")
 	_ = fs.Parse(args)
 
-	roots := []string{
-		filepath.Join(runtime.ScriptsDir, "entities"),
-		filepath.Join(runtime.ScriptsDir, "scenes"),
-	}
+	// 内容蓝图不进 scripts/：默认只读仓库根的 private/（存在才读），或用 -content 指定。
+	roots := []string{filepath.Join(filepath.Dir(runtime.ScriptsDir), "private")}
 	if *contentDir != "" {
 		roots = []string{*contentDir}
 	}

@@ -45,9 +45,6 @@ func TestReplayAllScripts(t *testing.T) {
 		if walkErr != nil {
 			return nil
 		}
-		if entry.IsDir() && isContentPath(scriptsDir, path) {
-			return filepath.SkipDir
-		}
 		if !entry.IsDir() && filepath.Ext(path) == ".neko" {
 			scriptCount++
 		}

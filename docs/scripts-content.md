@@ -13,10 +13,11 @@ scripts/
     items/                      # 物品（工具/容器/衣物…）
     foods/                      # 食物 / 饮品
   scenes/                       # 内容：场景
+  private/                      # 内容：私有（不进版本库）：猫猫/梦梦、私有人设/称呼
 ```
 
 - `scripts/kernel/**` 会被注册表扫描并 apply（规则/模板/函数）。
-- `scripts/entities/**` 与 `scripts/scenes/**` **不会被注册为脚本**（`internal/registry/registry.go` 的
+- `scripts/private/**` 与 `scripts/entities/**`、`scripts/scenes/**` **不会被注册为脚本**（`internal/registry/registry.go` 的
   `CONTENT_DIRS` 会跳过它们），它们只由 `neko-data apply` 读取。
 - `data/` 仍是运行时存档（不进版本库）；`content → 实体` 的物化是单向的，见 §3。
 
@@ -46,7 +47,17 @@ scripts/
 4. **内容文件里不要写 `@规则`/`@函数`/`@定义`**：规则属于 `kernel/`，内容只描述实例。
 5. `类型` 是 `素材` 内核的普通字段（`"物品"`），不是实体类型；实体类型只由块名决定。
 
-## 2. 内容 → 实体：`neko-data apply`
+## 2. 私有内容（猫猫/梦梦）
+
+`scripts/private/` 被 `.gitignore` 排除，只在本机存在：
+
+- `private/characters/*.neko`：私有角色数据（`@data NPC:猫猫 { ... }`），由 `neko-data extract`
+  从旧语料抽取，字段按当前内核分组；
+- 私有人设/称呼/对话偏好也放这里；
+- `neko-data apply` 默认也会读 `private/`（存在才读），所以本机可以把私有角色物化；
+- **备份**：整仓 tar 备份必须排除 `scripts/private/`，否则私密数据会进备份包。
+
+## 3. 内容 → 实体：`neko-data apply`
 
 ```bash
 make build                      # 产出 bin/neko-data
@@ -60,7 +71,7 @@ make build                      # 产出 bin/neko-data
 - `-dry-run` 只校验并列出 would create / would update。
 - 保存走 `store.Save()`：公开实体进 `entities.json`，`NPC*` 进 `user/entities.json`。
 
-## 3. 蓝图与存档的边界
+## 4. 蓝图与存档的边界
 
 | 位置 | 性质 | 谁写 |
 |---|---|---|
@@ -72,18 +83,23 @@ make build                      # 产出 bin/neko-data
 因此：**调数值/加物品改 `scripts/`，游戏进程产生的状态留在 `data/`**；要换机或回滚内容，
 `neko-data apply` 把蓝图重新物化即可（已存在的实体保持原状态）。
 
-## 4. 与内核层的分界
+## 5. 与内核层的分界
 
 - 物品/食物的**字段与结算规则**在 `scripts/kernel/material/`、`scripts/kernel/interact/`（见
   [material-layer.md](material-layer.md)）；
 - 行动/规划/教育/交易/记忆的内核在 `scripts/kernel/{action,plan,education,trade,memory}/`
   （见 [cognition-layers.md](cognition-layers.md)）；
-- 内容层只提供实例，不承担任何规则逻辑。
+- 内容层只提供实例，不承担任何规则逻辑；
+- 公共资料库**按条目拆分**为带类型模板的实例（`任务模板`/`行为模板`/`性行为流程`/`性行为事件`），
+  一个条目一个 `@data` 块（`scripts/entities/library/`，52 条），规则引擎可按类型逐条读取；
+  通用容器 `资料库` 只留给暂时无法归类的条目。
 
-## 5. 验证
+## 6. 验证
 
 ```bash
 GOCACHE=$PWD/.local/gocache go test ./cmd/neko-data ./internal/registry -count=1
+./bin/neko-data -data-dir /tmp/x -scripts-dir scripts extract -from 旧scripts目录 -out .local/legacy-extract
+# extract 会按条目拆分资料库：任务模板/行为模板/性行为流程/性行为事件
 GOCACHE=$PWD/.local/gocache go run ./.local/probe        # 内核冒烟（不读内容层）
 ./bin/neko-data -data-dir /tmp/x -scripts-dir scripts apply -dry-run
 ```

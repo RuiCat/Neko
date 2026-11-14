@@ -108,27 +108,7 @@ func New(store *entity.Store, machine *engine.StateMachine, path, scriptsDir str
 	return reg, nil
 }
 
-// CONTENT_DIRS are the scripts subdirectories reserved for entity content:
-// scripts/entities/{characters,items,foods} and scripts/scenes. Their .neko
-// files are @data instance blocks materialized by `neko-data apply`; they are
-// never registered as scripts (no rules, no templates, no replay).
-var CONTENT_DIRS = []string{"entities", "scenes"}
-
-// isContentPath reports whether a path lives under one of the content roots.
-func isContentPath(root, path string) bool {
-	relative, err := filepath.Rel(root, path)
-	if err != nil {
-		return false
-	}
-	first := strings.SplitN(filepath.ToSlash(relative), "/", 2)[0]
-	for _, name := range CONTENT_DIRS {
-		if first == name {
-			return true
-		}
-	}
-	return false
-}
-
+// indexSources maps script names to their source path (scripts may be nested).
 // indexSources maps script names to their source path (scripts may be nested).
 func (r *Registry) indexSources() {
 	sources := map[string]string{}
@@ -136,13 +116,7 @@ func (r *Registry) indexSources() {
 		if err != nil {
 			return nil
 		}
-		if entry.IsDir() {
-			if isContentPath(r.scriptsDir, path) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(entry.Name(), ".neko") {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".neko") {
 			return nil
 		}
 		name := strings.TrimSuffix(entry.Name(), ".neko")

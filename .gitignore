@@ -19,6 +19,9 @@ __pycache__/
 data/*.tmp
 scripts/*.tmp
 
+# 私有内容（猫猫/梦梦 等角色数据，不进版本库）
+/private/
+
 # runtime data (local-only; registry bootstraps from scripts/ when absent)
 /legacy/
 /data/entities.json
