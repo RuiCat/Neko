@@ -26,7 +26,7 @@ func TestTemplatePersistence(t *testing.T) {
 @规则[$[测试类型]] {
   动作: 值 = 2
 }`
-	result := reg.Apply("tpl_script", script, false, false)
+	result := reg.Apply("tpl_script", script, false)
 	if !result.OK {
 		t.Fatalf("apply failed: %+v", result.Errors)
 	}

@@ -78,6 +78,7 @@ func (s *Server) runTickLocked(scope string, options TickOptions) (engine.TickRe
 	// Record this tick's net changes on the observation bus before the store
 	// save; the bus cannot fail the tick.
 	s.observeTick(result)
+	s.publishTick(result)
 	if options.SkipSaveWhenUnchanged && len(result.Transitions) == 0 && len(result.Conflicts) == 0 && len(result.Writes) == 0 {
 		return result, nil
 	}

@@ -204,12 +204,16 @@ func buildVectors(ctx context.Context, options BuildOptions, index map[string]In
 			}
 		}
 	}()
-	var lock sync.Mutex
+	// results is closed only after every worker returned, so the drain loop
+	// below always terminates: a cancelled context stops the producer early,
+	// and a failed snapshot keeps draining instead of blocking the workers.
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
 	embedded, failed, done := 0, 0, 0
 	var writeErr error
-	for received := 0; received < len(pending); received++ {
-		result := <-results
-		lock.Lock()
+	for result := range results {
 		done++
 		if result.failed {
 			failed++
@@ -218,23 +222,18 @@ func buildVectors(ctx context.Context, options BuildOptions, index map[string]In
 			embedded++
 			vectors[result.name] = result.vector
 		}
-		if done%SNAPSHOT_EVERY == 0 {
-			if err := writeVectorsFile(options.vectorsPath(), vectors); err != nil {
-				writeErr = err
-			}
+		if writeErr == nil && done%SNAPSHOT_EVERY == 0 {
+			writeErr = writeVectorsFile(options.vectorsPath(), vectors)
 			if options.Progress != nil {
 				options.Progress(done, len(pending))
 			}
 		}
-		lock.Unlock()
-		if writeErr != nil {
-			break
-		}
 	}
-	workers.Wait()
-	close(results)
 	if writeErr != nil {
 		return vectors, embedded, skipped, failed, writeErr
+	}
+	if err := ctx.Err(); err != nil && done < len(pending) {
+		return vectors, embedded, skipped, failed, err
 	}
 	if err := writeVectorsFile(options.vectorsPath(), vectors); err != nil {
 		return vectors, embedded, skipped, failed, err

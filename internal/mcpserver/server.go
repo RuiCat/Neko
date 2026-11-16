@@ -67,6 +67,10 @@ type Server struct {
 	// disables the observation side effect without changing tick behavior.
 	observations      *observation.Bus
 	observationPolicy *observation.Policy
+	// boardPublisher forwards script push messages to the session board; nil
+	// disables the board side effect without changing tick behavior.
+	boardPublisherMu sync.RWMutex
+	boardPublisher   func(entityID, text string)
 	// opsDeps backs the operational tools (nightly/judge/candidates/repair);
 	// bootstrap wires it from the runtime.
 	opsDeps ops.Deps

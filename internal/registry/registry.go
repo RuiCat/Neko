@@ -204,13 +204,13 @@ func (r *Registry) Get(name string) *Entry {
 }
 
 // Apply parses and compiles a script, replacing any previous registration.
-func (r *Registry) Apply(name, text string, force, skipSafety bool) *ApplyResult {
-	return r.applyScript(name, text, force, skipSafety, true)
+func (r *Registry) Apply(name, text string, force bool) *ApplyResult {
+	return r.applyScript(name, text, force, true)
 }
 
 // applyScript is the shared implementation; persist=false is used by replay so
 // a read-only startup does not rewrite scripts.json.
-func (r *Registry) applyScript(name, text string, force, skipSafety, persist bool) (result *ApplyResult) {
+func (r *Registry) applyScript(name, text string, force, persist bool) (result *ApplyResult) {
 	result = newApplyResult(name)
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -233,7 +233,7 @@ func (r *Registry) applyScript(name, text string, force, skipSafety, persist boo
 		return result
 	}
 	r.mu.Unlock()
-	prepared := r.prepareScript(name, text, skipSafety)
+	prepared := r.prepareScript(name, text)
 	result.Warnings = append(result.Warnings, prepared.Warnings...)
 	if len(prepared.Errors) > 0 {
 		result.OK = false
@@ -380,7 +380,7 @@ func (r *Registry) BootstrapFromSources() (ReplayResult, error) {
 	})
 	for _, scriptName := range names {
 		raw := sources[scriptName]
-		result := r.Apply(scriptName, string(raw), true, true)
+		result := r.Apply(scriptName, string(raw), true)
 		if result.OK {
 			out.Replayed = append(out.Replayed, scriptName)
 			continue
@@ -416,7 +416,7 @@ func (r *Registry) ReplayAll() ReplayResult {
 			r.recordSkipped(name, err)
 			continue
 		}
-		result := r.applyScript(name, string(raw), true, true, false)
+		result := r.applyScript(name, string(raw), true, false)
 		if result.OK {
 			out.Replayed = append(out.Replayed, name)
 		} else {

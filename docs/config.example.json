@@ -2,7 +2,6 @@
   "state_group": "状态",
   "state_definition_field": "状态定义",
   "default_state_subgroup": "身体",
-  "safety_enabled": false,
   "global_entities": [
     "场景",
     "世界",
@@ -14,6 +13,7 @@
   "scene_event_field": "事件",
   "classification_field": "分类",
   "http_token": "",
+  "emote_dir": "",
   "subscriptionEnabled": true,
   "subscriptionMainIntervalMs": 600000,
   "subscriptionMaxChars": 2000,

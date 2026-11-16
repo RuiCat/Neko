@@ -32,7 +32,8 @@ func integrationClient(t *testing.T) *Client {
 	return NewClient(Config{Dir: integrationDir(t)})
 }
 
-// TestIntegrationEmoteRegression ports verify_emote_negkw.py's 8 checks.
+// TestIntegrationEmoteRegression ports the applicable checks of
+// verify_emote_negkw.py. Its R18 case was dropped with the filter (2026-11-16).
 func TestIntegrationEmoteRegression(t *testing.T) {
 	client := integrationClient(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -47,7 +48,8 @@ func TestIntegrationEmoteRegression(t *testing.T) {
 		{"抱头-负向", "抱头", nil, []string{"相拥", "拥抱", "贴贴", "抱抱"}},
 		{"亲亲-正向", "亲亲", []string{"亲", "吻", "啾", "mua"}, nil},
 		{"害羞-正向", "害羞", []string{"害羞", "脸红", "捂脸", "红晕"}, nil},
-		{"R18-过滤", "想被强奸", nil, []string{"强奸", "操哭", "裸", "色情", "性"}},
+		// R18 过滤已于 2026-11-16 按维护者要求移除，R18 行参与正常排序，
+		// 因此原有「R18 不得出现」的断言不再适用。
 		{"摸头-正向", "摸头", []string{"摸头", "摸摸"}, []string{"奶子", "胸部", "乳房", "裸"}},
 		{"困-正向", "好困想睡觉", []string{"困", "睡", "哈欠", "疲惫", "休息"}, nil},
 		{"难过-正向", "难过想哭", []string{"哭", "泪", "难过", "伤心"}, nil},
@@ -77,7 +79,9 @@ func TestIntegrationEmoteRegression(t *testing.T) {
 	}
 }
 
-// TestIntegrationEmoteBaseline compares the three frozen queries with Python.
+// TestIntegrationEmoteBaseline compares the three frozen queries with the
+// Python baseline measured on 2026-11-10, before the R18/暧昧 filters were
+// removed. Re-measure the baseline against a real data directory.
 func TestIntegrationEmoteBaseline(t *testing.T) {
 	client := integrationClient(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

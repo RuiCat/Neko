@@ -262,7 +262,7 @@ sha256sum ~/data/catworkspace/emotes/{vec_db.npz,cluster_analysis.json,emote_ind
 | R3 | 105MB `emote_vectors.json` 的 JSON 解析 | 首载数百 MB 内存与秒级延迟 | 仅回退路径加载；构建期可用流式解析（json.Decoder） |
 | R4 | 每次查询重载 npz（Python 现状） | 与 Go 缓存实现结果应一致但性能差异大 | Go 缓存 + mtime/size 失效；A7 断言缓存命中 |
 | R5 | 词表硬编码在 Python，改词表无版本号 | 迁移后两侧行为悄悄分叉 | 词表随代码进 Go，冻结；变更走 §4.4 单独流程 |
-| R6 | R18 过滤是产品约束 | 放宽 → 事故 | A3 必须覆盖；Go 侧保留完整词表，禁止「按需关闭」开关 |
+| R6 | ~~R18 过滤是产品约束~~ **已被 2026-11-16 决议取代（R18/暧昧过滤移除，见 §10.3 第 5 条）** | 旧约束不再适用 | 旧处置仅作历史记录，不再检查 |
 | R7 | `img/` 888MB 与 3 个缺图 | 路径返回空串/误发 | `missing:true` 显式返回；不复制图库进仓库 |
 | R8 | Python 侧 `top` 未夹紧（传 1000 会走全量打分） | 迁移若照抄有性能风险 | Go 侧夹紧 `[1,20]` 并在文档写明（属新增保护，不算行为变更） |
 | R9 | 数据目录在仓库外（`~/data/catworkspace`） | 换机/备份易丢 | 验收要求：仓库内不放数据；数据目录单独备份（`tar --zstd`），迁移后写进 `docs/` |
@@ -321,6 +321,9 @@ sha256sum ~/data/catworkspace/emotes/{vec_db.npz,cluster_analysis.json,emote_ind
 2. 工具层空文本短路；`top` 夹紧到 1–20（Python 不夹紧）。
 3. 缺图行给 `path:""` + `missing:true`（Python 打印 `path=None`）；不再回退 `~/Desktop/QQ表情`。
 4. 工具返回 JSON（决策 d4），字段名固定。
+5. **2026-11-16 追加变更（按维护者要求）**：移除 R18 内容过滤与「暧昧」类别过滤（三条检索路径同时移除），
+   R18/暧昧行按正常分数参与排序；同步更新 `docs/mcp-tools.md` 与相关测试。本文 §2.2/§2.3/§10.2 记录的是移除前行为，
+   `TestIntegrationEmoteBaseline` 的三条基线查询需在真实表情库上重新采样。
 5. KMeans 随机序列与 numpy 不同 → 重建后的簇编号与 Python 不一致（只读现有 npz 时结果一致；重建后 A2 基线需重采样，风险 R2 已登记）。
 
 ### 10.4 遗留

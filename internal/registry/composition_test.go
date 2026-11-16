@@ -26,7 +26,7 @@ func newCompositionRegistry(t *testing.T) (*Registry, *entity.Store) {
 
 func applyText(t *testing.T, reg *Registry, name, text string) *ApplyResult {
 	t.Helper()
-	return reg.Apply(name, text, false, false)
+	return reg.Apply(name, text, false)
 }
 
 func TestApplyComposedTemplate(t *testing.T) {
@@ -139,7 +139,7 @@ func TestReapplyCannotDropDependentParent(t *testing.T) {
 	if result := applyText(t, reg, "child", `@实体 子 [父A] { "额外": true }`); !result.OK {
 		t.Fatalf("child: %+v", result.Errors)
 	}
-	result := reg.Apply("p_a", `@定义 无关 { "值": 2 }`, true, false)
+	result := reg.Apply("p_a", `@定义 无关 { "值": 2 }`, true)
 	if result.OK {
 		t.Fatal("expected re-apply to refuse dropping a parent in use")
 	}

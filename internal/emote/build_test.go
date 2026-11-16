@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // hashEmbedder is a deterministic test embedder with configurable dimension.
@@ -193,5 +194,41 @@ func TestWriteIndexPreservesOrder(t *testing.T) {
 	}
 	if len(index) != 3 || strings.Join(order, ",") != "z.jpg,a.jpg,m.jpg" {
 		t.Fatalf("order = %v", order)
+	}
+}
+
+// blockingEmbedder blocks every request until its context is cancelled.
+type blockingEmbedder struct{}
+
+// Embed implements Embedder and returns only after ctx is done.
+func (blockingEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// TestBuildVectorsReturnsOnCancel is the regression for the drain loop that
+// used to wait for len(pending) results even after the producer stopped early.
+func TestBuildVectorsReturnsOnCancel(t *testing.T) {
+	dir := buildFixture(t, 6)
+	index, order, err := loadIndex(filepath.Join(dir, INDEX_FILE_NAME))
+	if err != nil {
+		t.Fatalf("loadIndex: %v", err)
+	}
+	options := BuildOptions{Dir: dir, OutDir: dir, Workers: 2, Embedder: blockingEmbedder{}}.normalized()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, _, _, _, err := buildVectors(ctx, options, index, order)
+		done <- err
+	}()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("buildVectors did not return after cancel (deadlock)")
 	}
 }

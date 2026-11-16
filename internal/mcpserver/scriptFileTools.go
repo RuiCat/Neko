@@ -38,7 +38,7 @@ func (s *Server) addScriptFileTools(server *mcp.Server) {
 		Name:        "neko_script_validate",
 		Description: "编译校验脚本但不注册、不落盘（dry-run）。",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args scriptValidateArgs) (*mcp.CallToolResult, any, error) {
-		return jsonResult(s.registry.ValidateScript(args.Name, args.Script, false))
+		return jsonResult(s.registry.ValidateScript(args.Name, args.Script))
 	})
 
 	mcp.AddTool(server, &mcp.Tool{

@@ -102,8 +102,8 @@ func (r *Registry) ListScripts() []ScriptInfo {
 	return out
 }
 
-// ValidateScript parses, safety-checks and compiles text without registering it.
-func (r *Registry) ValidateScript(name, text string, skipSafety bool) *ValidateResult {
+// ValidateScript parses and compiles text without registering it.
+func (r *Registry) ValidateScript(name, text string) *ValidateResult {
 	result := &ValidateResult{OK: true, Errors: []ApplyError{}, Warnings: []ApplyError{}}
 	if name != "" {
 		if message := validateName(name); message != "" {
@@ -112,7 +112,7 @@ func (r *Registry) ValidateScript(name, text string, skipSafety bool) *ValidateR
 			return result
 		}
 	}
-	prepared := r.prepareScript(name, text, skipSafety)
+	prepared := r.prepareScript(name, text)
 	result.Warnings = append(result.Warnings, prepared.Warnings...)
 	if len(prepared.Errors) > 0 {
 		result.OK = false
@@ -164,7 +164,7 @@ func (r *Registry) WriteScript(name, text, expectedHash string) (result *ApplyRe
 		return result
 	}
 	newHash := textHash(text)
-	prepared := r.prepareScript(name, text, false)
+	prepared := r.prepareScript(name, text)
 	result.Warnings = append(result.Warnings, prepared.Warnings...)
 	if len(prepared.Errors) > 0 {
 		result.OK = false

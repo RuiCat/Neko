@@ -54,7 +54,8 @@ type Options struct {
 	// repair, regression gate) on every nightly tick.
 	NightlyPipeline bool
 	// EmoteDir is the emote library directory (emote_index.json, vec_db.*,
-	// img/). Empty resolves to $ASTRBOX_EMOTE_DIR or ~/data/catworkspace/emotes.
+	// img/). Empty resolves through $ASTRBOX_EMOTE_DIR, then config.json's
+	// emote_dir, then the emote package's legacy default (see resolveEmoteDir).
 	EmoteDir string
 }
 
@@ -241,7 +242,7 @@ func New(options Options) (*Runtime, error) {
 		Assembler:       assembler,
 		DataDir:         options.DataDir,
 		ScriptsDir:      options.ScriptsDir,
-		EmoteDir:        options.EmoteDir,
+		EmoteDir:        resolveEmoteDir(options, domainConfig),
 	}
 	runtime.startNightly(options)
 	return runtime, nil

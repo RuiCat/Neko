@@ -46,7 +46,6 @@ func searchKeyword(data *DataSet, text string, top int) []Result {
 		}
 	}
 	words := uniqueHanWords(text)
-	intimate := containsAny(text, intimateKeywords)
 	type keywordHit struct {
 		score int
 		name  string
@@ -75,9 +74,6 @@ func searchKeyword(data *DataSet, text string, top int) []Result {
 		}
 		if hasCategory(entry.Categories, "其他") {
 			score -= 2
-		}
-		if hasCategory(entry.Categories, "暧昧") && !intimate {
-			continue
 		}
 		if score > 0 {
 			hits = append(hits, keywordHit{score: score, name: name})

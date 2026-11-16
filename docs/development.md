@@ -84,7 +84,7 @@ scripts/
 ├── derivations/ repairs/                           # 运行期产物
 └── rules.json                                      # 可选，启动时加载手写规则
 
-config.json             # 可选，域词汇/安全/HTTP 配置
+config.json             # 可选，域词汇/HTTP 配置
 ```
 
 Python 版把脚本与数据放在同一目录；Go 版拆成两处，重放时从 `scripts/` 读源文件、向 `data/` 写状态。

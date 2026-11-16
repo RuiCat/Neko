@@ -1,8 +1,12 @@
 // search.go reproduces the Python two-layer retrieval of emote_vec_db.search:
 // query embedding → top-20 content clusters → candidate pool (cluster members
-// plus intent keyword direct hits) → R18 filter, similarity threshold and
-// intent-fusion score. The intent/negative/R18 tables are frozen copies; the
-// acceptance baseline (verify_emote_negkw.py) depends on them.
+// plus intent keyword direct hits) → similarity threshold and intent-fusion
+// score. The intent/negative tables are frozen copies; the acceptance baseline
+// (verify_emote_negkw.py) depends on them.
+//
+// The R18 and 暧昧 content filters of the Python version were removed on
+// 2026-11-16 at the maintainer's request: rows of those categories now rank
+// like any other row, in all three tiers.
 package emote
 
 import (
@@ -10,7 +14,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -47,16 +50,6 @@ var negativeKeywords = map[string][]string{
 	"难过": {"难过地笑"},
 }
 
-// r18Keywords is the content filter that must never be relaxed (R6).
-var r18Keywords = []string{
-	"淫乱", "援交", "娇喘", "裸", "性", "色情", "高潮", "精液", "阴道", "阴茎",
-	"做爱", "口交", "乳头", "生殖器", "露骨", "一丝不挂", "全裸", "性爱", "自慰",
-	"勃起", "奶子", "胸部", "乳房", "强奸", "操哭", "操你", "色图", "本子", "里番",
-}
-
-// intimateKeywords gates the 暧昧 category (both vector tiers and keyword tier).
-var intimateKeywords = []string{"亲亲", "抱抱", "想你", "喜欢你", "爱", "贴贴", "蹭", "亲", "吻", "么么"}
-
 // detectIntents returns the intents whose keywords appear in the query, minus
 // any intent whose negative scenario the query itself triggers.
 func detectIntents(text string) []string {
@@ -85,6 +78,9 @@ type scoredCandidate struct {
 func searchVecDB(ctx context.Context, data *DataSet, embedder Embedder, text string, top int) ([]Result, error) {
 	if !data.HasDB || data.Dim <= 0 {
 		return nil, fmt.Errorf("表情向量库未加载")
+	}
+	if strings.TrimSpace(text) == "" {
+		return nil, nil
 	}
 	intents := detectIntents(text)
 	query, err := embedder.Embed(ctx, text)
@@ -140,9 +136,6 @@ func searchVecDB(ctx context.Context, data *DataSet, embedder Embedder, text str
 		desc := entry.Desc
 		similarity := dotProduct(normalizeVector(data.row(row)), queryNormalized)
 		cluster := int(data.Labels[row])
-		if containsAny(desc, r18Keywords) {
-			continue
-		}
 		isIntentHit := intentHits[row]
 		if similarity < SIM_THRESHOLD && !isIntentHit {
 			continue
@@ -205,8 +198,8 @@ func resultsFromCandidates(data *DataSet, scored []scoredCandidate, top int) []R
 	return results
 }
 
-// searchFlatVectors is the second tier: cosine over emote_vectors.json, with
-// the 0.35 threshold and the 暧昧 filter of emote_matcher_v2.
+// searchFlatVectors is the second tier: cosine over emote_vectors.json with
+// the 0.35 threshold of emote_matcher_v2.
 func searchFlatVectors(ctx context.Context, data *DataSet, embedder Embedder, text string, top int) ([]Result, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, nil
@@ -220,7 +213,6 @@ func searchFlatVectors(ctx context.Context, data *DataSet, embedder Embedder, te
 		return nil, fmt.Errorf("%w: %v", ErrEmbedding, err)
 	}
 	queryNormalized := normalizeVector(query)
-	intimate := containsAny(text, intimateKeywords)
 	type flatHit struct {
 		file  string
 		score float64
@@ -229,10 +221,6 @@ func searchFlatVectors(ctx context.Context, data *DataSet, embedder Embedder, te
 	for _, name := range data.IndexOrder {
 		vector, ok := vectors[name]
 		if !ok || len(vector) == 0 || len(vector) != len(query) {
-			continue
-		}
-		entry := data.Index[name]
-		if hasCategory(entry.Categories, "暧昧") && !intimate {
 			continue
 		}
 		similarity := dotProduct(normalizeVector(vector), queryNormalized)
@@ -321,9 +309,4 @@ func hasCategory(categories []string, value string) bool {
 		}
 	}
 	return false
-}
-
-// clusterName renders a cluster id the way cluster_analysis.json keys it.
-func clusterName(cluster int) string {
-	return strconv.Itoa(cluster)
 }

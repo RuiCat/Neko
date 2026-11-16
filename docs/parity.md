@@ -34,7 +34,6 @@ Python 原实现（`legacy/python-astrbox/`）是行为基线。本文件记录 
 - 冲突检测：`branch_race` 通过 tick 级实体写监听覆盖规则 ops 与 `@函数/事件` 的隐式写入（同一 tick、声明状态组）。
 - 数值输出：效果增量在内存里用 `float64` 计算，但 JSON 序列化对整数值输出一致（`90` 而非 `90.0`），字段类型与 Python 写回结果等价。
 - 域词汇：状态组/状态定义字段/默认子组/全局实体/默认场景/场景事件字段/分类字段从 `internal/config` 读取，默认值（`状态`/`状态定义`/`身体`）与 Python 完全一致；可通过 `<dataDir>/config.json` 覆盖。
-- 安全层：`safety_enabled=true` 时按 Python 同款词表扫描 AST/全文并拒绝；默认关闭（与 Python `SAFETY_ENABLED=False` 一致），重放路径跳过检查。
 - 统计与快照：`stats` 对应 Python `cat_stats`；`entity_snapshot` 把全部实体写入 `archives/<name>.json`（Python 的「保存状态」只调用 store.save，Go 版额外提供显式归档文件）。
 
 ## 已变更（有意）

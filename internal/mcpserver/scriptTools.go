@@ -20,7 +20,7 @@ func (s *Server) addScriptTools(server *mcp.Server) {
 		Name:        "neko_script_apply",
 		Description: "解析并应用一段 .neko 脚本（模板 + 规则 + 函数 + 事件），增量注册。",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args scriptApplyArgs) (*mcp.CallToolResult, any, error) {
-		result := s.registry.Apply(args.Name, args.Script, false, false)
+		result := s.registry.Apply(args.Name, args.Script, false)
 		return jsonResult(result)
 	})
 

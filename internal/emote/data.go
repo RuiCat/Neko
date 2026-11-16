@@ -234,13 +234,18 @@ func exists(path string) bool {
 
 // fileStamp fingerprints the data files so the client can reload after a rebuild.
 type fileStamp struct {
-	indexMod  int64
-	indexSize int64
-	dbMod     int64
-	dbSize    int64
+	indexMod    int64
+	indexSize   int64
+	dbMod       int64
+	dbSize      int64
+	vectorsMod  int64
+	vectorsSize int64
+	anaMod      int64
+	anaSize     int64
 }
 
-// stampOf reads the current fingerprint of the index and database.
+// stampOf reads the current fingerprint of the index, database, flat vectors
+// and cluster analysis, so replacing any of them reloads the cached DataSet.
 func stampOf(dir string) fileStamp {
 	stamp := fileStamp{}
 	if info, err := os.Stat(filepath.Join(dir, INDEX_FILE_NAME)); err == nil {
@@ -250,6 +255,14 @@ func stampOf(dir string) fileStamp {
 	if info, err := os.Stat(filepath.Join(dir, VECTOR_DB_FILE_NAME)); err == nil {
 		stamp.dbMod = info.ModTime().UnixNano()
 		stamp.dbSize = info.Size()
+	}
+	if info, err := os.Stat(filepath.Join(dir, VECTORS_FILE_NAME)); err == nil {
+		stamp.vectorsMod = info.ModTime().UnixNano()
+		stamp.vectorsSize = info.Size()
+	}
+	if info, err := os.Stat(filepath.Join(dir, CLUSTER_ANALYSIS_FILE_NAME)); err == nil {
+		stamp.anaMod = info.ModTime().UnixNano()
+		stamp.anaSize = info.Size()
 	}
 	return stamp
 }

@@ -58,7 +58,7 @@
 | 玩耍/挠痒/自我行动/侍主/亲子 | `cat_play/scratch/selfcare/work`、`cat_auto_*` | 无 | 归入行为模板库 |
 | 记忆/日志 | `meta/cat_log.neko` | 记忆内核（负荷/巩固/回忆） | 补 `最近场景/上次互动/条数` |
 | 器官几何（89 键） | `core/cat_organ_state.neko` | organs 内核 25 器官 × 4 维 | 暂不导入（结构差异大），按需补 |
-| 安全/自检/脚本治理 | `meta/*` | Go 侧 safety/repair 已有 | 不导入 |
+| 安全/自检/脚本治理 | `meta/*` | Go 侧 repair 已有 | 不导入 |
 
 ## 4. 目标目录（在现有分层上扩展）
 

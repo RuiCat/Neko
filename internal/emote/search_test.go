@@ -64,25 +64,42 @@ func syntheticDataSet() *DataSet {
 	}
 }
 
-// TestSearchVecDBFiltersR18AndScores checks the R18 filter and score ordering.
-func TestSearchVecDBFiltersR18AndScores(t *testing.T) {
+// TestSearchVecDBKeepsFormerR18Row checks the primary tier ranks rows by fused
+// score after the R18 filter was removed (2026-11-16).
+func TestSearchVecDBKeepsFormerR18Row(t *testing.T) {
 	data := syntheticDataSet()
 	results, err := searchVecDB(context.Background(), data, fakeEmbedder{vector: []float32{0, 0, 1, 0}}, "害怕", 3)
 	if err != nil {
 		t.Fatalf("searchVecDB: %v", err)
 	}
+	found := false
 	for _, result := range results {
 		if result.File == "e.jpg" {
-			t.Fatalf("R18 row leaked: %+v", result)
+			found = true
+			if result.IntentBonus <= 0 {
+				t.Fatalf("intent bonus = %v, want > 0", result.IntentBonus)
+			}
 		}
 	}
-	if len(results) == 0 {
-		t.Fatal("no results, want at least the intent hit")
+	if !found {
+		t.Fatalf("e.jpg missing, R18 filter should be gone: %+v", results)
 	}
 	for i := 1; i < len(results); i++ {
 		if results[i-1].Score < results[i].Score {
 			t.Fatalf("results not sorted: %v", results)
 		}
+	}
+}
+
+// TestSearchVecDBEmptyTextSkipsEmbedding returns no rows without calling Ollama.
+func TestSearchVecDBEmptyTextSkipsEmbedding(t *testing.T) {
+	data := syntheticDataSet()
+	results, err := searchVecDB(context.Background(), data, fakeEmbedder{err: errors.New("must not be called")}, "   ", 3)
+	if err != nil {
+		t.Fatalf("searchVecDB: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("results = %+v, want none", results)
 	}
 }
 
@@ -196,8 +213,9 @@ func TestNearestClustersOrder(t *testing.T) {
 	}
 }
 
-// TestSearchFlatVectorsFiltersIntimate checks the second tier's 暧昧 gate.
-func TestSearchFlatVectorsFiltersIntimate(t *testing.T) {
+// TestSearchFlatVectorsKeepsAmbiguousRows checks the second tier no longer gates
+// 暧昧 rows (filter removed 2026-11-16).
+func TestSearchFlatVectorsKeepsAmbiguousRows(t *testing.T) {
 	data := syntheticDataSet()
 	data.HasDB = false
 	data.vectors = map[string][]float32{
@@ -209,7 +227,11 @@ func TestSearchFlatVectorsFiltersIntimate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("searchFlatVectors: %v", err)
 	}
-	if len(results) != 1 || results[0].File != "a.jpg" {
-		t.Fatalf("results = %+v, want only a.jpg (暧昧 filtered)", results)
+	files := map[string]bool{}
+	for _, result := range results {
+		files[result.File] = true
+	}
+	if !files["a.jpg"] || !files["f.jpg"] {
+		t.Fatalf("results = %+v, want a.jpg and f.jpg (no 暧昧 gate)", results)
 	}
 }

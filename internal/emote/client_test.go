@@ -109,6 +109,44 @@ func TestClientReloadsAfterRebuild(t *testing.T) {
 	}
 }
 
+// TestClientReloadsAfterVectorsChange picks up a rewritten flat vectors file:
+// the cache fingerprint must cover emote_vectors.json, not only the index/npz.
+func TestClientReloadsAfterVectorsChange(t *testing.T) {
+	dir := t.TempDir()
+	writeIndexFile(t, dir, []indexEntryFixture{
+		{Name: "a.jpg", Desc: "日常早安", Categories: []string{"日常"}},
+		{Name: "b.jpg", Desc: "日常晚安", Categories: []string{"日常"}},
+	})
+	writeVectors := func(vectors map[string][]float32) {
+		raw, err := json.Marshal(vectors)
+		if err != nil {
+			t.Fatalf("marshal vectors: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, VECTORS_FILE_NAME), raw, 0o644); err != nil {
+			t.Fatalf("write vectors: %v", err)
+		}
+	}
+	writeVectors(map[string][]float32{"a.jpg": {1, 0}})
+	client := NewClient(Config{Dir: dir})
+	client.SetEmbedder(fakeEmbedder{vector: []float32{1, 0}})
+	first, err := client.Find(context.Background(), "早安", 3)
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if len(first.Results) != 1 {
+		t.Fatalf("results = %+v, want only a.jpg", first.Results)
+	}
+	time.Sleep(5 * time.Millisecond)
+	writeVectors(map[string][]float32{"a.jpg": {1, 0}, "b.jpg": {1, 0}})
+	second, err := client.Find(context.Background(), "早安", 3)
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if len(second.Results) != 2 {
+		t.Fatalf("results = %+v, want both rows after the vectors rewrite", second.Results)
+	}
+}
+
 // TestClampTop checks the new top argument guard.
 func TestClampTop(t *testing.T) {
 	cases := map[int]int{0: DEFAULT_TOP, -5: DEFAULT_TOP, 1: 1, 3: 3, 20: 20, 999: MAX_TOP}

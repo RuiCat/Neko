@@ -239,7 +239,9 @@ dry-run：解析 + 安全 + 编译，**不注册、不落盘**。返回
 ### `emote_find`
 
 根据文本语义在 QQ 表情库中检索，返回图片路径（可直接交给 `qqbot_send_file` 发送）。
-数据目录由 `-emote-dir` / `ASTRBOX_EMOTE_DIR` 指定（默认 `~/data/catworkspace/emotes`）；
+表情库路径由配置指定：`-emote-dir` > `ASTRBOX_EMOTE_DIR` > `config.json` 的 `emote_dir`
+（默认留空 = 未配置；相对值按配置文件目录解析）。安装**不拷贝**表情库、也不自动填 `emote_dir`；
+只有配置里写了相对路径时，`make install-runtime` 才把它按仓库根转成绝对路径。
 表情数据（图片、向量、索引）**不进版本库**。
 
 | 参数 | 类型 | 必填 | 说明 |
@@ -251,7 +253,7 @@ dry-run：解析 + 安全 + 编译，**不注册、不落盘**。返回
 
 - 三级降级：`vec_db.npz`（128 簇两层检索）→ `emote_vectors.json`（余弦 ≥0.35）→ 关键词打分；
   三级都不可用时返回 `❌ 表情库索引缺失: <路径>`。
-- 检索含意图融合与 R18 内容过滤（词表冻结，见 `docs/emote-tool-migration.md`）；
+- 检索含意图融合；R18 与「暧昧」内容过滤已于 2026-11-16 按维护者要求移除（历史见 `docs/emote-tool-migration.md`）；
   Ollama `nomic-embed-text` 不可用时返回 `❌`，不静默降级（决策 d3）。
 - 缺图行返回 `path:""` + `missing:true`；查询文本不落盘、不进日志。
 - 构建/巡检用 CLI（`make build` 产出 `bin/astrbox-emote`）：

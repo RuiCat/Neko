@@ -60,3 +60,4 @@ scripts/*.tmp
 /data/blackboard.json
 /data/session-boards.json
 /plugins/*/node_modules/
+/data/emotes

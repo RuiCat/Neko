@@ -8,7 +8,7 @@ func keywordDataSet() *DataSet {
 	index := map[string]IndexEntry{
 		"a.jpg": {Desc: "开心地笑", Categories: []string{"开心"}, Keywords: []string{"开心"}},
 		"b.jpg": {Desc: "难过大哭", Categories: []string{"难过", "其他"}},
-		"c.jpg": {Desc: "暧昧亲亲", Categories: []string{"暧昧", "爱"}},
+		"c.jpg": {Desc: "暧昧亲亲", Categories: []string{"暧昧", "爱"}, Keywords: []string{"比心"}},
 		"d.jpg": {Desc: "日常早安", Categories: []string{"日常"}},
 		"e.jpg": {Desc: "早安打卡", Categories: []string{"日常"}},
 		"f.jpg": {Desc: "早安打卡", Categories: []string{"日常", "其他"}},
@@ -36,24 +36,23 @@ func TestSearchKeywordBasic(t *testing.T) {
 	if len(results) == 0 || results[0].File != "d.jpg" {
 		t.Fatalf("results = %+v, want d.jpg first", results)
 	}
-	for _, result := range results {
-		if result.File == "c.jpg" {
-			t.Fatal("暧昧 row leaked without an intimate query")
-		}
-	}
 }
 
-// TestSearchKeywordIntimateAllowsAmbiguous keeps 暧昧 rows for intimate text.
-func TestSearchKeywordIntimateAllowsAmbiguous(t *testing.T) {
-	results := searchKeyword(keywordDataSet(), "亲亲", 5)
+// TestSearchKeywordKeepsAmbiguousRows ranks 暧昧 rows like any other row after
+// the 暧昧 gate was removed (2026-11-16).
+func TestSearchKeywordKeepsAmbiguousRows(t *testing.T) {
+	results := searchKeyword(keywordDataSet(), "比心", 5)
 	found := false
 	for _, result := range results {
 		if result.File == "c.jpg" {
 			found = true
+			if result.Score <= 0 {
+				t.Fatalf("score = %v, want > 0", result.Score)
+			}
 		}
 	}
 	if !found {
-		t.Fatalf("c.jpg should pass the intimate gate, got %+v", results)
+		t.Fatalf("c.jpg (暧昧 row) missing: %+v", results)
 	}
 }
 

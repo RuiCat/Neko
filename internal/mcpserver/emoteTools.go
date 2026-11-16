@@ -21,7 +21,7 @@ type emoteFindArgs struct {
 func (s *Server) addEmoteTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "emote_find",
-		Description: "表情查找工具：按想表达的内容语义匹配 QQ 表情库（向量检索 + 意图融合 + R18 过滤），" +
+		Description: "表情查找工具：按想表达的内容语义匹配 QQ 表情库（向量检索 + 意图融合），" +
 			"返回表情图片路径，可直接交给 qqbot_send_file 发送。" +
 			`用法: emote_find(text="主人我好想你呀", top=3)`,
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args emoteFindArgs) (*mcp.CallToolResult, any, error) {

@@ -21,7 +21,7 @@
 | `internal/config/` | 基础配置层：状态词汇、全局实体、默认场景/事件字段/分类字段、HTTP token |
 | `internal/diagnostics/` | 诊断环形存储：脚本/tick/校验告警的去重与作用域查询 |
 | `internal/mcpserver/` | MCP 工具注册与处理器 |
-| `data/` | **本地运行数据（不进版本库）**：`entities.json`（环境实体）、`user/entities.json`（NPC）、`scripts.json`、`templates/`、`archives/`、`logs/` |
+| `data/` | **本地运行数据（不进版本库）**：`entities.json`（环境实体）、`user/entities.json`（NPC）、`scripts.json`、`templates/`、`archives/`、`logs/`、`emotes/`（表情库，路径见 `docs/config.md` 的 `emote_dir`） |
 | `scripts/` | `.neko` 脚本源文件：手写按 `core/behavior/rules/scene/r18/meta/` 归档；机器生成放 `generated/{auto,derive,repair}/`；工具放 `tools/`。未注册的旧副本归档在 `archive/scripts-orphans/`（不在 `scripts/` 下，不参与引导） |
 | `legacy/python-astrbox/` | 原 Python 实现（冻结参考，不参与构建） |
 | `docs/` | 架构、脚本语言、MCP 工具、迁移对照、开发说明 |

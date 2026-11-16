@@ -9,7 +9,6 @@
 | `state_group` | `状态` | 实体里承载状态机的顶层字段；Tick 写状态、冲突检测、解析器 `状态 = "x"` 语法糖都用它 |
 | `state_definition_field` | `状态定义` | 声明每个状态组允许值的字段；`branch_race` 冲突检测读取它 |
 | `default_state_subgroup` | `身体` | 分支写 `状态 = "昏厥"` 时省略的子组；也是裸字段默认挂载的分组 |
-| `safety_enabled` | `false` | 打开 R18G 词表扫描；`false` 时与 Python 默认行为一致（全部放行） |
 | `global_entities` | `["场景","世界","时间","天气","全局"]` | 不加 `{e}` 前缀、按全局实体解析的名称；解析器/编译器都读它 |
 | `default_scene` | `场景` | `emit` 动作未指定场景时的落点；库里没有同名实体时按 NPC 当前场景解析 |
 | `current_scene_path` | `位置.场景` | 实体上记录当前所在场景 id 的字段；默认场景名解析成当前场景时读它（留空 = 用默认） |
@@ -18,6 +17,7 @@
 | `scene_occupancy_field` | `在场` | 场景实体上记录「场内是谁」的 id 列表；每 tick 由各实体的 `current_scene_path` 重新推导并写回，谁进/出场景就是一次场景变化（留空 = 关闭同步） |
 | `classification_field` | `分类` | 实体的多分类标签字段（选择器 `成年[*]` 用它匹配） |
 | `http_token` | 空 | HTTP 传输的 Bearer token；空 = 无鉴权，仅允许绑定回环地址 |
+| `emote_dir` | 空 | 表情库目录（`emote_index.json`、`vec_db.*`、`img/`）。**这是用户设置**：留空 = 未配置（不指向任何仓库路径，走环境变量/旧默认）；相对值按配置文件所在目录解析。安装**不拷贝**表情库 |
 
 ## 加载方式
 
@@ -37,7 +37,6 @@
   "state_group": "状态",
   "state_definition_field": "状态定义",
   "default_state_subgroup": "身体",
-  "safety_enabled": false,
   "global_entities": ["场景", "世界", "时间", "天气", "全局"],
   "default_scene": "场景",
   "current_scene_path": "位置.场景",
@@ -45,9 +44,12 @@
   "scene_event_limit": 50,
   "scene_occupancy_field": "在场",
   "classification_field": "分类",
-  "http_token": ""
+  "http_token": "",
+  "emote_dir": ""
 }
 ```
+
+> 上面 `emote_dir` 是**用户设置的示例值**（相对配置文件目录）；不需要就直接删掉该键。
 
 ## 影响范围
 
@@ -89,13 +91,6 @@
   "persona": "你自己的人设文本"
 }
 ```
-
-## 安全扫描（`safety_enabled`）
-
-- `false`（默认）：不扫描，行为与 Python `SAFETY_ENABLED=False` 一致。
-- `true`：`neko_script_apply` 先扫描 AST（规则/事件/函数/数据名），再扫描全文与脚本名；命中则返回 `ok=false`，错误块为 `R18G安全检查`。
-- 启动重放（`skipSafety=true`）不重复扫描，避免把主人确认过的存量脚本卡住。
-- 词表与 Python `script/safety.py` 一致；扫描实现见 `internal/safety`。
 
 ## HTTP 传输
 

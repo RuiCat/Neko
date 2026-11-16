@@ -27,7 +27,7 @@ func TestScriptOrderPreserved(t *testing.T) {
 	}
 	result := reg.Apply("c", `@规则[$] {
   动作: 值 = 1
-}`, false, false)
+}`, false)
 	if !result.OK {
 		t.Fatalf("apply: %+v", result.Errors)
 	}

@@ -32,7 +32,7 @@ func newScriptFileRegistry(t *testing.T) (*Registry, string, string) {
 
 func TestReadAndListScript(t *testing.T) {
 	reg, _, _ := newScriptFileRegistry(t)
-	if result := reg.Apply("base", baseScript, false, true); !result.OK {
+	if result := reg.Apply("base", baseScript, false); !result.OK {
 		t.Fatalf("apply: %+v", result.Errors)
 	}
 	view, err := reg.ReadScript("base")
@@ -70,11 +70,11 @@ func TestReadRejectsSymlink(t *testing.T) {
 
 func TestValidateDoesNotMutate(t *testing.T) {
 	reg, _, _ := newScriptFileRegistry(t)
-	if result := reg.Apply("base", baseScript, false, true); !result.OK {
+	if result := reg.Apply("base", baseScript, false); !result.OK {
 		t.Fatalf("apply: %+v", result.Errors)
 	}
 	before := len(reg.engine.Rules())
-	validated := reg.ValidateScript("preview", strings.Replace(baseScript, "75", "80", 1), false)
+	validated := reg.ValidateScript("preview", strings.Replace(baseScript, "75", "80", 1))
 	if !validated.OK {
 		t.Fatalf("validate: %+v", validated.Errors)
 	}
@@ -88,7 +88,7 @@ func TestValidateDoesNotMutate(t *testing.T) {
 
 func TestWriteScriptCAS(t *testing.T) {
 	reg, _, _ := newScriptFileRegistry(t)
-	if result := reg.Apply("base", baseScript, false, true); !result.OK {
+	if result := reg.Apply("base", baseScript, false); !result.OK {
 		t.Fatalf("apply: %+v", result.Errors)
 	}
 	oldHash := reg.Get("base").Hash

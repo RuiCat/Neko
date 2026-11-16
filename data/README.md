@@ -10,6 +10,9 @@
 - `llm_decisions.json`：冲突仲裁记录。
 - `training/`：门控训练样本与导出的训练集（含对话摘要，仅本机）。
 - `models/`：训练好的门控权重（`gate-mlp-v1.json` 等，仅本机）。
+- `emotes/`：本机 QQ 表情库（`emote_index.json`、`vec_db.*`、`img/`，GB 级，gitignored）。
+  **不由安装拷贝**；路径是用户设置（`config.json` 的 `emote_dir`，留空 = 未配置），
+  安装器只在配置已写相对路径时把它转成绝对路径。
 
 ## 首次运行
 

@@ -19,8 +19,6 @@ type Config struct {
 	StateDefinitionField string `json:"state_definition_field"`
 	// DefaultStateSubgroup is used by the `状态 = "x"` sugar (默认 "身体").
 	DefaultStateSubgroup string `json:"default_state_subgroup"`
-	// SafetyEnabled turns on the optional R18G word-list scan (默认关闭).
-	SafetyEnabled bool `json:"safety_enabled"`
 	// HttpToken protects the HTTP transport (empty = no auth).
 	HttpToken string `json:"http_token"`
 	// GlobalEntities are referenced without the {e} prefix.
@@ -67,6 +65,12 @@ type Config struct {
 	// Persona is the fallback system persona for the local chat command.
 	// Data, not source: empty means a neutral one-line default.
 	Persona string `json:"persona"`
+	// EmoteDir is the emote library directory (emote_index.json, vec_db.*,
+	// img/). Empty means "the user did not configure it": nothing points at a
+	// repository path by default, and the emote package's legacy default
+	// applies. A relative value resolves against the config file's directory;
+	// the -emote-dir flag and $ASTRBOX_EMOTE_DIR win over it.
+	EmoteDir string `json:"emote_dir"`
 }
 
 // Default returns the vocabulary used by the bundled data and scripts.

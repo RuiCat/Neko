@@ -1,19 +1,17 @@
 package registry
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/RuiCat/Neko/internal/compiler"
 	"github.com/RuiCat/Neko/internal/diagnostics"
 	"github.com/RuiCat/Neko/internal/neko"
-	"github.com/RuiCat/Neko/internal/safety"
 )
 
-// preparedScript is the side-effect-free result of parsing, safety-checking and
-// compiling one script. It is shared by Apply, WriteScript and ValidateScript so
-// the three paths cannot drift apart.
+// preparedScript is the side-effect-free result of parsing and compiling one
+// script. It is shared by Apply, WriteScript and ValidateScript so the three
+// paths cannot drift apart.
 type preparedScript struct {
 	Hash     string
 	Compiled *compiler.Result
@@ -26,27 +24,14 @@ func newApplyResult(name string) *ApplyResult {
 	return &ApplyResult{OK: true, Script: name, Errors: []ApplyError{}, Warnings: []ApplyError{}}
 }
 
-// prepareScript parses, safety-checks and compiles text without touching state.
-func (r *Registry) prepareScript(name, text string, skipSafety bool) *preparedScript {
+// prepareScript parses and compiles text without touching state.
+func (r *Registry) prepareScript(name, text string) *preparedScript {
 	prepared := &preparedScript{Hash: textHash(text)}
 	ast := neko.Parse(text)
 	for _, err := range ast.Errors {
 		// Mirrors the Python registry: a malformed data block is reported but does
 		// not stop the rules in the same script from being applied.
 		prepared.Warnings = append(prepared.Warnings, ApplyError{Severity: "warning", Message: err.Error()})
-	}
-	if !skipSafety && safety.Enabled() {
-		violations := safety.CheckAST(ast)
-		if len(violations) == 0 {
-			violations = safety.CheckScriptText(text, name)
-		}
-		if len(violations) > 0 {
-			prepared.Errors = append(prepared.Errors, ApplyError{
-				Severity: "error", Block: "R18G安全检查",
-				Message: fmt.Sprintf("脚本 '%s' 含 R18G 敏感内容，已拒绝应用（%d 处）", name, len(violations)),
-			})
-			return prepared
-		}
 	}
 	compiled := compiler.CompileScript(ast)
 	if len(compiled.Errors) > 0 {

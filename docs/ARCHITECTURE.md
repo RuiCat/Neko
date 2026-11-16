@@ -13,7 +13,7 @@ internal/mcpserver ──► internal/registry ──► internal/compiler ─�
                   internal/function ◄── internal/events
 ```
 
-依赖方向单向：`neko` 与 `entity` 不依赖其他内部包；`engine` 只依赖 `entity`；`function` 只依赖 `neko`/`entity`；`events` 依赖 `engine`/`entity`/`neko`；`compiler` 依赖 `neko`/`engine`/`entity`；`registry` 依赖 `compiler`/`engine`/`entity`/`neko`/`safety`/`diagnostics`；`diagnostics` 只依赖标准库；`mcpserver` 依赖前几者与 `entity`；`cmd` 只做装配。
+依赖方向单向：`neko` 与 `entity` 不依赖其他内部包；`engine` 只依赖 `entity`；`function` 只依赖 `neko`/`entity`；`events` 依赖 `engine`/`entity`/`neko`；`compiler` 依赖 `neko`/`engine`/`entity`；`registry` 依赖 `compiler`/`engine`/`entity`/`neko`/`diagnostics`；`diagnostics` 只依赖标准库；`mcpserver` 依赖前几者与 `entity`；`cmd` 只做装配。
 
 ## 各包职责
 

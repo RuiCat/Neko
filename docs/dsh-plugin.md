@@ -529,6 +529,12 @@ K28 补一条**按实体**的补充提示词：在 Neko 面板里编辑，qqbot 
 （`[astrbox-observation]` / `[astrbox-state]`，按实体）是两条独立通道：会话黑板按「工作区」分区、
 按会话身份写入。
 
+### 脚本发布（引擎 → 会话黑板）
+
+引擎脚本写 `交互.推送.待发`，tick 后由 `mcpserver.publishTick` 调用 `sessionboard.Store.Publish`
+写入全局板的 `脚本` 区（owner=system、by=脚本、key=实体 id、value=消息文本）；会话
+`astrbox_board op=subscribe scope=global` 后会在下一轮收到该条差异。详见 `docs/script-push.md`。
+
 ### 数据与路由（Go 控制面）
 
 - 存储 `data/session-boards.json`（`internal/sessionboard`，K1/K6）；两个 scope：

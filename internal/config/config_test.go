@@ -54,3 +54,22 @@ func TestLoadMergesDefaults(t *testing.T) {
 		t.Fatalf("missing file: %+v, %v", missing, err)
 	}
 }
+
+// TestLoadReadsEmoteDir keeps the emote library path config-driven.
+func TestLoadReadsEmoteDir(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"emote_dir":"/srv/emotes"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.EmoteDir != "/srv/emotes" {
+		t.Fatalf("emote_dir = %q, want /srv/emotes", cfg.EmoteDir)
+	}
+	if Default().EmoteDir != "" {
+		t.Fatalf("default emote_dir = %q, want empty (user-configured only)", Default().EmoteDir)
+	}
+}
