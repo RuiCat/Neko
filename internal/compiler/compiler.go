@@ -118,6 +118,14 @@ func CompileScript(ast *neko.ScriptAST) *Result {
 		}
 	}
 	result.Funcs = append(result.Funcs, ast.FuncDefs...)
+	for _, event := range ast.EventDefs {
+		if len(event.Actions) > 0 {
+			result.Warnings = append(result.Warnings, neko.Warning{
+				Message: fmt.Sprintf("事件 '%s' 的动作行不会执行，请改用 @函数 处理器", event.Name),
+				Pos:     event.Pos,
+			})
+		}
+	}
 	result.Events = append(result.Events, ast.EventDefs...)
 	for _, def := range ast.RuleDefs {
 		rule, err := CompileRule(def)

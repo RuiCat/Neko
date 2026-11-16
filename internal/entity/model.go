@@ -142,6 +142,9 @@ func (e *Entity) Set(path string, value any) error {
 	if len(parts) == 0 {
 		return &PathNotFoundError{Message: "空路径"}
 	}
+	if e.readonlyField(path) {
+		return &ValidationError{Message: fmt.Sprintf("字段 %s 为 readonly，不允许写入", path)}
+	}
 	var oldValue any
 	if current, err := e.Get(path); err == nil {
 		oldValue = current
@@ -168,6 +171,30 @@ func (e *Entity) Set(path string, value any) error {
 		}
 	}
 	return nil
+}
+
+// readonlyField reports whether the template chain marks path as readonly.
+// Derived templates override ancestors, matching clampValue's merge order.
+func (e *Entity) readonlyField(path string) bool {
+	readonly := false
+	for _, typeName := range TemplateOrder(e.Type, e.Templates, e.Parents) {
+		template := e.Templates[typeName]
+		if template == nil {
+			continue
+		}
+		annotations, ok := template["__annotations__"].(map[string]any)
+		if !ok {
+			continue
+		}
+		meta, ok := annotations[path].(map[string]any)
+		if !ok {
+			continue
+		}
+		if value, ok := meta["readonly"].(bool); ok {
+			readonly = value
+		}
+	}
+	return readonly
 }
 
 // Has reports whether the path exists in the instance data.

@@ -121,3 +121,15 @@ func TestCompileDuplicateDataRejected(t *testing.T) {
 		t.Fatalf("模板数 = %d", len(result.Templates))
 	}
 }
+
+// TestCompileWarnsEventActionLines pins the @事件 contract: body action lines
+// are not executed, so compilation warns and points at @函数 handlers instead.
+func TestCompileWarnsEventActionLines(t *testing.T) {
+	ast := &neko.ScriptAST{EventDefs: []neko.EventDef{{
+		Name: "事件X", Handler: "处理器", Actions: []any{`{e}.状态.触发 = "x"`},
+	}}}
+	result := CompileScript(ast)
+	if len(result.Warnings) == 0 {
+		t.Fatal("事件动作行未告警")
+	}
+}
