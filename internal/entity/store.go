@@ -3,6 +3,7 @@ package entity
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -68,10 +69,12 @@ func (s *Store) loadTemplatesLocked() error {
 		}
 		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
 		if err != nil {
+			log.Printf("entity: 读取模板 %s 失败，已跳过: %v", entry.Name(), err)
 			continue
 		}
 		var data map[string]any
 		if err := json.Unmarshal(raw, &data); err != nil {
+			log.Printf("entity: 模板 %s 解析失败，已跳过: %v", entry.Name(), err)
 			continue
 		}
 		name := strings.TrimSuffix(entry.Name(), ".json")
@@ -88,6 +91,7 @@ func (s *Store) loadParentsFileLocked(path string) {
 	}
 	var parents []string
 	if err := json.Unmarshal(raw, &parents); err != nil {
+		log.Printf("entity: 模板父列表 %s 解析失败，已跳过: %v", filepath.Base(path), err)
 		return
 	}
 	if len(parents) == 0 {
@@ -163,19 +167,27 @@ func (s *Store) saveLocked() error {
 			public[id] = record
 		}
 	}
-	if err := writeEntitiesFile(filepath.Join(s.dataDir, "entities.json"), public); err != nil {
-		return err
-	}
-	return writeEntitiesFile(s.userEntitiesPath(), user)
-}
-
-func writeEntitiesFile(path string, entities map[string]any) error {
-	payload := map[string]any{"version": 1, "entities": entities}
-	raw, err := json.MarshalIndent(payload, "", "  ")
+	// Marshal both files before writing either, so a serialization failure can
+	// no longer leave only the public half updated. Cross-file atomicity still
+	// relies on the per-file temp+rename write in atomicWrite.
+	publicRaw, err := marshalEntitiesFile(public)
 	if err != nil {
 		return err
 	}
-	return atomicWrite(path, raw)
+	userRaw, err := marshalEntitiesFile(user)
+	if err != nil {
+		return err
+	}
+	if err := atomicWrite(filepath.Join(s.dataDir, "entities.json"), publicRaw); err != nil {
+		return err
+	}
+	return atomicWrite(s.userEntitiesPath(), userRaw)
+}
+
+// marshalEntitiesFile renders one entities file payload as indented JSON.
+func marshalEntitiesFile(entities map[string]any) ([]byte, error) {
+	payload := map[string]any{"version": 1, "entities": entities}
+	return json.MarshalIndent(payload, "", "  ")
 }
 
 // MigrateUserEntities splits a legacy combined entities.json when needed.

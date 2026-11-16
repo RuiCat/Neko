@@ -8,8 +8,10 @@ import (
 )
 
 const (
-	// MAX_SOCKET_PATH_LENGTH keeps the path under the 108-byte AF_UNIX limit.
-	MAX_SOCKET_PATH_LENGTH = 100
+	// MAX_SOCKET_PATH_LENGTH is the usable length under Linux's AF_UNIX limit:
+	// sockaddr_un.sun_path is 108 bytes including the trailing NUL, so 107
+	// bytes fit. The previous 100-byte guard rejected valid deep paths.
+	MAX_SOCKET_PATH_LENGTH = 107
 	// SOCKET_MODE restricts the control socket to the owning user.
 	SOCKET_MODE = 0o600
 )

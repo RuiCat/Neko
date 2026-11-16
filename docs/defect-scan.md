@@ -239,3 +239,37 @@ go test -race ./internal/engine/... ./internal/control/... ./internal/monitor/..
 - high 5 条与主要 medium 已由 Lead 逐条核对源码（文件:行 + 代码片段均已在正文引用）。
 - 全部条目均为静态审阅 + 推理，未做运行时最小复现；H1/H4/H5 等并发/崩溃项建议以 `-race` 与单测补最小复现后修复。
 - 本次仅分析、未改任何源码；唯一新增文件为本报告与 `.local/defect-scan/` 下的分片中间产物（过程产物，不入库）。
+
+## 修复状态（2026-11-16 复检）
+
+本轮逐条回源码复核，并修复 7 项（含回归测试）。其余按复核结论关闭或标注。
+
+### 本轮已修
+
+| 条目 | 修复 | 回归 |
+|---|---|---|
+| L3 | socket 路径上限 100 → 107（Linux `sun_path` 108 字节含 NUL） | `TestListenAcceptsNearLimitPath`；深 `GOTMPDIR` 不再假失败 |
+| L6 | `*evalCount >= MAX_RULE_EVAL`（原 `>` 多放行 1 次） | 全量引擎测试 |
+| L7 | `随机()` span 改 uint64，覆盖 `MinInt`/`MaxInt` 全区间 | `TestRandomBuiltinFullRange` |
+| L19 | 补偿包序列化失败改为 log + 明确占位 JSON | `go test ./internal/chat` |
+| M12 | Save 两个实体文件先各自 Marshal 成功再写 | `go test ./internal/entity` |
+| H2（模板分支） | 模板 / 父列表解析失败改为 log，不再静默跳过 | 全量实体测试 |
+| M16 | 同一脚本重复 `@Data` 改为编译错误（原静默覆盖） | `TestCompileDuplicateDataRejected` |
+
+### 复核后确认无需修复
+
+- H1/H3/H4/H5、M1–M4/M6–M11/M13–M15、L1/L2/L4/L5/L8–L18/L21/L22、I3/I5/I6：后续提交已修，或前提消失。
+- L4：`applyScript` 已在 commit 锁内二次判重（不是锁外 TOCTOU）。
+- L20：错误路径的 journal 失败已在 `chat.go` 记录日志。
+- M5：竞态前提不成立——外部写走 `WithStateWrite` 与 Tick 串行，建议复核后关闭。
+
+### 仍开放
+
+| 条目 | 说明 |
+|---|---|
+| M12（部分） | 跨文件原子性仍依赖单文件 temp+rename；两次写之间掉电仍可能只更新一半 |
+| I1 | hub 持锁构建快照（设计取舍，性能项） |
+| I2 | 启动 token 在 URL 查询串（默认回环下影响小） |
+| I4 | `DeepMerge`/`deepCopy` 无深度保护（仅程序化超深构造可触发） |
+
+复检命令：`go build ./...`、`TMPDIR=/tmp go test ./internal/...`、`.local/bin/staticcheck ./...`。

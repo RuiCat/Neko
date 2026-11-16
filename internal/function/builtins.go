@@ -19,11 +19,15 @@ func builtinRandom(args []any) any {
 	if high == low {
 		return low
 	}
-	span := high - low + 1
-	if span <= 0 {
-		return low
+	// The span is computed in uint64 so the full int64 range does not overflow
+	// (high-low+1 is 2^64 for MinInt/MaxInt, which wraps to zero and means the
+	// whole range). Results are recombined in uint64 and cast back, keeping the
+	// two's-complement value inside [low, high].
+	span := uint64(high) - uint64(low) + 1
+	if span == 0 {
+		return int(uint64(low) + rand.Uint64())
 	}
-	return low + rand.IntN(span)
+	return int(uint64(low) + rand.Uint64N(span))
 }
 
 // builtinRange implements range(stop) / range(start, stop[, step]).

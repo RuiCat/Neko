@@ -306,7 +306,7 @@ func (m *StateMachine) runSubjectRule(rule Rule, scopeSelector *entity.Selector,
 		return false
 	}
 	(*evalCount)++
-	if *evalCount > MAX_RULE_EVAL {
+	if *evalCount >= MAX_RULE_EVAL {
 		return false
 	}
 	ruleTransitions := 0

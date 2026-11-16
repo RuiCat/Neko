@@ -161,7 +161,11 @@ func (c *Chat) Turn(ctx context.Context, input, tickID string) (Result, error) {
 func (c *Chat) buildMessages(pkg journal.Compensation, input string) []llm.Message {
 	raw, err := json.Marshal(pkg)
 	if err != nil {
-		raw = []byte("{}")
+		// The compensation package is plain data, so a failure means a bug in
+		// the package shape; surface it instead of injecting a silent empty
+		// object, then fall back to a valid minimal JSON payload.
+		log.Printf("chat: 补偿包序列化失败，注入最小占位: %v", err)
+		raw = []byte(`{"error":"compensation marshal failed"}`)
 	}
 	messages := []llm.Message{
 		{Role: "system", Content: c.options.Persona},

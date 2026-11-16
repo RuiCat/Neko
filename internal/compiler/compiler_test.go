@@ -102,3 +102,22 @@ func TestCompileScriptText(t *testing.T) {
 		t.Fatalf("rules = %d", len(result.Rules))
 	}
 }
+
+// TestCompileDuplicateDataRejected pins the duplicate @Data contract: the
+// second declaration is reported instead of silently overwriting the first.
+func TestCompileDuplicateDataRejected(t *testing.T) {
+	ast := &neko.ScriptAST{DataDefs: []neko.DataDef{
+		{TypeName: "NPC:猫猫", IsEntity: true, Data: map[string]any{"a": 1}},
+		{TypeName: "NPC:猫猫", IsEntity: true, Data: map[string]any{"b": 2}},
+	}}
+	result := CompileScript(ast)
+	if len(result.Errors) == 0 {
+		t.Fatal("同一脚本重复 @Data 未报错")
+	}
+	if _, ok := result.Templates["NPC:猫猫"]; !ok {
+		t.Fatal("首个声明应保留")
+	}
+	if len(result.Templates) != 1 {
+		t.Fatalf("模板数 = %d", len(result.Templates))
+	}
+}

@@ -1,6 +1,9 @@
 package function
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestListComprehension(t *testing.T) {
 	executor := newBoundaryExecutor(t)
@@ -63,5 +66,18 @@ for i in range(0, 30) {
 	}
 	if parts[2] != -2 || parts[3] != 0 {
 		t.Fatalf("同界随机 = %#v / %#v", parts[2], parts[3])
+	}
+}
+
+// TestRandomBuiltinFullRange pins the int64 extremes: high-low+1 overflows a
+// signed int there, so the implementation must compute the span in uint64 and
+// still return an int value.
+func TestRandomBuiltinFullRange(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		got, ok := builtinRandom([]any{math.MinInt, math.MaxInt}).(int)
+		if !ok {
+			t.Fatalf("全区间随机类型 = %T, want int", got)
+		}
+		_ = got
 	}
 }

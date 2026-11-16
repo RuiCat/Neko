@@ -44,3 +44,24 @@ func TestListenRejectsLongPath(t *testing.T) {
 		t.Fatalf("long socket path accepted: %s", longPath)
 	}
 }
+
+// TestListenAcceptsNearLimitPath pins the usable AF_UNIX limit: a path of
+// exactly MAX_SOCKET_PATH_LENGTH bytes must be accepted (the old 100-byte
+// guard rejected valid deep paths, which broke sandboxed test runs).
+func TestListenAcceptsNearLimitPath(t *testing.T) {
+	base := t.TempDir()
+	pad := MAX_SOCKET_PATH_LENGTH - len(base) - 1
+	if pad < 1 {
+		t.Skipf("temp dir too long: %d", len(base))
+	}
+	socketPath := filepath.Join(base, strings.Repeat("z", pad))
+	if len(socketPath) != MAX_SOCKET_PATH_LENGTH {
+		t.Fatalf("path length = %d, want %d", len(socketPath), MAX_SOCKET_PATH_LENGTH)
+	}
+	listener, err := Listen(socketPath)
+	if err != nil {
+		t.Fatalf("near-limit path rejected: %v", err)
+	}
+	_ = listener.Close()
+	_ = os.Remove(socketPath)
+}

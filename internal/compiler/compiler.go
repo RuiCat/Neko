@@ -94,6 +94,16 @@ func CompileScript(ast *neko.ScriptAST) *Result {
 		if !def.IsEntity {
 			continue
 		}
+		// Duplicate @Data types inside one script used to overwrite each other
+		// silently. Report the conflict so the author fixes the source instead
+		// of losing fields at compile time.
+		if _, exists := result.Templates[def.TypeName]; exists {
+			result.Errors = append(result.Errors, &neko.CompileError{
+				Message: fmt.Sprintf("模板 '%s' 在同一脚本内重复声明", def.TypeName),
+				Pos:     def.Pos, Block: "模板",
+			})
+			continue
+		}
 		expanded, _ := ExpandAnnotations(def.Data)
 		result.Templates[def.TypeName] = expanded
 		if len(def.Parents) > 0 {
