@@ -48,8 +48,27 @@ Python 原实现（`legacy/python-astrbox/`）是行为基线。本文件记录 
 | 能力 | 状态 | 影响 |
 |---|---|---|
 | 函数解释器语法面 | Python 子集 | 已支持 `while`、`try/except/finally`、`break/continue`、链式比较、`for` 遍历列表/文本/映射键与多变量解包、元组赋值、切片步长 `[a:b:c]`、map 字面量、常用 list/text/map 方法、列表推导与 `range/enumerate/zip/sum/sorted/reversed`；算术与 `int()/float()` 按 Python 类型/异常语义（字符串+列表报错）。`except` 可用 `值错误/类型错误/名称错误 as 变量`（含 `Exception`）。内建类型方法：list 全量，dict 除 `fromkeys`，str 常用集（含 `casefold/istitle/expandtabs/rsplit/partition` 等）；`str.format` 支持位置字段 `{}`/`{0}`、`{{`/`}}`、`!r` 与常用规格（`:.2f`、`:>5`、`:05d`、`:^7`）；未支持 `str.encode/translate/format_map` 与 `dict.fromkeys`（无 bytes/类模型） |
-| Python 侧非引擎工具 | 未迁移 | `trash`、`secrets`/`api_login`、`behavior`、`restart`、`session_chat`、`event_repair`、`rule_derive` |
+| Python 侧非引擎工具 | 按宿主职责处置 | 见下方「Python 非引擎工具处置」；不等价迁移，逐项说明覆盖方式或不适用的原因 |
 | 表情工具 | **已迁移** | `emote_find` 语义检索 + `astrbox-emote build` 向量/聚类构建；`vec_db.npz` 与 Python 双向可读；视觉簇分析（`build_cluster_analysis.py`）与场景层（`scene_db.*`）不迁移，`emote_index.json` 视为外部输入。对照/契约/验收见 `docs/emote-tool-migration.md` |
+
+### Python 非引擎工具处置（2026-11-16）
+
+这些工具多数绑定 AstrBot/Python 运行时（宿主文件、平台登录、进程重启、会话库），
+在 Go 版里按「宿主职责」处置，而不是逐行移植：
+
+| Python 工具 | 处置 | 依据 / 替代 |
+|---|---|---|
+| `cat_trash`（删除到回收站） | 不迁移 | 宿主文件管理不属引擎职责；误删风险高于收益 |
+| `cat_restart`（重启 AstrBot） | 不迁移 | 进程生命周期归 DSH 宿主管理，MCP 不提供自重启 |
+| `secrets` / `api_login` | 不迁移 | AstrBot 平台登录链路，Go/DSH 无对应概念 |
+| `cat_session_chat`（读写 AstrBot 会话历史） | 不迁移 | 由 DSH 会话与 `/session-event` 桥接覆盖；Go 侧有 `neko-chat` 独立对话循环 |
+| `cat_do`（行为模板执行） | 归 P4 | 行为流程执行引擎未开始（见 `legacy-extraction-plan.md` §5） |
+| `cat_event`（事件日志 / 手动触发） | 日志已覆盖 | `event_log` 提供最近派发与校验记录；手动 trigger 不开放（避免绕过 tick 门） |
+| `cat_repair`（随机事件破坏 → LLM 修复） | 机制替换 | Go 用 `triage` 扫描 → `candidate_*` → `candidate_apply`/`repair_rollback` 闭环，不复制随机破坏法 |
+| `cat_derive`（相似规则对被 LLM 衍生） | 未覆盖 | 当前无 Go 等价；候选修复由 triage 驱动。需要时作为独立功能设计（相似度 + LLM + 规则写入） |
+
+函数解释器的 `str.encode/translate/format_map` 与 `dict.fromkeys` 维持不支持：
+解释器没有 bytes 类型与类对象模型，硬加会引入第二套类型系统；需要时按最小面（仅 `dict.fromkeys` 的 map 语义）单独评估。
 
 除表情工具（已注册 `emote_find`）外，其余缺口在 MCP 工具层都不可见（没有注册对应工具），不会让客户端误以为可用。
 
