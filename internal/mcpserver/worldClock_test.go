@@ -64,18 +64,6 @@ func worldInt(t *testing.T, world *entity.Entity, path string) int {
 	return number
 }
 
-func TestPhaseOfMatchesScripts(t *testing.T) {
-	cases := map[int]string{
-		0: "凌晨", 5: "凌晨", 6: "清晨", 9: "清晨", 10: "上午", 13: "上午",
-		14: "下午", 17: "下午", 18: "傍晚", 21: "傍晚", 22: "深夜", 23: "深夜",
-	}
-	for hour, want := range cases {
-		if got := phaseOf(hour); got != want {
-			t.Errorf("phaseOf(%d) = %q, want %q", hour, got, want)
-		}
-	}
-}
-
 func TestAdvanceWorldClockSameDay(t *testing.T) {
 	server, world, _ := newClockFixture(t, "2026-08-05T17:00:00+08:00")
 
@@ -86,7 +74,7 @@ func TestAdvanceWorldClockSameDay(t *testing.T) {
 	if time := worldString(t, world, "环境.当前时间"); time != got {
 		t.Fatalf("stored time = %q, want %q", time, got)
 	}
-	if phase := worldString(t, world, "状态.阶段"); phase != "下午" {
+	if phase := worldString(t, world, "状态.阶段"); phase != "下午" { // 阶段由脚本 tick 校准，这里先验证保持不变
 		t.Fatalf("phase = %q, want 下午", phase)
 	}
 }
@@ -101,8 +89,9 @@ func TestAdvanceWorldClockRollsDaysAndMonths(t *testing.T) {
 	if month := worldInt(t, world, "环境.当前月份"); month != 9 {
 		t.Fatalf("month = %d, want 9", month)
 	}
-	if phase := worldString(t, world, "状态.阶段"); phase != "凌晨" {
-		t.Fatalf("phase = %q, want 凌晨", phase)
+	// 阶段标签由脚本规则在 tick 时校准：Go 只写时间/月份，响应回显存储值。
+	if phase := worldString(t, world, "状态.阶段"); phase != "下午" {
+		t.Fatalf("phase = %q, want 下午（未 tick）", phase)
 	}
 }
 

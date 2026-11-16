@@ -53,7 +53,7 @@
 - `pattern` 用 `*` 通配（匹配任意字符序列，含 `.`）；首个匹配的规则生效（数组顺序）。
 - `tier` ∈ `critical` | `normal` | `noise`。
 - `threshold` 只对两侧都是数字的事件生效：`|to-from| < threshold` 时不进推送（事件仍进流）。
-- `defaultTier` 缺省 `normal`；文件缺失时使用内置默认策略（与服务端出厂文件一致）。
+- `defaultTier` 缺省 `normal`；文件缺失时使用**中立内置策略（无路径规则）**，路径分级由 `observation.json` 提供（installer 从 `observation.example.json` 播种）。
 - `coalesceMs`：同一 path 在窗口内的多次变化合并为一条（`from` 取窗口起点、`to` 取最新、`tier` 取最高）。
 - 文件解析失败：**保留上一份可用策略**（启动时即内置默认），记日志，不阻断服务。
 

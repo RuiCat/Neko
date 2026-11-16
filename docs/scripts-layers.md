@@ -55,6 +55,7 @@ scripts/
 | 类型 | 文件 | 说明 |
 |---|---|---|
 | 世界 | `scripts/kernel/world/worldModel.neko` | 单例：时间/天气/季节（兼容 `world_clock`） |
+| 世界时段 | `scripts/kernel/world/worldPhase.neko` | 600 段规则：时间字符串 → `状态.阶段` 标签（业务在脚本层） |
 | 场景 | `scripts/kernel/scene/sceneModel.neko` | 地点：环境温（0.1°C）/湿度/光照/物品/在场 |
 | 素材 | `scripts/kernel/material/materialModel.neko` | 物品公有账本：场景/持有人/数量/耐久/品质 |
 | 食物 / 饮品 / 工具 / 容器 / 衣物 | 同上 | 素材的 5 个实例类型，各带自己的内核账本 |

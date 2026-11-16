@@ -24,6 +24,16 @@ const (
 	CLOCK_TIME_FORMAT = "2006-01-02T15:04:05-07:00"
 )
 
+// storedPhase returns the world entity's current phase label (script-owned).
+func storedPhase(world *entity.Entity) string {
+	value, err := world.Get(worldPhasePath())
+	if err != nil {
+		return ""
+	}
+	text, _ := value.(string)
+	return text
+}
+
 // 世界时钟的实体与路径是数据（config.world_*），源码不再绑定具体世界实体。
 func worldEntityID() string { return config.Current().WorldEntity }
 
@@ -48,24 +58,6 @@ type ClockState struct {
 	Time  string `json:"worldTime"`
 	Month int    `json:"month"`
 	Phase string `json:"phase"`
-}
-
-// phaseOf maps an hour to the same label 时段判断 returns in .neko scripts.
-func phaseOf(hour int) string {
-	switch {
-	case hour >= 6 && hour < 10:
-		return "清晨"
-	case hour >= 10 && hour < 14:
-		return "上午"
-	case hour >= 14 && hour < 18:
-		return "下午"
-	case hour >= 18 && hour < 22:
-		return "傍晚"
-	case hour >= 22:
-		return "深夜"
-	default:
-		return "凌晨"
-	}
 }
 
 // worldEntity returns the 世界 entity or ErrWorldEntityMissing.
@@ -106,8 +98,8 @@ func writeWorldClock(world *entity.Entity, moment time.Time) (ClockState, error)
 		return ClockState{}, fmt.Errorf("写入世界时间失败: %w", err)
 	}
 	_ = world.Set(worldMonthPath(), int(moment.Month()))
-	_ = world.Set(worldPhasePath(), phaseOf(moment.Hour()))
-	return ClockState{Time: formatted, Month: int(moment.Month()), Phase: phaseOf(moment.Hour())}, nil
+	// 阶段标签由脚本规则（scripts/kernel/world/worldPhase.neko）在 tick 时校准。
+	return ClockState{Time: formatted, Month: int(moment.Month()), Phase: storedPhase(world)}, nil
 }
 
 // WorldClockState reads the current in-world clock without taking the state
@@ -121,7 +113,7 @@ func (s *Server) WorldClockState() (ClockState, error) {
 	if err != nil {
 		return ClockState{}, err
 	}
-	return ClockState{Time: text, Month: int(moment.Month()), Phase: phaseOf(moment.Hour())}, nil
+	return ClockState{Time: text, Month: int(moment.Month()), Phase: storedPhase(world)}, nil
 }
 
 // AdvanceWorldClockState adds minutes (1..MAX_CLOCK_ADVANCE_MINUTES) to the

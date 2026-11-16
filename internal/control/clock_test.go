@@ -57,7 +57,8 @@ func TestClockCrossesMonth(t *testing.T) {
 	if payload["worldTime"] != "2026-12-01T00:30:00+08:00" {
 		t.Fatalf("worldTime = %v", payload["worldTime"])
 	}
-	if payload["month"] != float64(12) || payload["phase"] != "凌晨" {
+	// 阶段由脚本在 tick 时校准；Go 只写时间/月份，响应回显存储值。
+	if payload["month"] != float64(12) || payload["phase"] != "傍晚" {
 		t.Fatalf("month/phase = %v/%v", payload["month"], payload["phase"])
 	}
 }
@@ -70,7 +71,7 @@ func TestClockSetsTime(t *testing.T) {
 	if payload["worldTime"] != "2026-12-25T08:15:00+08:00" {
 		t.Fatalf("worldTime = %v", payload["worldTime"])
 	}
-	if payload["month"] != float64(12) || payload["phase"] != "清晨" {
+	if payload["month"] != float64(12) || payload["phase"] != "傍晚" {
 		t.Fatalf("month/phase = %v/%v", payload["month"], payload["phase"])
 	}
 }

@@ -17,6 +17,8 @@ func (env *testEnv) writeObservedState(t *testing.T, entity, path string, value 
 	}
 }
 
+// 默认策略没有业务路径规则（tier 全为 normal）；带规则的策略由
+// observation.json 提供，见 internal/observation 的策略测试。
 func TestObservationsDelta(t *testing.T) {
 	env := newTestEnv(t, Options{})
 	env.writeObservedState(t, "猫猫", "状态.情绪", "开心")
@@ -33,7 +35,7 @@ func TestObservationsDelta(t *testing.T) {
 		t.Fatalf("events = %v", payload["events"])
 	}
 	event, _ := events[0].(map[string]any)
-	if event["path"] != "状态.情绪" || event["from"] != "平静" || event["to"] != "开心" || event["tier"] != "critical" {
+	if event["path"] != "状态.情绪" || event["from"] != "平静" || event["to"] != "开心" || event["tier"] != "normal" {
 		t.Fatalf("event = %v", event)
 	}
 	if payload["cursor"] != float64(1) || payload["version"] != float64(1) {
@@ -72,7 +74,7 @@ func TestObservationState(t *testing.T) {
 		t.Fatalf("entries = %v", payload["entries"])
 	}
 	entry, _ := entries[0].(map[string]any)
-	if entry["path"] != "状态.身体" || entry["value"] != "虚弱" || entry["tier"] != "critical" {
+	if entry["path"] != "状态.身体" || entry["value"] != "虚弱" || entry["tier"] != "normal" {
 		t.Fatalf("entry = %v", entry)
 	}
 }

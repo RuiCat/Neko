@@ -100,8 +100,9 @@ func TestLoadPolicyMissingFileFallsBackToDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("缺文件不应报错: %v", err)
 	}
-	if policy.TierOf("状态.身体") != TierCritical {
-		t.Fatalf("缺文件应使用内置默认策略")
+	// 内置默认不含业务路径规则：全部走默认等级 normal。
+	if policy.TierOf("状态.身体") != TierNormal {
+		t.Fatalf("缺文件时内置默认应为中立策略，得到 %s", policy.TierOf("状态.身体"))
 	}
 }
 

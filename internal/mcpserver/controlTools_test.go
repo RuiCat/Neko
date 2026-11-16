@@ -154,7 +154,7 @@ func TestObservationGetTool(t *testing.T) {
 		t.Fatalf("delta events = %v", delta["events"])
 	}
 	event, _ := events[0].(map[string]any)
-	if event["path"] != "状态.情绪" || event["to"] != "开心" || event["tier"] != "critical" {
+	if event["path"] != "状态.情绪" || event["to"] != "开心" || event["tier"] != "normal" {
 		t.Fatalf("event = %v", event)
 	}
 	if delta["scope"] != "entity:猫猫" || delta["cursor"] != float64(1) {
@@ -207,7 +207,8 @@ func TestWorldClockTool(t *testing.T) {
 		t.Fatalf("clock not saved: %v", err)
 	}
 	set := callToolJSON(t, session, "world_clock", map[string]any{"time": "2026-12-25T08:15:00+08:00"})
-	if set["worldTime"] != "2026-12-25T08:15:00+08:00" || set["month"] != float64(12) || set["phase"] != "清晨" {
+	// 阶段由脚本在 tick 时派生；工具只回显存储值。
+	if set["worldTime"] != "2026-12-25T08:15:00+08:00" || set["month"] != float64(12) || set["phase"] != "傍晚" {
 		t.Fatalf("set = %v", set)
 	}
 }

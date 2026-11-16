@@ -90,6 +90,8 @@
 | `time` | string | 否 | RFC3339 时间（如 `2026-08-10T09:00:00+08:00`），与 `minutes` 二选一 |
 
 无参读取 `{"ok":true,"worldTime","month","phase"}`；写入后落盘并返回同一形状。
+`phase` 是**脚本层**派生的标签（`scripts/kernel/world/worldPhase.neko` 的 `时段判断`/`世界时段` 规则，tick 时校准）；
+工具只写时间与月份并回显实体里当前的 `状态.阶段`，不自己算时段。
 
 ### `entity_query`
 

@@ -42,41 +42,22 @@ type Policy struct {
 	Budget      Budget `json:"budget"`
 }
 
-// DefaultPolicy returns a fresh copy of the built-in policy, used when the
-// policy file is absent and as the fallback when it is unreadable.
+// DefaultPolicy returns a fresh copy of the neutral built-in policy: no path
+// rules. Tier patterns are business data and come from observation.json (the
+// installer seeds it from observation.example.json); without it every path
+// keeps DefaultTier.
 func DefaultPolicy() *Policy {
-	rules := []Rule{
-		{Pattern: "伤害.*", Tier: TierCritical, Threshold: 0},
-		{Pattern: "状态.*", Tier: TierCritical},
-		{Pattern: "生殖.怀孕状态", Tier: TierCritical},
-		{Pattern: "生殖.分娩", Tier: TierCritical},
-		{Pattern: "世界.死亡", Tier: TierCritical},
-		{Pattern: "关系.*", Tier: TierNormal},
-		{Pattern: "情绪.*", Tier: TierNormal},
-		{Pattern: "心情.*", Tier: TierNormal},
-		{Pattern: "睡眠.*", Tier: TierNormal},
-		{Pattern: "身体.*", Tier: TierNormal},
-		{Pattern: "位置.*", Tier: TierNormal},
-		{Pattern: "场景.*", Tier: TierNormal},
-		{Pattern: "代谢.*", Tier: TierNoise},
-		{Pattern: "循环.*", Tier: TierNoise},
-		{Pattern: "呼吸.*", Tier: TierNoise},
-		{Pattern: "内分泌.*", Tier: TierNoise},
-		{Pattern: "器官.*", Tier: TierNoise},
-		{Pattern: "内脏.*", Tier: TierNoise},
-		{Pattern: "体温.*", Tier: TierNoise},
-	}
 	return &Policy{
 		Version:     POLICY_VERSION,
 		DefaultTier: TierNormal,
-		Rules:       rules,
+		Rules:       []Rule{},
 		Budget:      Budget{MaxItems: DEFAULT_MAX_ITEMS, MaxChars: DEFAULT_MAX_CHARS, CoalesceMs: DEFAULT_COALESCE_MS},
 	}
 }
 
-// LoadPolicy reads the policy file. A missing file yields the built-in policy
-// and no error; a malformed file yields the built-in policy and an error so the
-// caller can log it and keep serving.
+// LoadPolicy reads the policy file. A missing file yields the neutral built-in
+// policy (no path rules) and no error; a malformed file yields the neutral
+// policy and an error so the caller can log it and keep serving.
 func LoadPolicy(path string) (*Policy, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
