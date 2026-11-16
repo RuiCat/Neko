@@ -13,7 +13,7 @@ import (
 )
 
 // Snapshot is one turn-level capture of the hard state. State is keyed by
-// "<entityID>.<dotted path>" (for example "猫猫.状态.情绪") so every value is
+// "<entityID>.<dotted path>" (for example "<entityID>.<path>") so every value is
 // attributable without a second lookup.
 type Snapshot struct {
 	SnapshotID string         `json:"snapshot_id"`

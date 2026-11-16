@@ -20,7 +20,7 @@ func newClockFixture(t *testing.T, worldTime string) (*Server, *entity.Entity, s
 	if err := store.Load(); err != nil {
 		t.Fatalf("load store: %v", err)
 	}
-	world, err := store.Create(WORLD_ENTITY, WORLD_ENTITY, map[string]any{
+	world, err := store.Create("世界", "世界", map[string]any{
 		"环境": map[string]any{
 			"当前时间": worldTime,
 			"当前月份": 8,
@@ -83,10 +83,10 @@ func TestAdvanceWorldClockSameDay(t *testing.T) {
 	if !wrote || got != "2026-08-05T17:10:00+08:00" {
 		t.Fatalf("advance = %q/%v, want 2026-08-05T17:10…/true", got, wrote)
 	}
-	if time := worldString(t, world, WORLD_TIME_PATH); time != got {
+	if time := worldString(t, world, "环境.当前时间"); time != got {
 		t.Fatalf("stored time = %q, want %q", time, got)
 	}
-	if phase := worldString(t, world, WORLD_PHASE_PATH); phase != "下午" {
+	if phase := worldString(t, world, "状态.阶段"); phase != "下午" {
 		t.Fatalf("phase = %q, want 下午", phase)
 	}
 }
@@ -98,10 +98,10 @@ func TestAdvanceWorldClockRollsDaysAndMonths(t *testing.T) {
 	if !wrote || got != "2026-09-01T00:10:00+08:00" {
 		t.Fatalf("advance = %q/%v, want 2026-09-01T00:10…/true", got, wrote)
 	}
-	if month := worldInt(t, world, WORLD_MONTH_PATH); month != 9 {
+	if month := worldInt(t, world, "环境.当前月份"); month != 9 {
 		t.Fatalf("month = %d, want 9", month)
 	}
-	if phase := worldString(t, world, WORLD_PHASE_PATH); phase != "凌晨" {
+	if phase := worldString(t, world, "状态.阶段"); phase != "凌晨" {
 		t.Fatalf("phase = %q, want 凌晨", phase)
 	}
 }
@@ -113,7 +113,7 @@ func TestAdvanceWorldClockRejectsInvalidInput(t *testing.T) {
 			t.Fatalf("AdvanceWorldClock(%d) wrote, want no-op", minutes)
 		}
 	}
-	if time := worldString(t, world, WORLD_TIME_PATH); time != "2026-08-05T17:00:00+08:00" {
+	if time := worldString(t, world, "环境.当前时间"); time != "2026-08-05T17:00:00+08:00" {
 		t.Fatalf("time changed to %q", time)
 	}
 }
@@ -159,7 +159,7 @@ func TestRunTickAdvancesClockAndPersists(t *testing.T) {
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		t.Fatalf("parse entities.json: %v", err)
 	}
-	worldData := payload.Entities[WORLD_ENTITY].Data
+	worldData := payload.Entities["世界"].Data
 	env, _ := worldData["环境"].(map[string]any)
 	if got, _ := env["当前时间"].(string); got != "2026-08-05T17:10:00+08:00" {
 		t.Fatalf("persisted time = %q", got)

@@ -13,24 +13,6 @@ import (
 	"github.com/RuiCat/Neko/internal/entity"
 )
 
-// fieldAliases normalises multi-role wording back to the legacy "主人" names.
-var fieldAliases = [][2]string{
-	{"行为.对方行为", "行为.主人行为"},
-	{"行为.对方同场景", "行为.主人同场景"},
-	{"对方行为", "主人行为"},
-	{"对方同场景", "主人同场景"},
-}
-
-func normalizeFieldAlias(path string) string {
-	if path == "" {
-		return path
-	}
-	for _, alias := range fieldAliases {
-		path = strings.ReplaceAll(path, alias[0], alias[1])
-	}
-	return path
-}
-
 // deepSearchField finds a bare field anywhere in the entity data, preferring
 // nested non-身体 matches, then top-level matches (Python's _deep_search_field).
 func deepSearchField(data map[string]any, fieldName string) (any, bool) {
@@ -90,7 +72,6 @@ func (m *StateMachine) newEntityResolver(ent *entity.Entity) ValueResolver {
 		if value, handled := m.evaluateFuncCall(path, resolver, ent); handled {
 			return value, nil
 		}
-		path = normalizeFieldAlias(path)
 		if path == ent.ID || strings.HasPrefix(path, ent.ID+".") {
 			return ent.Get(strings.TrimPrefix(strings.TrimPrefix(path, ent.ID), "."))
 		}

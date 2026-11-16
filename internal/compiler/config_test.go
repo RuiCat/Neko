@@ -10,6 +10,7 @@ import (
 func TestConfiguredStateVocabulary(t *testing.T) {
 	if err := config.Set(config.Config{
 		StateGroup: "状况", StateDefinitionField: "状态定义", DefaultStateSubgroup: "身体",
+		BareFieldMap: map[string]string{"疼痛": "状态.疼痛"},
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -63,6 +63,33 @@
 | 场景事件流（`scene_event_field` / `scene_event_limit`） | 事件写入的路径与保留条数；黑板把该字段投影成 `<字段>.最新` |
 | 场景在场（`scene_occupancy_field`） | 每 tick 末尾按各实体当前位置重算并写回；位置没变不写。写入会被黑板当作场景变化推送 |
 
+## 数据驱动的业务词汇（不写进源码）
+
+以下字段都是**数据**：源码只保留通用运行时，具体角色/字段词表由配置提供。
+为空时行为如下：
+
+| 字段 | 类型 | 空值行为 |
+|---|---|---|
+| `effect_map` | `{词: 路径}` | 文本效果（`体力+5`）按目标实体自身叶子字段名解析（最短路径优先）；解析不到就跳过 |
+| `assign_map` | `{词: 路径}` | 文本赋值（`身体状态=疲惫`）只认点分路径；词表为空则不解析该词 |
+| `bare_field_map` | `{词: 路径}` | `.neko` 裸字段保持默认状态组前缀（`default_state_subgroup`） |
+| `hard_state_paths` | `[...]` | 硬状态只含 `state_group`，不额外保护字段 |
+| `default_entity` | `str` | 会话事件没有显式实体时不默认任何实体（调用方必须给） |
+| `persona` | `str` | 本地 chat 用中性兜底提示词，不含角色 |
+| `world_entity` | `str` | 世界时钟实体 id（默认沿用世界模板的 `世界`） |
+| `world_time_path` / `world_month_path` / `world_phase_path` | `str` | 世界时钟字段路径（默认 `环境.当前时间` / `环境.当前月份` / `状态.阶段`） |
+
+```json
+{
+  "effect_map": {"撒娇": "关系.撒娇欲"},
+  "assign_map": {"身体状态": "状态.身体"},
+  "bare_field_map": {"体力": "身体.体力"},
+  "hard_state_paths": ["身体.体力", "位置.场景"],
+  "default_entity": "你的角色实体ID",
+  "persona": "你自己的人设文本"
+}
+```
+
 ## 安全扫描（`safety_enabled`）
 
 - `false`（默认）：不扫描，行为与 Python `SAFETY_ENABLED=False` 一致。

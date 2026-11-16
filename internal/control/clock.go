@@ -68,7 +68,7 @@ func (s *Server) handleClock(r *http.Request) response {
 	if writeErr != nil {
 		switch {
 		case errors.Is(writeErr, mcpserver.ErrWorldEntityMissing):
-			return notFound(fmt.Sprintf("实体 '%s' 不存在", mcpserver.WORLD_ENTITY))
+			return notFound(fmt.Sprintf("实体 '%s' 不存在", mcpserver.WorldEntityID()))
 		case errors.Is(writeErr, mcpserver.ErrWorldTimeInvalid):
 			return badRequest(mcpserver.ErrWorldTimeInvalid.Error())
 		default:

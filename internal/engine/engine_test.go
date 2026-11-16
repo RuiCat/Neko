@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/RuiCat/Neko/internal/config"
 	"github.com/RuiCat/Neko/internal/entity"
 )
 
@@ -353,6 +354,12 @@ func TestScopeFilter(t *testing.T) {
 // TestTickRecordsImplicitWrites proves TickResult.Writes covers writes beyond
 // explicit rule ops: add deltas and text-effect assignments.
 func TestTickRecordsImplicitWrites(t *testing.T) {
+	cfg := config.Default()
+	cfg.AssignMap = map[string]string{"身体状态": "状态.身体"}
+	if err := config.Set(cfg); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(config.Reset)
 	store := entity.NewStore(t.TempDir())
 	store.AddTemplate("NPC", map[string]any{"身体": map[string]any{"饱食": 40}})
 	if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {

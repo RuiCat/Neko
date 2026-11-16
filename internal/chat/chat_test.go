@@ -159,7 +159,7 @@ func TestPromptCarriesPersonaTwoSystemMessagesAndInput(t *testing.T) {
 	if len(messages) != 3 {
 		t.Fatalf("消息数 %d", len(messages))
 	}
-	if messages[0].Role != "system" || !strings.Contains(messages[0].Content, "猫猫") {
+	if messages[0].Role != "system" || strings.TrimSpace(messages[0].Content) == "" {
 		t.Fatal("缺少人格设定")
 	}
 	if !strings.Contains(messages[1].Content, "evt_x") {

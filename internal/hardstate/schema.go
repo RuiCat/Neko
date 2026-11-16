@@ -39,19 +39,11 @@ func DefaultSchema() Schema {
 	}
 }
 
-// DefaultPaths returns the field-level part of the hard-state subset: the
-// fields the compensation package, judge and nightly diff resolve against
-// outside the configured state group. Callers get a copy.
+// DefaultPaths returns the field-level hard-state subset from
+// config.hard_state_paths. The list is data, not source: empty means "only the
+// configured state group". Callers get a copy.
 func DefaultPaths() []string {
-	return []string{
-		"身体.体力",
-		"心情.当前",
-		"关系.亲密",
-		"位置.场景",
-		"睡眠.疲劳",
-		"社交.互动需求",
-		"任务.当前任务",
-	}
+	return append([]string(nil), config.Current().HardStatePaths...)
 }
 
 // WithEntities returns a copy restricted to the given entity IDs. Passing no

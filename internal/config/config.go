@@ -42,6 +42,31 @@ type Config struct {
 	SceneOccupancyField string `json:"scene_occupancy_field"`
 	// ClassificationField holds an entity's multi-inheritance labels.
 	ClassificationField string `json:"classification_field"`
+	// EffectMap maps a free-text effect word to a dotted field path. It is data, not source: empty by default, effects then
+	// resolve the word against the target entity's own leaf paths.
+	EffectMap map[string]string `json:"effect_map"`
+	// AssignMap maps a free-text assignment word ("身体状态") to a dotted path.
+	// Data, not source: empty by default, assignments resolve against the entity.
+	AssignMap map[string]string `json:"assign_map"`
+	// BareFieldMap maps an unqualified script field ("体力") to a dotted path.
+	// Data, not source: empty by default, bare fields then stay unqualified.
+	BareFieldMap map[string]string `json:"bare_field_map"`
+	// HardStatePaths is the field-level hard-state subset outside StateGroup.
+	// Data, not source; empty means "no extra paths".
+	HardStatePaths []string `json:"hard_state_paths"`
+	// DefaultEntity is the entity a session event resolves against when the
+	// caller gives none. Data, not source: empty means "no default".
+	DefaultEntity string `json:"default_entity"`
+	// WorldEntity / WorldTimePath / WorldMonthPath / WorldPhasePath describe the
+	// single world-clock entity. Data-overridable; defaults match the bundled
+	// world template.
+	WorldEntity    string `json:"world_entity"`
+	WorldTimePath  string `json:"world_time_path"`
+	WorldMonthPath string `json:"world_month_path"`
+	WorldPhasePath string `json:"world_phase_path"`
+	// Persona is the fallback system persona for the local chat command.
+	// Data, not source: empty means a neutral one-line default.
+	Persona string `json:"persona"`
 }
 
 // Default returns the vocabulary used by the bundled data and scripts.
@@ -57,6 +82,14 @@ func Default() Config {
 		SceneEventLimit:      50,
 		SceneOccupancyField:  "在场",
 		ClassificationField:  "分类",
+		EffectMap:            map[string]string{},
+		AssignMap:            map[string]string{},
+		BareFieldMap:         map[string]string{},
+		HardStatePaths:       []string{},
+		WorldEntity:          "世界",
+		WorldTimePath:        "环境.当前时间",
+		WorldMonthPath:       "环境.当前月份",
+		WorldPhasePath:       "状态.阶段",
 	}
 }
 

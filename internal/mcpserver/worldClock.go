@@ -13,29 +13,31 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/RuiCat/Neko/internal/config"
 	"github.com/RuiCat/Neko/internal/entity"
 )
 
 const (
-	// WORLD_ENTITY is the single entity that owns the in-world clock.
-	WORLD_ENTITY = "世界"
-	// WORLD_TIME_PATH is the RFC3339 timestamp rules read through 时段判断.
-	WORLD_TIME_PATH = "环境.当前时间"
-	// WORLD_MONTH_PATH mirrors the month so season rules see rollover.
-	WORLD_MONTH_PATH = "环境.当前月份"
-	// WORLD_PHASE_PATH is the coarse phase label (凌晨/清晨/上午/下午/傍晚/深夜).
-	WORLD_PHASE_PATH = "状态.阶段"
 	// MAX_CLOCK_ADVANCE_MINUTES bounds one tick's requested advance.
 	MAX_CLOCK_ADVANCE_MINUTES = 24 * 60
 	// CLOCK_TIME_FORMAT is the on-entity timestamp layout (RFC3339, seconds).
 	CLOCK_TIME_FORMAT = "2006-01-02T15:04:05-07:00"
 )
 
+// 世界时钟的实体与路径是数据（config.world_*），源码不再绑定具体世界实体。
+func worldEntityID() string { return config.Current().WorldEntity }
+
+// WorldEntityID returns the configured world entity id (for the control plane).
+func WorldEntityID() string  { return worldEntityID() }
+func worldTimePath() string  { return config.Current().WorldTimePath }
+func worldMonthPath() string { return config.Current().WorldMonthPath }
+func worldPhasePath() string { return config.Current().WorldPhasePath }
+
 // Clock read/write failures the control plane maps onto 404/400 and the MCP
 // tool reports verbatim.
 var (
 	// ErrWorldEntityMissing marks a missing 世界 entity.
-	ErrWorldEntityMissing = errors.New("世界实体不存在")
+	ErrWorldEntityMissing = errors.New("世界实体不存在（config.world_entity）")
 	// ErrWorldTimeInvalid marks an unusable 世界.环境.当前时间 value.
 	ErrWorldTimeInvalid = errors.New("世界.环境.当前时间 不是合法 RFC3339 时间")
 )
@@ -71,7 +73,7 @@ func (s *Server) worldEntity() (*entity.Entity, error) {
 	if s.store == nil {
 		return nil, ErrWorldEntityMissing
 	}
-	world := s.store.Get(WORLD_ENTITY)
+	world := s.store.Get(worldEntityID())
 	if world == nil {
 		return nil, ErrWorldEntityMissing
 	}
@@ -80,7 +82,7 @@ func (s *Server) worldEntity() (*entity.Entity, error) {
 
 // readWorldTime parses the current in-world timestamp of one world entity.
 func readWorldTime(world *entity.Entity) (string, time.Time, error) {
-	raw, err := world.Get(WORLD_TIME_PATH)
+	raw, err := world.Get(worldTimePath())
 	if err != nil {
 		return "", time.Time{}, ErrWorldTimeInvalid
 	}
@@ -100,11 +102,11 @@ func readWorldTime(world *entity.Entity) (string, time.Time, error) {
 // step that can fail; the two mirrors are best-effort like before.
 func writeWorldClock(world *entity.Entity, moment time.Time) (ClockState, error) {
 	formatted := moment.Format(CLOCK_TIME_FORMAT)
-	if err := world.Set(WORLD_TIME_PATH, formatted); err != nil {
+	if err := world.Set(worldTimePath(), formatted); err != nil {
 		return ClockState{}, fmt.Errorf("写入世界时间失败: %w", err)
 	}
-	_ = world.Set(WORLD_MONTH_PATH, int(moment.Month()))
-	_ = world.Set(WORLD_PHASE_PATH, phaseOf(moment.Hour()))
+	_ = world.Set(worldMonthPath(), int(moment.Month()))
+	_ = world.Set(worldPhasePath(), phaseOf(moment.Hour()))
 	return ClockState{Time: formatted, Month: int(moment.Month()), Phase: phaseOf(moment.Hour())}, nil
 }
 
@@ -170,11 +172,11 @@ func (s *Server) WorldTime() string {
 	if s.store == nil {
 		return ""
 	}
-	world := s.store.Get(WORLD_ENTITY)
+	world := s.store.Get(worldEntityID())
 	if world == nil {
 		return ""
 	}
-	raw, err := world.Get(WORLD_TIME_PATH)
+	raw, err := world.Get(worldTimePath())
 	if err != nil {
 		return ""
 	}

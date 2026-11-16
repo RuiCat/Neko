@@ -1,11 +1,14 @@
 // Text effect parsing and application ("体力+5", "体力-10~-5", ranges).
 //
-// This file is the Go port of astrbox-plugin/state_machine/effect_parser.py,
-// limited to the effect (delta) half; assignments live in assign.go.
+// This file parses delta effects from free text. It deliberately keeps **no
+// effect-word table**: the word is resolved against the target entity's own
+// fields at apply time, so kernels (and content data) own the field names.
+// Legacy Python parity mapping lives in git history, not in the source.
 package engine
 
 import (
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -13,9 +16,9 @@ import (
 	"github.com/RuiCat/Neko/internal/entity"
 )
 
-// Effect is one parsed delta effect.
+// Effect is one parsed delta effect: the raw word and the signed delta.
 type Effect struct {
-	Path  string  `json:"path"`
+	Word  string  `json:"word"`
 	Delta float64 `json:"delta"`
 }
 
@@ -24,113 +27,6 @@ type AppliedEffect struct {
 	Path  string  `json:"path"`
 	Delta float64 `json:"delta"`
 	New   float64 `json:"new"`
-}
-
-// effectMap maps effect words to entity field paths (ported verbatim).
-var effectMap = map[string]string{
-	"撒娇":      "关系.撒娇欲",
-	"撒娇欲":     "关系.撒娇欲",
-	"撒娇倾向":    "关系.撒娇欲",
-	"傲娇":      "行为.傲娇倾向",
-	"傲娇倾向":    "行为.傲娇倾向",
-	"黏人":      "行为.黏人",
-	"黏人程度":    "行为.黏人",
-	"坦率":      "行为.坦率",
-	"主动":      "行为.主动",
-	"服从":      "行为.服从",
-	"抗拒":      "行为.抗拒",
-	"好奇":      "行为.好奇心",
-	"好奇心":     "行为.好奇心",
-	"探索":      "关系.探索欲",
-	"安全感":     "关系.安全感",
-	"亲密度":     "关系.亲密",
-	"亲密":      "关系.亲密",
-	"信赖":      "关系.信赖",
-	"爱意":      "关系.爱意",
-	"数值.亲密":   "数值.亲密",
-	"数值.信赖":   "数值.信赖",
-	"数值.爱意":   "数值.爱意",
-	"数值.好感度":  "数值.好感度",
-	"数值.安全感":  "数值.安全感",
-	"数值.撒娇欲":  "数值.撒娇欲",
-	"害羞":      "关系.害羞",
-	"害羞度":     "关系.害羞",
-	"兴奋":      "器官状态.扩展心理.兴奋度",
-	"兴奋度":     "器官状态.扩展心理.兴奋度",
-	"快感":      "器官状态.基础生理.快感程度",
-	"满足":      "器官状态.扩展心理.满足度",
-	"满足度":     "器官状态.扩展心理.满足度",
-	"湿润":      "器官状态.基础生理.湿润度",
-	"湿润度":     "器官状态.基础生理.湿润度",
-	"收缩":      "器官状态.基础生理.收缩状态",
-	"收缩状态":    "器官状态.基础生理.收缩状态",
-	"幸福感":     "器官状态.扩展心理.幸福感",
-	"幸福":      "器官状态.扩展心理.幸福感",
-	"疲劳":      "身体.疲劳",
-	"疲劳度":     "身体.疲劳",
-	"疼痛":      "身体.疼痛",
-	"疼痛程度":    "身体.疼痛",
-	"恐惧":      "状态.恐惧",
-	"恐惧程度":    "状态.恐惧",
-	"体力":      "身体.体力",
-	"体力值":     "身体.体力",
-	"清洁":      "身体.清洁",
-	"清洁度":     "身体.清洁",
-	"舒适":      "身体.舒适",
-	"舒适度":     "身体.舒适",
-	"活力":      "身体.活力",
-	"活力值":     "身体.活力",
-	"饱食":      "身体.饱食",
-	"饱食度":     "身体.饱食",
-	"水分":      "身体.水分",
-	"口渴":      "身体.水分",
-	"口渴度":     "身体.水分",
-	"体温":      "身体.体温",
-	"伤害":      "器官状态.R18G伤害.伤害程度",
-	"伤害程度":    "器官状态.R18G伤害.伤害程度",
-	"创伤":      "伤害.创伤",
-	"创伤累积":    "伤害.创伤",
-	"出血":      "伤害.出血",
-	"出血程度":    "伤害.出血",
-	"成瘾":      "器官状态.扩展心理.成瘾度",
-	"成瘾度":     "器官状态.扩展心理.成瘾度",
-	"期待":      "器官状态.扩展心理.期待度",
-	"期待度":     "器官状态.扩展心理.期待度",
-	"信任":      "器官状态.扩展心理.信任度",
-	"信任度":     "器官状态.扩展心理.信任度",
-	"羞耻":      "器官状态.扩展心理.羞耻感",
-	"羞耻感":     "器官状态.扩展心理.羞耻感",
-	"顺从":      "行为.服从",
-	"服从倾向":    "行为.服从",
-	"主动程度":    "行为.主动",
-	"依赖":      "关系.性依赖",
-	"性依赖":     "关系.性依赖",
-	"阴道.疼痛":   "器官状态.基础生理.疼痛程度",
-	"宫颈.疼痛":   "器官状态.基础生理.疼痛程度",
-	"子宫.疼痛":   "器官状态.基础生理.疼痛程度",
-	"输卵管.疼痛":  "器官状态.基础生理.疼痛程度",
-	"阴道.损伤":   "器官状态.R18G伤害.伤害程度",
-	"宫颈.损伤":   "器官状态.R18G伤害.伤害程度",
-	"卵巢.损伤":   "器官状态.R18G伤害.伤害程度",
-	"马眼.损伤":   "器官状态.R18G伤害.伤害程度",
-	"子宫.损伤":   "器官状态.R18G伤害.伤害程度",
-	"输卵管.损伤":  "器官状态.R18G伤害.伤害程度",
-	"直肠.损伤":   "器官状态.R18G伤害.伤害程度",
-	"腹膜.损伤":   "器官状态.R18G伤害.伤害程度",
-	"肛道.损伤":   "器官状态.R18G伤害.伤害程度",
-	"口腔.损伤":   "器官状态.R18G伤害.伤害程度",
-	"咽喉.损伤":   "器官状态.R18G伤害.伤害程度",
-	"猫耳.损伤":   "器官状态.R18G伤害.伤害程度",
-	"尾巴.损伤":   "器官状态.R18G伤害.伤害程度",
-	"卵巢.敏感度":  "器官状态.扩展心理.兴奋度",
-	"口腔.敏感度":  "器官状态.扩展心理.兴奋度",
-	"咽喉.敏感度":  "器官状态.扩展心理.兴奋度",
-	"猫耳.敏感度":  "器官状态.扩展心理.兴奋度",
-	"肉垫.敏感度":  "器官状态.扩展心理.兴奋度",
-	"阴道.扩张度":  "器官状态.基础生理.湿润度",
-	"口腔.扩张度":  "器官状态.基础生理.湿润度",
-	"外翻卵巢.精液": "体液追踪.子宫内精液",
-	"敏感":      "器官状态.扩展心理.兴奋度",
 }
 
 // fullwidthFold maps fullwidth digits/operators/letters to ASCII.
@@ -193,7 +89,8 @@ func expandRanges(text string) string {
 	return text
 }
 
-// ParseEffects extracts delta effects from a text.
+// ParseEffects extracts delta effects from a text. A word is not mapped to a
+// path here: only ApplyEffects can resolve it against a concrete entity.
 func ParseEffects(text string) []Effect {
 	effects := []Effect{}
 	if text == "" {
@@ -201,11 +98,6 @@ func ParseEffects(text string) []Effect {
 	}
 	text = expandRanges(normalizeASCII(text))
 	for _, match := range effectPattern.FindAllStringSubmatch(text, -1) {
-		path, ok := effectMap[match[1]]
-		if !ok {
-			continue
-		}
-		path = config.Current().NormalizePath(path)
 		number, err := strconv.ParseFloat(match[3], 64)
 		if err != nil {
 			continue
@@ -214,54 +106,104 @@ func ParseEffects(text string) []Effect {
 		if match[2] == "-" {
 			delta = -number
 		}
-		effects = append(effects, Effect{Path: path, Delta: delta})
+		effects = append(effects, Effect{Word: match[1], Delta: delta})
 	}
 	return effects
 }
 
-// ApplyEffects writes parsed delta effects to an entity, clamping 0..100 and
-// preserving legacy {value,unit,desc} wrappers.
+// ApplyEffects writes parsed delta effects to an entity. Each effect word is
+// resolved against that entity's own leaf paths: an exact dotted path wins,
+// otherwise the shortest path whose last segment equals the word. Unknown
+// words are skipped; deltas are applied as-is (field ranges live in templates).
 func ApplyEffects(target *entity.Entity, text string) []AppliedEffect {
 	applied := []AppliedEffect{}
 	if target == nil {
 		return applied
 	}
+	leaves := leafPathSet(target.Snapshot())
 	for _, effect := range ParseEffects(text) {
-		current := target.GetOrNone(effect.Path)
-		wrapper, isWrapper := current.(map[string]any)
-		if isWrapper {
-			current = wrapper["value"]
-		}
-		newValue := float64(toNumInt(current)) + effect.Delta
-		if newValue < 0 {
-			newValue = 0
-		}
-		if newValue > 100 {
-			newValue = 100
-		}
-		if isWrapper {
-			updated := make(map[string]any, len(wrapper))
-			for key, value := range wrapper {
-				updated[key] = value
-			}
-			updated["value"] = newValue
-			if err := target.Set(effect.Path, updated); err != nil {
-				continue
-			}
-		} else if err := target.Set(effect.Path, newValue); err != nil {
+		path, ok := resolveEffectPath(target, leaves, effect.Word)
+		if !ok {
 			continue
 		}
-		applied = append(applied, AppliedEffect{Path: effect.Path, Delta: effect.Delta, New: newValue})
+		current, err := target.Get(path)
+		if err != nil {
+			continue
+		}
+		// 不在这里猜 0..100：字段范围由模板注解/数据层负责，旧口径不写死在引擎里。
+		newValue := float64(toNumInt(current)) + effect.Delta
+		if err := target.Set(path, newValue); err != nil {
+			continue
+		}
+		applied = append(applied, AppliedEffect{Path: path, Delta: effect.Delta, New: newValue})
 	}
 	return applied
 }
 
-// toNumInt mirrors Python's int(): numbers truncate, dicts unwrap "value",
-// anything unparsable becomes 0.
-func toNumInt(value any) int {
-	if wrapper, ok := value.(map[string]any); ok {
-		value = wrapper["value"]
+// resolveEffectPath maps an effect word onto one of the entity's leaf paths.
+// A configured effect_map entry wins (data-driven); otherwise the word is
+// matched against the entity's own leaf names.
+func resolveEffectPath(target *entity.Entity, leaves map[string]bool, word string) (string, bool) {
+	if mapped, ok := config.Current().EffectMap[word]; ok && mapped != "" {
+		return config.Current().NormalizePath(mapped), true
 	}
+	if strings.Contains(word, ".") {
+		if leaves[word] {
+			return word, true
+		}
+		if target.Has(word) {
+			return word, true
+		}
+		return "", false
+	}
+	candidates := make([]string, 0, 4)
+	for path := range leaves {
+		if leafName(path) == word {
+			candidates = append(candidates, path)
+		}
+	}
+	if len(candidates) == 0 {
+		return "", false
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if len(candidates[i]) != len(candidates[j]) {
+			return len(candidates[i]) < len(candidates[j])
+		}
+		return candidates[i] < candidates[j]
+	})
+	return candidates[0], true
+}
+
+// leafPathSet flattens a state snapshot into leaf path set.
+func leafPathSet(node map[string]any) map[string]bool {
+	out := map[string]bool{}
+	var walk func(prefix string, current map[string]any)
+	walk = func(prefix string, current map[string]any) {
+		for key, value := range current {
+			path := key
+			if prefix != "" {
+				path = prefix + "." + key
+			}
+			if nested, ok := value.(map[string]any); ok {
+				walk(path, nested)
+				continue
+			}
+			out[path] = true
+		}
+	}
+	walk("", node)
+	return out
+}
+
+func leafName(path string) string {
+	if index := strings.LastIndex(path, "."); index >= 0 {
+		return path[index+1:]
+	}
+	return path
+}
+
+// toNumInt mirrors Python's int(): numbers truncate, anything unparsable is 0.
+func toNumInt(value any) int {
 	switch typed := value.(type) {
 	case nil:
 		return 0

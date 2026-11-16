@@ -1,5 +1,5 @@
 // entityBlock.go parses the @实体 composition header: a type name followed by
-// an optional parent list, e.g. `@实体 NPC:猫猫 [NPC:猫科, NPC:成年] { ... }`.
+// an optional parent list, e.g. `@实体 <type>:<id> [<parent>, <parent>] { ... }`.
 package neko
 
 import (

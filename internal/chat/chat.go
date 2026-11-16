@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/RuiCat/Neko/internal/config"
 	"log"
 	"strings"
 	"time"
@@ -67,8 +68,12 @@ func New(options Options) (*Chat, error) {
 	if options.MaxRecent <= 0 {
 		options.MaxRecent = DEFAULT_MAX_RECENT
 	}
+	// 人设是数据：优先调用方传入，其次 config.persona，最后中性兜底。
 	if strings.TrimSpace(options.Persona) == "" {
-		options.Persona = DEFAULT_PERSONA
+		options.Persona = config.Current().Persona
+	}
+	if strings.TrimSpace(options.Persona) == "" {
+		options.Persona = NEUTRAL_PERSONA
 	}
 	if strings.TrimSpace(options.SessionID) == "" {
 		options.SessionID = "neko-chat"

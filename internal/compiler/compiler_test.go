@@ -3,10 +3,24 @@ package compiler
 import (
 	"testing"
 
+	"github.com/RuiCat/Neko/internal/config"
+
 	"github.com/RuiCat/Neko/internal/neko"
 )
 
 func TestRewriteCondition(t *testing.T) {
+	// 词 → 路径的映射是数据：测试里显式注入一份示例配置。
+	cfg := config.Default()
+	cfg.BareFieldMap = map[string]string{
+		"主人行为": "行为.主人行为",
+		"疼痛":   "状态.疼痛",
+		"出血":   "伤害.出血",
+	}
+	if err := config.Set(cfg); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(config.Reset)
+
 	primary := []neko.Subject{{Kind: "primary", TypeName: "NPC"}}
 	cases := []struct {
 		name, input, want string

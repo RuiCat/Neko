@@ -10,31 +10,12 @@ import (
 	"github.com/RuiCat/Neko/internal/neko"
 )
 
-// BareFieldMap maps unqualified fields to their real group path. It mirrors the
-// audit-driven table in the Python compiler.
-var BareFieldMap = map[string]string{
-	"适应": "身体.适应", "行为总数": "行为.互动次数", "外翻次数": "器官状态.外翻层级",
-	"深度超限": "身体.深度超限", "力度超限": "身体.力度超限", "速度超限": "身体.速度超限",
-	"跳跃层级": "身体.跳跃层级", "重复超限": "身体.重复超限",
-	"受精后时间": "器官状态.生殖.受精后时间", "孕周": "器官状态.生殖.孕周",
-	"主人行为": "行为.主人行为", "主人同场景": "行为.主人同场景", "傲娇倾向": "行为.傲娇倾向",
-	"撒娇倾向": "行为.撒娇倾向", "服从倾向": "行为.服从倾向", "首次访问": "行为.首次访问",
-	"安全感": "关系.安全感", "撒娇欲": "关系.撒娇欲", "好感度": "关系.好感度",
-	"亲密": "关系.亲密", "信赖": "关系.信赖",
-	"当前场景": "位置.场景", "可达": "位置.可达", "目标": "位置.目标",
-	"好奇心": "探索.好奇心", "探索欲": "探索.好奇心",
-	"疼痛": "状态.疼痛", "安全等级": "状态.安全等级",
-	"伤害": "伤害.出血", "出血": "伤害.出血",
-	"行为类型": "性行为.行为类型", "EL": "器官状态.外翻层级", "当前EL": "器官状态.外翻层级",
-	"性行为阶段": "性行为.阶段", "性行为进行中": "性行为.进行中",
-	"当前位置": "肉棒追踪.位置", "深度": "肉棒追踪.深度", "硬度": "肉棒追踪.硬度",
-	"抽动频率": "肉棒追踪.抽动频率", "携带": "携带", "自称": "自称",
-	"对主人称呼": "对主人称呼", "恐惧": "器官状态.R18G伤害.恐惧程度",
-	"天气": "世界.环境.天气", "时间": "世界.状态.阶段",
-	"体内段": "身体.体内段", "当前接触面": "器官状态.外翻过程.当前接触面",
-	"持续轮次": "器官状态.外翻过程.持续轮次", "指定输卵管": "器官状态.外翻过程.指定输卵管",
-	"停止分钟": "器官状态.外翻过程.停止分钟", "宫颈管径": "器官状态.基础生理.宫颈管径.value",
-	"主人离开": "行为.主人离开", "R18互动": "性行为.进行中",
+// bareFieldPath resolves an unqualified field through the configured map
+// (config.bare_field_map). The table is data, not source: with an empty map a
+// bare field keeps its literal meaning.
+func bareFieldPath(field string) (string, bool) {
+	mapped, ok := config.Current().BareFieldMap[field]
+	return mapped, ok
 }
 
 var (
@@ -188,7 +169,7 @@ func RewriteCondition(cond string, subjects []neko.Subject) (string, []string) {
 		if op == ">" || op == ">=" || op == "<" || op == "<=" {
 			raw := strings.TrimSpace(value)
 			if rightFieldPattern.MatchString(raw) && !strings.HasPrefix(raw, ".") && !isDigitStart(raw) {
-				if mapped, ok := BareFieldMap[raw]; ok {
+				if mapped, ok := bareFieldPath(raw); ok {
 					value = "{e}." + config.Current().NormalizePath(mapped)
 				} else {
 					value = "{e}.身体." + raw
@@ -198,7 +179,7 @@ func RewriteCondition(cond string, subjects []neko.Subject) (string, []string) {
 		if strings.Contains(field, ".") {
 			return fmt.Sprintf("{e}.%s %s %s", field, op, value), extraWhen
 		}
-		if mapped, ok := BareFieldMap[field]; ok {
+		if mapped, ok := bareFieldPath(field); ok {
 			return fmt.Sprintf("{e}.%s %s %s", config.Current().NormalizePath(mapped), op, value), extraWhen
 		}
 		return fmt.Sprintf("{e}.%s.%s %s %s", config.Current().DefaultStateSubgroup, field, op, value), extraWhen

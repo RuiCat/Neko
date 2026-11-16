@@ -30,7 +30,7 @@ func clockBody(state ClockState) map[string]any {
 func clockFailure(err error) (*mcp.CallToolResult, any, error) {
 	switch {
 	case errors.Is(err, ErrWorldEntityMissing):
-		return fail("实体 '%s' 不存在", WORLD_ENTITY)
+		return fail("实体 '%s' 不存在", worldEntityID())
 	case errors.Is(err, ErrWorldTimeInvalid):
 		return fail("%s", ErrWorldTimeInvalid)
 	default:

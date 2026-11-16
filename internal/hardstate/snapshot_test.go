@@ -89,6 +89,7 @@ func TestSchemaEntitiesFilterAndValidation(t *testing.T) {
 }
 
 func TestCaptureIncludesSchemaFieldPaths(t *testing.T) {
+	setHardStatePaths(t, "身体.体力", "任务.当前任务", "关系.亲密")
 	data := map[string]map[string]any{
 		"猫猫": {
 			"状态": map[string]any{"情绪": "平静"},

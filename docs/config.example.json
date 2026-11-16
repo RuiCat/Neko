@@ -16,5 +16,24 @@
   "http_token": "",
   "subscriptionEnabled": true,
   "subscriptionMainIntervalMs": 600000,
-  "subscriptionMaxChars": 2000
+  "subscriptionMaxChars": 2000,
+  "effect_map": {
+    "示例词": "身体.体力"
+  },
+  "assign_map": {
+    "示例词": "状态.身体"
+  },
+  "bare_field_map": {
+    "示例裸字段": "身体.体力"
+  },
+  "hard_state_paths": [
+    "身体.体力",
+    "位置.场景"
+  ],
+  "default_entity": "",
+  "persona": "",
+  "world_entity": "世界",
+  "world_time_path": "环境.当前时间",
+  "world_month_path": "环境.当前月份",
+  "world_phase_path": "状态.阶段"
 }

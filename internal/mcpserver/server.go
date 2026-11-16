@@ -185,7 +185,7 @@ func fail(format string, args ...any) (*mcp.CallToolResult, any, error) {
 }
 
 type entityGetArgs struct {
-	Entity      string `json:"entity" jsonschema:"实体ID，如 猫猫/梦梦/场景"`
+	Entity      string `json:"entity" jsonschema:"实体ID（例如某个角色或场景的 id）"`
 	Path        string `json:"path,omitempty" jsonschema:"点分路径，如 身体.体力；留空返回完整数据"`
 	Diagnostics string `json:"diagnostics,omitempty" jsonschema:"诊断附加内容：none/summary/full，默认 summary"`
 }
@@ -198,7 +198,7 @@ type entitySetArgs struct {
 }
 
 type entityQueryArgs struct {
-	Query string `json:"query" jsonschema:"查询表达式：NPC[*] / 猫猫 / key:场景=客厅 / 状态.身体=疲惫"`
+	Query string `json:"query" jsonschema:"查询表达式：类型通配 / 实体ID / key:字段=值 / 路径=值"`
 }
 
 type entityCreateArgs struct {

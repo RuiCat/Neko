@@ -13,6 +13,7 @@ import (
 
 	"github.com/RuiCat/Neko/internal/bootstrap"
 	"github.com/RuiCat/Neko/internal/candidates"
+	"github.com/RuiCat/Neko/internal/config"
 	"github.com/RuiCat/Neko/internal/driver"
 	"github.com/RuiCat/Neko/internal/mcpserver"
 )
@@ -20,8 +21,6 @@ import (
 const (
 	// CONTROL_VERSION is reported by GET /health.
 	CONTROL_VERSION = "1.0.0"
-	// DEFAULT_ENTITY_ID is the entity session-event callbacks resolve against.
-	DEFAULT_ENTITY_ID = "猫猫"
 	// DEFAULT_FUNCTION_NAME is the .neko function invoked for session events.
 	DEFAULT_FUNCTION_NAME = "dsh_on_event"
 	// DEFAULT_DEADLINE is the server-side processing limit per request.
@@ -74,8 +73,9 @@ func New(runtime *bootstrap.Runtime, mcp *mcpserver.Server, options Options) *Se
 		driver:        options.Driver,
 		startedAt:     time.Now(),
 	}
+	// 不在这里绑定具体角色：默认实体来自配置（config.default_entity）。
 	if server.entityID == "" {
-		server.entityID = DEFAULT_ENTITY_ID
+		server.entityID = config.Current().DefaultEntity
 	}
 	if server.functionName == "" {
 		server.functionName = DEFAULT_FUNCTION_NAME

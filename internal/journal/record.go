@@ -59,7 +59,7 @@ type Gate struct {
 }
 
 // Compensation mirrors the assembler output (C4). State keys are entity
-// qualified ("猫猫.状态.情绪") so they resolve against the snapshot directly.
+// qualified ("<entityID>.<path>") so they resolve against the snapshot directly.
 type Compensation struct {
 	Memory             []MemoryFragment `json:"memory,omitempty"`
 	State              map[string]any   `json:"state,omitempty"`

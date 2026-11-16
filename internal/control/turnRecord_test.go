@@ -28,7 +28,8 @@ func newJournalEnv(t *testing.T) (*bootstrap.Runtime, *Server) {
 	if _, err := runtime.Store.Create("猫猫", "NPC", nil, nil); err != nil {
 		t.Fatalf("create entity: %v", err)
 	}
-	return runtime, New(runtime, runtime.NewMCPServer(), Options{})
+	// 默认实体是数据；这里给测试实体，生产由 config.default_entity 提供。
+	return runtime, New(runtime, runtime.NewMCPServer(), Options{Entity: "猫猫"})
 }
 
 func TestTurnEndWritesCompleteRecord(t *testing.T) {

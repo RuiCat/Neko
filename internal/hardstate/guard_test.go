@@ -1,7 +1,11 @@
 // guard_test.go pins the write-source rules for the hard-state subset.
 package hardstate
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/RuiCat/Neko/internal/config"
+)
 
 func TestCheckWriteAllowsOnlyStateMachine(t *testing.T) {
 	schema := DefaultSchema()
@@ -21,6 +25,7 @@ func TestCheckWriteAllowsOnlyStateMachine(t *testing.T) {
 }
 
 func TestCheckWriteIgnoresNonHardStatePaths(t *testing.T) {
+	setHardStatePaths(t, "身体.体力", "任务.当前任务", "关系.亲密")
 	schema := DefaultSchema()
 	for _, path := range []string{"标签", "状态定义.情绪"} {
 		check := CheckWrite(schema, "猫猫", path, SOURCE_MCP)
@@ -51,6 +56,7 @@ func TestCheckWriteRespectsEntityFilterAndDisabledSchema(t *testing.T) {
 }
 
 func TestSchemaCovers(t *testing.T) {
+	setHardStatePaths(t, "身体.体力", "任务.当前任务", "关系.亲密")
 	schema := DefaultSchema()
 	if !schema.Covers("状态.情绪") || !schema.Covers("状态") {
 		t.Fatal("状态组路径应被 Covers 命中")
@@ -63,4 +69,15 @@ func TestSchemaCovers(t *testing.T) {
 	if schema.Covers("状态定义.情绪") || schema.Covers("身体.水分") {
 		t.Fatal("清单外路径不应被 Covers 命中")
 	}
+}
+
+// setHardStatePaths injects a data-driven hard-state path list for one test.
+func setHardStatePaths(t *testing.T, paths ...string) {
+	t.Helper()
+	cfg := config.Default()
+	cfg.HardStatePaths = paths
+	if err := config.Set(cfg); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(config.Reset)
 }

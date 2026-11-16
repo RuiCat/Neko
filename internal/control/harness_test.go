@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/RuiCat/Neko/internal/bootstrap"
+	"github.com/RuiCat/Neko/internal/config"
 	"github.com/RuiCat/Neko/internal/mcpserver"
 	"github.com/RuiCat/Neko/internal/neko"
 )
@@ -34,6 +35,13 @@ func newTestEnv(t *testing.T, options Options) *testEnv {
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
+	// 默认实体是数据：bootstrap 会装载配置，所以在它之后注入测试值。
+	cfg := config.Current()
+	cfg.DefaultEntity = "猫猫"
+	if err := config.Set(cfg); err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	t.Cleanup(config.Reset)
 	runtime.Store.AddTemplate("NPC", map[string]any{
 		"状态": map[string]any{"情绪": "平静", "身体": "健康"},
 		"身体": map[string]any{"体力": 80},

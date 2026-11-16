@@ -4,6 +4,7 @@ package engine
 import (
 	"testing"
 
+	"github.com/RuiCat/Neko/internal/config"
 	"github.com/RuiCat/Neko/internal/entity"
 )
 
@@ -53,8 +54,7 @@ func TestConcatExpressions(t *testing.T) {
 func TestEffectTextIntegration(t *testing.T) {
 	store := entity.NewStore(t.TempDir())
 	store.AddTemplate("NPC", map[string]any{
-		"关系": map[string]any{"撒娇欲": 50.0},
-		"行为": map[string]any{"傲娇倾向": 50.0},
+		"身体": map[string]any{"体力": 50.0, "疼痛": 50.0},
 	})
 	if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {
 		t.Fatalf("创建实体失败: %v", err)
@@ -64,15 +64,46 @@ func TestEffectTextIntegration(t *testing.T) {
 	machine.AddRule(newRule("r_effect", 0,
 		Branch{
 			If:   stringPtr("NPC[*].行为.主人行为 == '抚摸'"),
-			Then: []Op{{Op: "set", Path: "{e}.状态.触发", Value: "情境修正:撒娇+15,傲娇-20"}},
+			Then: []Op{{Op: "set", Path: "{e}.状态.触发", Value: "情境修正:体力+15,疼痛-20"}},
 		},
 	))
 	machine.Tick("")
+	expectPath(t, store, "猫猫", "身体.体力", 65.0)
+	expectPath(t, store, "猫猫", "身体.疼痛", 30.0)
+}
+
+// TestEffectTextUsesConfiguredMap proves the old vocabulary is data, not
+// source: an effect_map entry restores legacy word → path mapping.
+func TestEffectTextUsesConfiguredMap(t *testing.T) {
+	previous := config.Current()
+	cfg := previous
+	cfg.EffectMap = map[string]string{"撒娇": "关系.撒娇欲"}
+	if err := config.Set(cfg); err != nil {
+		t.Fatalf("config.Set: %v", err)
+	}
+	t.Cleanup(func() { _ = config.Set(previous) })
+
+	store := entity.NewStore(t.TempDir())
+	store.AddTemplate("NPC", map[string]any{
+		"关系": map[string]any{"撒娇欲": 50.0},
+	})
+	if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {
+		t.Fatalf("创建实体失败: %v", err)
+	}
+	target := store.Get("猫猫")
+	if applied := ApplyEffects(target, "撒娇+15"); len(applied) != 1 {
+		t.Fatalf("配置映射未生效: %+v", applied)
+	}
 	expectPath(t, store, "猫猫", "关系.撒娇欲", 65.0)
-	expectPath(t, store, "猫猫", "行为.傲娇倾向", 30.0)
 }
 
 func TestAssignTextInEngine(t *testing.T) {
+	cfg := config.Default()
+	cfg.AssignMap = map[string]string{"安全等级": "行为.安全等级"}
+	if err := config.Set(cfg); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(config.Reset)
 	cases := []struct {
 		value string
 		want  any

@@ -48,7 +48,7 @@ type InvokeRequest struct {
 	Text string `json:"text"`
 	// Priority is normal (default) or urgent.
 	Priority string `json:"priority,omitempty"`
-	// Source labels the event origin, for example tick or context:猫猫.
+	// Source labels the event origin, for example tick or context:<entityID>.
 	Source string `json:"source,omitempty"`
 }
 

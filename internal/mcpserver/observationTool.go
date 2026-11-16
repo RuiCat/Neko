@@ -10,8 +10,8 @@ import (
 )
 
 type observationArgs struct {
-	Entity string `json:"entity,omitempty" jsonschema:"实体ID，如 猫猫"`
-	Scope  string `json:"scope,omitempty" jsonschema:"scope（优先于 entity），如 entity:猫猫"`
+	Entity string `json:"entity,omitempty" jsonschema:"实体ID"`
+	Scope  string `json:"scope,omitempty" jsonschema:"scope（优先于 entity），如 entity:<实体ID>"`
 	Since  int64  `json:"since,omitempty" jsonschema:"只返回 seq > since 的变化；delta 模式使用"`
 	Mode   string `json:"mode,omitempty" jsonschema:"delta（默认，变化流）或 state（当前值投影）"`
 }

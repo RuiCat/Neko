@@ -32,7 +32,7 @@ func (m *StateMachine) applyOp(ent *entity.Entity, op Op, resolver ValueResolver
 		}
 	}
 
-	path := normalizeFieldAlias(op.Path)
+	path := op.Path
 	path = strings.ReplaceAll(path, "{e}", target.ID)
 	if path == target.ID {
 		path = ""
