@@ -1,7 +1,9 @@
 // writeArtifacts.go serializes the three K1 artifacts with canonical JSON:
 // object keys are sorted, arrays keep their semantic order, and repeated runs
 // produce identical bytes.
-package spec
+package extract
+
+import . "github.com/RuiCat/Neko/internal/flow/spec"
 
 import (
 	"bytes"

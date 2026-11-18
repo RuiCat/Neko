@@ -3,7 +3,9 @@
 // partial shape (single-string 阶段/条件/奖励, no 对话). Stages map 已激活 to
 // 未激活 here per C4; missing example/dialog stay empty in this file and may be
 // filled from the same-id library template in Generate, never invented.
-package spec
+package extract
+
+import . "github.com/RuiCat/Neko/internal/flow/spec"
 
 import (
 	"fmt"

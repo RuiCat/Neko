@@ -1,7 +1,9 @@
 // validate.go checks the K1 invariants m1 promises to m2-m6: schema version,
 // record count, reopenable file:line anchors, effect kinds and the five-file
 // snapshot hashes. Generation runs these checks before returning artifacts.
-package spec
+package extract
+
+import . "github.com/RuiCat/Neko/internal/flow/spec"
 
 import (
 	"crypto/sha256"

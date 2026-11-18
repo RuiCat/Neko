@@ -4,7 +4,7 @@
 // unambiguous source field stays null with an explicit reason. C3's forbidden
 // projection namespaces are never emitted as targets; their old paths are only
 // recognized as keys, never written.
-package spec
+package extract
 
 import "strings"
 

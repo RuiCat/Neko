@@ -1,7 +1,9 @@
 // migration_test.go pins the real-corpus counts and the C1 invariants: five
 // snapshot hashes, count == len(records), and every record reopening to a line
 // that contains its key.
-package spec
+package extract
+
+import . "github.com/RuiCat/Neko/internal/flow/spec"
 
 import (
 	"fmt"

@@ -1,6 +1,6 @@
 // parser_test.go pins the .neko data subset: comments, CJK identifiers, nested
 // objects/arrays, literal line anchors and balanced skipping of @规则 blocks.
-package spec
+package extract
 
 import (
 	"strings"

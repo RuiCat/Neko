@@ -1,7 +1,9 @@
 // migration.go assembles the C2 EffectMap and the C1 MigrationReport from
 // per-file extraction results, including the five-file sha256 snapshot that
 // binds the report to the read-only corpus.
-package spec
+package extract
+
+import . "github.com/RuiCat/Neko/internal/flow/spec"
 
 import (
 	"crypto/sha256"

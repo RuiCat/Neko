@@ -1,6 +1,8 @@
 // json_test.go pins canonical JSON output (sorted keys, identical bytes across
 // runs) and writes the three deliverable artifacts into runs/legacy-extraction-p4.
-package spec
+package extract
+
+import . "github.com/RuiCat/Neko/internal/flow/spec"
 
 import (
 	"bytes"

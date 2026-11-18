@@ -1,7 +1,9 @@
 // generate.go is the single entry that reads the five read-only legacy corpora
 // and returns the validated K1 artifacts. Parse issues are recorded, not fatal;
 // file read errors and invariant violations are fatal.
-package spec
+package extract
+
+import . "github.com/RuiCat/Neko/internal/flow/spec"
 
 import (
 	"fmt"

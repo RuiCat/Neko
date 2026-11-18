@@ -2,7 +2,9 @@
 // with 1-based line anchors. Only @定义 bodies are parsed; @规则 and other
 // directive blocks are skipped by balanced-brace scanning and surfaced as
 // skipped blocks, never silently dropped.
-package spec
+package extract
+
+import . "github.com/RuiCat/Neko/internal/flow/spec"
 
 import (
 	"fmt"

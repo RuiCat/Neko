@@ -2,7 +2,7 @@
 // understands // comments, quoted strings, numbers, booleans, punctuation and
 // CJK identifiers, and can skip a balanced brace block without parsing it so
 // legacy @规则 bodies never confuse the data parser.
-package spec
+package extract
 
 import (
 	"fmt"

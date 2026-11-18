@@ -1,7 +1,9 @@
 // extractEffect.go classifies one effect literal into the closed C2 set:
 // number -> set, signed +N/-N string -> add, quoted string -> text, bool ->
 // bool. Anything else is returned as unclassified instead of being guessed.
-package spec
+package extract
+
+import . "github.com/RuiCat/Neko/internal/flow/spec"
 
 import (
 	"encoding/json"

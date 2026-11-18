@@ -1,7 +1,7 @@
 // target_test.go pins D6: every effect has a data-layer target or a null with
 // an explicit reason, forbidden projection namespaces are never targets, and
 // the emitted target set stays inside settlement's data-layer write domain.
-package spec
+package extract
 
 import (
 	"strings"

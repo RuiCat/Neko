@@ -1,7 +1,9 @@
 // extractFlow.go maps parsed @定义 entries onto FlowSpec records, effect
 // occurrences and migration anchors. It knows the three legacy shapes used by
 // P4: behavior templates, task template libraries and the R18 flow index.
-package spec
+package extract
+
+import . "github.com/RuiCat/Neko/internal/flow/spec"
 
 import (
 	"fmt"

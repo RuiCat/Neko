@@ -1,6 +1,8 @@
 // extract_test.go pins the three corpus shapes (behavior, task templates, R18
 // flow index) and the C2 effect classification including unclassified values.
-package spec
+package extract
+
+import . "github.com/RuiCat/Neko/internal/flow/spec"
 
 import (
 	"encoding/json"
