@@ -80,3 +80,4 @@ make lint        # go vet + gofmt 检查
 - [开发与测试](docs/development.md)
 - [DSH 插件安装与验证](docs/dsh-plugin.md)
 - [DSH 上下文驱动](docs/contexts.md)
+- [L12 内心层（情感/人设/九型人格）](docs/inner-layers.md)

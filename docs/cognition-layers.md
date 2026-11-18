@@ -182,6 +182,8 @@
 GOCACHE=$PWD/.local/gocache go run ./.local/probe
 ```
 
+> L12 内心层（情感 / 九型人格 / 人设）与 L11 记忆的情绪印记闭环见 [inner-layers.md](inner-layers.md)。
+
 集成探针 `cognition phase` 实测输出（2026-11-15）：
 
 ```text

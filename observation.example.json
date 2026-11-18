@@ -9,6 +9,8 @@
     { "pattern": "世界.死亡", "tier": "critical" },
     { "pattern": "关系.*", "tier": "normal" },
     { "pattern": "情绪.*", "tier": "normal" },
+    { "pattern": "情感.*", "tier": "normal" },
+    { "pattern": "九型.*", "tier": "normal" },
     { "pattern": "心情.*", "tier": "normal" },
     { "pattern": "睡眠.*", "tier": "normal" },
     { "pattern": "身体.*", "tier": "normal" },
