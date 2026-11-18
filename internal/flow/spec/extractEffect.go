@@ -13,6 +13,15 @@ import (
 var signedNumberPattern = regexp.MustCompile(`^[+-][0-9]+(\.[0-9]+)?$`)
 
 func classifyEffect(path string, value Value, source Source) (EffectSpec, *UnclassifiedEffect) {
+	effect, rejected := classifyEffectValue(path, value, source)
+	if rejected != nil {
+		return effect, rejected
+	}
+	effect.Target, effect.TargetReason = effectTarget(path)
+	return effect, nil
+}
+
+func classifyEffectValue(path string, value Value, source Source) (EffectSpec, *UnclassifiedEffect) {
 	switch value.Kind {
 	case VALUE_NUMBER:
 		return EffectSpec{

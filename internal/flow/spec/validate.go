@@ -248,6 +248,26 @@ func validateEffect(effect EffectSpec) error {
 	if effect.Source.File == "" || effect.Source.Line <= 0 {
 		return fmt.Errorf("%s: missing source file:line", effect.Path)
 	}
+	if strings.TrimSpace(effect.TargetReason) == "" {
+		return fmt.Errorf("%s: missing targetReason", effect.Path)
+	}
+	if effect.Target == nil {
+		// A null target is legal only when the reason explains why.
+		if strings.TrimSpace(effect.TargetReason) == "" {
+			return fmt.Errorf("%s: null target without reason", effect.Path)
+		}
+	} else {
+		target := strings.TrimSpace(*effect.Target)
+		if target == "" {
+			return fmt.Errorf("%s: blank target", effect.Path)
+		}
+		if isForbiddenTarget(target) {
+			return fmt.Errorf("%s: target %q is a C3-forbidden projection path", effect.Path, target)
+		}
+		if !isAllowedTarget(target) {
+			return fmt.Errorf("%s: target %q is not an allowed sourcePaths field", effect.Path, target)
+		}
+	}
 	switch effect.Kind {
 	case EFFECT_KIND_SET, EFFECT_KIND_ADD:
 		if !isNumeric(effect.Value) {

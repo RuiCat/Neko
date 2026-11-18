@@ -85,11 +85,15 @@ const (
 
 // EffectSpec is one effect occurrence. Value is a json.Number for set/add, a
 // string for text and a bool for bool; Source points at the effect key line.
+// Target is the settlement source path (nil when no mapping exists) and
+// TargetReason records the mapping basis or the reason a null is intentional.
 type EffectSpec struct {
-	Path   string     `json:"path"`
-	Kind   EffectKind `json:"kind"`
-	Value  any        `json:"value"`
-	Source Source     `json:"source"`
+	Path         string     `json:"path"`
+	Kind         EffectKind `json:"kind"`
+	Value        any        `json:"value"`
+	Source       Source     `json:"source"`
+	Target       *string    `json:"target"`
+	TargetReason string     `json:"targetReason"`
 }
 
 // UnclassifiedEffect records an effect whose literal is outside the C2 kinds.
