@@ -19,6 +19,7 @@ var frozenTools = []string{
 	"context_list", "context_send",
 	"diagnostics_query", "emote_find", "entity_create", "entity_delete", "entity_query",
 	"entity_snapshot", "entity_state_get", "entity_state_set", "event_log",
+	"flow_run",
 	"gate_status", "gate_teach", "gate_train",
 	"inventory", "judge_run",
 	"neko_script_apply", "neko_script_list", "neko_script_read",
@@ -27,7 +28,7 @@ var frozenTools = []string{
 	"state_machine_resolve", "state_machine_tick", "stats", "world_clock",
 }
 
-// TestE2EStdioToolsListAndStdoutPurity checks tools/list equals the frozen 32
+// TestE2EStdioToolsListAndStdoutPurity checks tools/list equals the frozen 33
 // names and that stdout carries nothing but MCP frames.
 func TestE2EStdioToolsListAndStdoutPurity(t *testing.T) {
 	session := startStdioSession(t)

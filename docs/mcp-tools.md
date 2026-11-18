@@ -1,7 +1,7 @@
 # MCP 工具参考
 
-服务以 MCP（Model Context Protocol）暴露工具。`astrbox-mcp` 暴露 30 个引擎工具；
-`dsh-mcp` 在此基础上增加 `context_list` / `context_send`（共 32 个，用于角色上下文驱动）。
+服务以 MCP（Model Context Protocol）暴露工具。`astrbox-mcp` 暴露 31 个引擎工具；
+`dsh-mcp` 在此基础上增加 `context_list` / `context_send`（共 33 个，用于角色上下文驱动）。
 默认 stdio；`-transport http` 时使用 Streamable HTTP。
 
 ## 启动
@@ -131,6 +131,28 @@
 | `target_state` | string | 是 | JSON 对象，如 `{"身体":"疲惫"}` |
 | `reason` | string | 否 | 决策理由，写入 `llm_decisions.json` |
 | `side_effects` | string | 否 | JSON 数组，元素为 `{"op","path","value"}`；提供时回填一条高优先级 `learned_*` 规则 |
+
+## 流程
+
+flow 引擎（P4 的 K1–K4）的显式执行入口：只在被调用时执行一次，不是 tick 钩子。
+
+### `flow_run`
+
+读 `<data-dir>/flow-spec.json` → 按 id 找 flow → 前置判定（实时实体与素材视图）→ 步骤推到 `done` → 结算 → 任务推进 → 落盘。全程在状态写门内，与 tick 互斥。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `entity` | string | 是 | 执行流程的实体 ID |
+| `flow` | string | 是 | `flow-spec.json` 的 `flows[].id` |
+| `execution_id` | string | 否 | K3 执行 ID；留空自动生成 |
+
+返回 JSON：
+
+- 成功：`{"ok":true,"completion":{"flowID","entity","result","tick"},"report":{"changes":[{"op","entity","scene","path","kind","value","item"}],"errors":[]},"task":{"flowID","entity","tick","fromStage","toStage","stages","progress","rewards","replay"},"verdict":{"ok":true,"reasons":[]}}`。
+- 前置判定失败（零写入）：`{"ok":false,"report":{"changes":[],"errors":[]},"verdict":{"ok":false,"reasons":[{"code","path","want","got"}]}}`，`completion`/`task` 省略，`error` 不出现。
+- 其它失败（实体不存在/规格文件缺失/flow 不存在/步骤、结算或任务推进失败）：`{"ok":false,...,"error":"原因"}`；规格文件缺失时 `error` 带 `data/flow-spec.json` 的放置路径。
+
+幂等：同一 `(entity, flow)` 一旦在 `<data-dir>/flow-ledger.json` 有结算记录就不再结算（不重复扣物品、不重复发奖励），只回放既有 `completion` 与 `task`（`task.replay=true`）并返回空 `report`；回放仍会读一次当前快照，`verdict` 只描述当前状态，`ok` 表示回放本身成功。flow 没有同名 `taskTemplates` 条目时跳过任务推进，返回体不含 `task`。结算只写 C3 源层字段，`交易.货币` 不由本工具扣减（C5，留给交易 tick）。`completion.tick` 固定 `0`（工具不带世界 tick 序号），步骤耗时按 `0` 记账。
 
 ## 脚本
 

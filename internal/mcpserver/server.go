@@ -149,6 +149,7 @@ func (s *Server) MCPServer() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "astrbox", Version: "1.0.0"}, nil)
 	s.addEntityTools(server)
 	s.addStateMachineTools(server)
+	s.addFlowTool(server)
 	s.addScriptTools(server)
 	s.addScriptFileTools(server)
 	s.addDiagnosticsTools(server)

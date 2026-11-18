@@ -63,6 +63,7 @@ func TestToolListAndInventory(t *testing.T) {
 	want := map[string]bool{
 		"entity_state_get": false, "entity_state_set": false, "entity_query": false,
 		"entity_create": false, "state_machine_tick": false, "state_machine_resolve": false,
+		"flow_run":          false,
 		"neko_script_apply": false, "neko_script_remove": false, "neko_script_list": false,
 		"inventory": false,
 	}

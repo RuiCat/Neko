@@ -119,8 +119,11 @@ func TestMCPStdioEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if len(tools.Tools) != 30 {
-		t.Fatalf("tools = %d, want 30", len(tools.Tools))
+	if len(tools.Tools) != 31 {
+		t.Fatalf("tools = %d, want 31", len(tools.Tools))
+	}
+	if !hasTool(tools.Tools, "flow_run") {
+		t.Fatal("flow_run not registered")
 	}
 	if !hasTool(tools.Tools, "emote_find") {
 		t.Fatal("emote_find not registered")
