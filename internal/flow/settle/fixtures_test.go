@@ -57,8 +57,8 @@ func (s *fakeStore) applied() []Change {
 	return append([]Change(nil), s.rows...)
 }
 
-// baseFlow is a finishing flow with cost, one consumed item, one produced item
-// and one effect per K1 kind, all on settlement-writable source fields.
+// baseFlow is a finishing flow with a trade cost, one interaction target, one
+// produced item and data-layer effects. It writes no computed field.
 func baseFlow() spec.FlowSpec {
 	return spec.FlowSpec{
 		ID:       "做饭",
@@ -71,11 +71,11 @@ func baseFlow() spec.FlowSpec {
 		},
 		Steps: []string{"洗菜切菜", "开火下锅", "装盘"},
 		Effects: []spec.EffectSpec{
-			mappedEffect("代谢.胃内容", spec.EFFECT_KIND_SET, 800),
 			mappedEffect("成长.经验", spec.EFFECT_KIND_ADD, 5),
-			mappedEffect("睡眠.状态", spec.EFFECT_KIND_TEXT, "深睡"),
+			mappedEffect("关系.数值.好感度", spec.EFFECT_KIND_ADD, 2),
 			mappedEffect("标记.饥饿", spec.EFFECT_KIND_BOOL, false),
 		},
+		Intents: []spec.IntentSpec{{Action: "使用", Target: "食材"}},
 	}
 }
 

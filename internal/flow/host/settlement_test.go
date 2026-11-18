@@ -1,6 +1,6 @@
 // settlement_test.go pins the settlement seam behavior on a real store: effects
-// land on their declared targets, a spend files a trade request without touching
-// the balance (C5), and a refused batch restores every row it had written.
+// land on their data-layer targets, a cost files a trade request without
+// touching the balance, and a refused batch restores every row it wrote.
 package host
 
 import (
@@ -13,8 +13,8 @@ import (
 	"github.com/RuiCat/Neko/internal/flow/spec"
 )
 
-// TestSettlementAppliesEffectsToTargets runs 吃饭 and pins both actor target rows
-// plus the consumed material, before and after a reload.
+// TestSettlementAppliesEffectsToTargets runs 吃饭 and pins the data-layer effect
+// plus the untouched consumed material, before and after a reload.
 func TestSettlementAppliesEffectsToTargets(t *testing.T) {
 	store, dir := newTestStore(t, npcTemplate)
 	actor := createActor(t, store)
@@ -44,9 +44,8 @@ func TestSettlementAppliesEffectsToTargets(t *testing.T) {
 	if completion.Result != settle.RESULT_COMPLETED {
 		t.Fatalf("completion = %+v", completion)
 	}
-	requireInt(t, actor, settle.PATH_STOMACH_CONTENT, 80)
 	requireBool(t, actor, "标记.饥饿", false)
-	requireItemQuantity(t, store, "食物", testScene, 0)
+	requireItemQuantity(t, store, "食物", testScene, 1)
 
 	if err := hostStore.Flush(); err != nil {
 		t.Fatalf("flush: %v", err)
@@ -55,12 +54,12 @@ func TestSettlementAppliesEffectsToTargets(t *testing.T) {
 	if reloaded == nil {
 		t.Fatal("actor missing after reload")
 	}
-	requireInt(t, reloaded, settle.PATH_STOMACH_CONTENT, 80)
 	requireBool(t, reloaded, "标记.饥饿", false)
 }
 
 // TestSettlementSpendFilesTradeRequest proves settlement only files the trade
-// request: 成交额/结果 are written, while 交易.货币 stays with the trade tick (C5).
+// request: 意向/标的/报价 are written, while the currency and the computed result
+// rows stay with the trade tick.
 func TestSettlementSpendFilesTradeRequest(t *testing.T) {
 	store, dir := newTestStore(t, npcTemplate)
 	actor := createActor(t, store)
@@ -90,8 +89,9 @@ func TestSettlementSpendFilesTradeRequest(t *testing.T) {
 	if report.Failed() {
 		t.Fatalf("settle 购买食材: %v", report.Errors)
 	}
-	requireInt(t, actor, settle.PATH_TRADE_AMOUNT, 10)
-	requireText(t, actor, settle.PATH_TRADE_RESULT, settle.RESULT_SPENT)
+	requireText(t, actor, settle.PATH_TRADE_INTENT, settle.TRADE_SIDE_BUY)
+	requireText(t, actor, settle.PATH_TRADE_OBJECT, "食材")
+	requireInt(t, actor, settle.PATH_TRADE_PRICE, 10)
 	requireInt(t, actor, condition.PATH_MONEY, 100)
 	requireItemQuantity(t, store, "食材", testOtherScene, 3)
 
@@ -102,8 +102,9 @@ func TestSettlementSpendFilesTradeRequest(t *testing.T) {
 	if reloaded == nil {
 		t.Fatal("actor missing after reload")
 	}
-	requireInt(t, reloaded, settle.PATH_TRADE_AMOUNT, 10)
-	requireText(t, reloaded, settle.PATH_TRADE_RESULT, settle.RESULT_SPENT)
+	requireText(t, reloaded, settle.PATH_TRADE_INTENT, settle.TRADE_SIDE_BUY)
+	requireText(t, reloaded, settle.PATH_TRADE_OBJECT, "食材")
+	requireInt(t, reloaded, settle.PATH_TRADE_PRICE, 10)
 	requireInt(t, reloaded, condition.PATH_MONEY, 100)
 }
 
@@ -161,7 +162,7 @@ func TestApplyRefusesUnknownChange(t *testing.T) {
 	hostStore := NewEntityStore(store)
 
 	missing := []settle.Change{{
-		Op: settle.OP_EFFECT, Entity: "不存在", Path: "代谢.胃内容",
+		Op: settle.OP_EFFECT, Entity: "不存在", Path: "标记.饥饿",
 		Kind: spec.EFFECT_KIND_SET, Value: 1,
 	}}
 	if err := hostStore.Apply("confused", missing); err == nil {

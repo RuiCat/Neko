@@ -27,16 +27,11 @@ type targetDecision struct {
 // targetWhitelist is the subset of settle.sourcePaths this package may emit.
 // TestTargetWhitelistIsSettleSourcePaths checks every key against paths.go.
 var targetWhitelist = map[string]struct{}{
-	"代谢.胃内容":   {},
 	"标记.饥饿":    {},
 	"标记.口渴":    {},
 	"标记.疲劳":    {},
-	"睡眠.疲劳":    {},
 	"成长.经验":    {},
 	"关系.数值.亲密": {},
-	"事件.对话":    {},
-	"行为.润滑":    {},
-	"行为.唤起":    {},
 }
 
 // effectTargetDecisions is the D6 mapping table, keyed by the legacy effect
@@ -44,14 +39,13 @@ var targetWhitelist = map[string]struct{}{
 // every decision.
 var effectTargetDecisions = map[string]targetDecision{
 	"身体.饱食": {
-		mapped: true,
-		target: "代谢.胃内容",
-		reason: "C3 指定：饱食投影自 代谢.胃内容（饱食=胃内容/1500*100，量纲由 m4 结算处理）",
+		mapped: false,
+		reason: "代谢.胃内容 由代谢 tick 计算（胃内容=内容能量），flow 结算不得写计算层",
 	},
 	"标记.饥饿": {mapped: true, target: "标记.饥饿", reason: "状态内核 标记.饥饿 同名字段"},
 	"标记.口渴": {mapped: true, target: "标记.口渴", reason: "状态内核 标记.口渴 同名字段"},
 	"标记.疲劳": {mapped: true, target: "标记.疲劳", reason: "状态内核 标记.疲劳 同名字段"},
-	"睡眠.疲劳": {mapped: true, target: "睡眠.疲劳", reason: "睡眠内核 睡眠.疲劳 同名字段"},
+	"睡眠.疲劳": {mapped: false, reason: "睡眠.疲劳 由睡眠 tick 计算，flow 结算不得写计算层"},
 	"成长.经验": {mapped: true, target: "成长.经验", reason: "成长内核 成长.经验 同名字段"},
 	"关系.亲密": {
 		mapped: true,
@@ -59,20 +53,17 @@ var effectTargetDecisions = map[string]targetDecision{
 		reason: "关系内核实际字段为 关系.数值.亲密（C4 同族）",
 	},
 	"状态.触发": {
-		mapped: true,
-		target: "事件.对话",
-		reason: "C3 指定文本走 @事件；事件内核 事件.对话 是 text 字段",
+		mapped: false,
+		reason: "事件.对话 由事件 tick 推进，flow 结算不得写计算层",
 	},
 
 	namespaceOrganState + ".基础生理.湿润度": {
-		mapped: true,
-		target: "行为.润滑",
-		reason: "行为内核 行为.润滑 是润滑字段，与 湿润度 同义",
+		mapped: false,
+		reason: "行为.润滑 由行为 tick 计算，flow 结算不得写计算层",
 	},
 	namespaceOrganState + ".扩展心理.兴奋度": {
-		mapped: true,
-		target: "行为.唤起",
-		reason: "行为内核 行为.唤起 是唤起字段，与 兴奋度 同义",
+		mapped: false,
+		reason: "行为.唤起 由行为 tick 计算，flow 结算不得写计算层",
 	},
 
 	"身体.水分": {

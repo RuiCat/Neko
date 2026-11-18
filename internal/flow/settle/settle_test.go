@@ -76,15 +76,6 @@ func TestSettleRefusalLeavesNoWrites(t *testing.T) {
 			}}
 			return flowWithSnapshot(t, flow, baseSnapshotData())
 		},
-		"consume item missing": func(t *testing.T) (spec.FlowSpec, condition.Snapshot, *fakeStore, *MemoryLedger) {
-			return flowWithSnapshot(t, baseFlow(), map[string]any{})
-		},
-		"consume item too short": func(t *testing.T) (spec.FlowSpec, condition.Snapshot, *fakeStore, *MemoryLedger) {
-			view := map[string]any{"素材.物品": []any{
-				map[string]any{"名称": "食材", "所属场景": "S001-KT", "数量": 0},
-			}}
-			return flowWithSnapshot(t, baseFlow(), view)
-		},
 		"negative cost": func(t *testing.T) (spec.FlowSpec, condition.Snapshot, *fakeStore, *MemoryLedger) {
 			flow := baseFlow()
 			flow.Cost = -1

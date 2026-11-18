@@ -23,9 +23,21 @@ type ItemSpec struct {
 	Description string `json:"description"`
 }
 
+// IntentSpec is one derived settlement intent. Action/Target are the
+// interaction kernel fields (交互.动作/交互.目标); TradeSide/Object are the
+// trade kernel fields (交易.意向/交易.标的). Derivation is by flow name, so an
+// intent is a request the kernels resolve, never a computed result.
+type IntentSpec struct {
+	Action    string `json:"action,omitempty"`
+	Target    string `json:"target,omitempty"`
+	Object    string `json:"object,omitempty"`
+	TradeSide string `json:"tradeSide,omitempty"`
+}
+
 // FlowSpec is one executable legacy template. Requires are items that must be
-// present, Consume are items removed on settlement, and Cost is the currency
-// amount charged. Effects stay ordered exactly as written in the corpus.
+// present, Consume are items the interaction kernel consumes, and Cost is the
+// trade request amount. Effects stay ordered exactly as written in the corpus.
+// Intents are the kernel requests settlement writes instead of computed rows.
 type FlowSpec struct {
 	ID       string       `json:"id"`
 	Source   Source       `json:"source"`
@@ -36,6 +48,7 @@ type FlowSpec struct {
 	Produce  []ItemSpec   `json:"produce"`
 	Steps    []string     `json:"steps"`
 	Effects  []EffectSpec `json:"effects"`
+	Intents  []IntentSpec `json:"intents"`
 }
 
 // TaskCondition is the normalized 条件 object: type is the corpus 类型/string

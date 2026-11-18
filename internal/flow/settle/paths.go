@@ -12,83 +12,100 @@ import (
 	"strings"
 )
 
-// Trade-kernel request fields written by a spend. C5 requires spending to go
-// through the trade kernel; the currency field itself is never assigned here.
+// Intent fields settlement writes. Settlement never computes a result: it
+// writes the interaction/trade request rows, and the .neko tick resolves them.
 const (
-	// PATH_TRADE_AMOUNT is the trade kernel's 成交额 request field.
-	PATH_TRADE_AMOUNT = "交易.成交额"
-	// PATH_TRADE_RESULT is the trade kernel's 结果 request field.
-	PATH_TRADE_RESULT = "交易.结果"
+	// PATH_INTERACT_ACTION is the interaction kernel's 动作 request row.
+	PATH_INTERACT_ACTION = "交互.动作"
+	// PATH_INTERACT_TARGET is the interaction kernel's 目标 request row.
+	PATH_INTERACT_TARGET = "交互.目标"
+	// PATH_INTERACT_OBJECT is the interaction kernel's 对象 request row.
+	PATH_INTERACT_OBJECT = "交互.对象"
+	// PATH_TRADE_INTENT is the trade kernel's 意向 request row.
+	PATH_TRADE_INTENT = "交易.意向"
+	// PATH_TRADE_OBJECT is the trade kernel's 标的 request row.
+	PATH_TRADE_OBJECT = "交易.标的"
+	// PATH_TRADE_PRICE is the trade kernel's 报价 request row.
+	PATH_TRADE_PRICE = "交易.报价"
+	// TRADE_SIDE_BUY is the 交易.意向 value of a buy request.
+	TRADE_SIDE_BUY = "买"
+	// DEFAULT_INTERACT_ACTION is used when a consume flow derives no verb.
+	DEFAULT_INTERACT_ACTION = "使用"
 )
 
-// RESULT_SPENT is the 交易.结果 text that marks one settlement spend request.
-const RESULT_SPENT = "支出"
-
-// PATH_ITEM_QUANTITY is the material-kernel field consume and produce adjust.
+// PATH_ITEM_QUANTITY is the material-kernel field a produce row adds to.
 const PATH_ITEM_QUANTITY = "数量"
 
-// sourcePaths is the closed set of source-layer fields settlement may write.
-// Every entry exists in scripts/kernel/*/*Model.neko; adding one is a contract
-// change, not a convenience, because an unknown path must refuse the flow.
-var sourcePaths = map[string]struct{}{
-	// 代谢内核 (metabolism/metabolismModel.neko): food and fluid intake.
-	"代谢.流逝分钟": {}, "代谢.胃内容": {}, "代谢.摄入能量": {}, "代谢.本tick吸收": {},
-	"代谢.能量储备": {}, "代谢.基础代谢": {}, "代谢.活动代谢": {}, "代谢.血糖": {},
-	"代谢.糖原肝": {}, "代谢.糖原肌": {}, "代谢.体液": {}, "代谢.血液": {},
-	"代谢.血钠": {}, "代谢.血钾": {}, "代谢.渗透压": {}, "代谢.摄入液": {},
-	"代谢.尿量": {}, "代谢.出汗": {}, "代谢.寒战": {}, "代谢.酒精": {},
-	"代谢.体温": {}, "代谢.环境温": {}, "代谢.饥饿": {}, "代谢.口渴": {},
+// dataLayerPrefixes are the writable data-layer namespaces: status marks,
+// relation numeric rows and growth rows. They are plain data, not computed
+// projections, so settlement may set them directly.
+var dataLayerPrefixes = []string{"标记.", "关系.数值.", "成长."}
 
-	// 睡眠内核 (sleep/sleepModel.neko).
-	"睡眠.状态": {}, "睡眠.疲劳": {}, "睡眠.睡眠债": {}, "睡眠.自动作息": {},
+// computedLayerPrefixes are calculation namespaces owned by .neko ticks. A
+// settlement naming one is refused as a whole flow: writing it here would be a
+// second writer of a computed result.
+var computedLayerPrefixes = []string{"代谢.", "行为.", "睡眠.", "事件.", "状态."}
 
-	// 标记 from the status kernel (status/statusModel.neko); 状态 itself is a
-	// projection row and is therefore not listed.
-	"标记.疼痛": {}, "标记.饥饿": {}, "标记.口渴": {}, "标记.疲劳": {},
-
-	// 成长内核 (growth/growthModel.neko).
-	"成长.经验": {}, "成长.特性点": {},
-
-	// 关系内核 canonical numeric rows (relation/relationModel.neko); C4 fixes
-	// 关系.数值.好感度 as the affinity target.
-	"关系.数值.亲密": {}, "关系.数值.信赖": {}, "关系.数值.爱意": {},
-	"关系.数值.好感度": {}, "关系.数值.安全感": {}, "关系.数值.撒娇欲": {},
-
-	// 交易内核 (trade/tradeModel.neko), excluding the currency field that C5
-	// reserves for the trade tick.
-	"交易.成交额": {}, "交易.结果": {}, "交易.声誉": {},
-
-	// 事件内核 (event/eventModel.neko): text effects that advance an event.
-	"事件.当前": {}, "事件.阶段": {}, "事件.阶段名": {}, "事件.阶段数": {},
-	"事件.推进": {}, "事件.对话": {}, "事件.结果": {},
-
-	// 行为内核 (behavior/behaviorModel.neko): per-activity output rows.
-	"行为.主动": {}, "行为.类型": {}, "行为.唤起": {}, "行为.强度": {},
-	"行为.润滑": {}, "行为.经验": {}, "行为.酒精": {}, "行为.伙伴数": {},
-	"行为.体内暴露": {}, "行为.应激输出": {}, "行为.能耗输出": {},
-	"行为.心率增量": {}, "行为.催产素量": {},
+// computedLayerExact are computed trade result rows. The trade request rows
+// (意向/标的/报价) are writable; the result rows are not.
+var computedLayerExact = map[string]struct{}{
+	"交易.成交额": {},
+	"交易.结果":  {},
 }
 
-// sourceLayerPath reports whether path is a settlement-writable source field.
-// Empty, leading-dot, trailing-dot and doubled-dot paths are never valid.
+// intentExact is the closed set of kernel request rows settlement may write.
+var intentExact = map[string]struct{}{
+	PATH_INTERACT_ACTION: {},
+	PATH_INTERACT_TARGET: {},
+	PATH_INTERACT_OBJECT: {},
+	PATH_TRADE_INTENT:    {},
+	PATH_TRADE_OBJECT:    {},
+	PATH_TRADE_PRICE:     {},
+}
+
+// sourceLayerPath reports whether path is a settlement-writable field: one
+// closed intent row or one data-layer namespace entry. Empty, leading-dot,
+// trailing-dot and doubled-dot paths are never valid.
 func sourceLayerPath(path string) bool {
 	if path == "" || strings.HasPrefix(path, ".") || strings.HasSuffix(path, ".") || strings.Contains(path, "..") {
 		return false
 	}
-	_, ok := sourcePaths[path]
-	return ok
+	if _, ok := intentExact[path]; ok {
+		return true
+	}
+	for _, prefix := range dataLayerPrefixes {
+		if strings.HasPrefix(path, prefix) && len(path) > len(prefix) {
+			return true
+		}
+	}
+	return false
 }
 
-// validateTargetPath classifies one D6 settlement target. An unknown or
-// projection target is an error: settlement refuses the flow and writes
-// nothing (C3). The legacy EffectSpec.Path never reaches this check as a write
-// target; it is a corpus key only.
+// computedLayerPath reports whether path belongs to a calculation namespace.
+func computedLayerPath(path string) bool {
+	if _, ok := computedLayerExact[path]; ok {
+		return true
+	}
+	for _, prefix := range computedLayerPrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateTargetPath classifies one settlement target. A computed-layer target
+// refuses the whole flow and names the field; an unknown target refuses it as
+// not writable. Settlement writes intents and data-layer rows only.
 func validateTargetPath(target string) error {
 	if target == "" {
 		return fmt.Errorf("settlement target is empty")
 	}
+	if computedLayerPath(target) {
+		return fmt.Errorf("target %q is a computed-layer field; settlement writes intents and data-layer rows only", target)
+	}
 	if !sourceLayerPath(target) {
-		return fmt.Errorf("target %q is not a settlement-writable source field (C3)", target)
+		return fmt.Errorf("target %q is not a settlement-writable intent or data-layer field", target)
 	}
 	return nil
 }

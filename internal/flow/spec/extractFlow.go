@@ -6,6 +6,7 @@ package spec
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 type extractedDocument struct {
@@ -91,6 +92,7 @@ func behaviorFlow(file string, entry Entry) (FlowSpec, []UnclassifiedEffect, []P
 		Produce:  []ItemSpec{},
 		Steps:    []string{},
 		Effects:  []EffectSpec{},
+		Intents:  []IntentSpec{},
 	}
 	issues := []ParseIssue{}
 	unclassified := []UnclassifiedEffect{}
@@ -124,7 +126,41 @@ func behaviorFlow(file string, entry Entry) (FlowSpec, []UnclassifiedEffect, []P
 	effects, unclassified, effectIssues := readEffects(obj, entry.Key, file)
 	flow.Effects = effects
 	issues = append(issues, effectIssues...)
+	flow.Intents = deriveIntents(flow.ID, flow.Consume, flow.Produce)
 	return flow, unclassified, issues
+}
+
+// deriveIntents turns a flow name into the kernel requests settlement writes.
+// The rules are deliberately narrow and ordered: a trade name wins, then the
+// interaction verb, and everything else stays empty instead of guessing.
+//
+//	买/购 -> trade buy, object = first consume/produce item
+//	吃    -> interaction eat, target = first consume item
+//	喝    -> interaction drink, target = first consume item
+//	做/煮/洗/使用 -> interaction use, target = first consume item
+func deriveIntents(flowID string, consume []string, produce []ItemSpec) []IntentSpec {
+	firstConsume := ""
+	if len(consume) > 0 {
+		firstConsume = consume[0]
+	}
+	if strings.Contains(flowID, "买") || strings.Contains(flowID, "购") {
+		object := firstConsume
+		if object == "" && len(produce) > 0 {
+			object = produce[0].Name
+		}
+		return []IntentSpec{{TradeSide: "买", Object: object}}
+	}
+	for _, verb := range []string{"吃", "喝", "使用", "做", "煮", "洗"} {
+		if !strings.Contains(flowID, verb) {
+			continue
+		}
+		action := verb
+		if action == "做" || action == "煮" || action == "洗" {
+			action = "使用"
+		}
+		return []IntentSpec{{Action: action, Target: firstConsume}}
+	}
+	return []IntentSpec{}
 }
 
 func r18Flows(file string, block Block) ([]FlowSpec, []MigrationRecord, []ParseIssue) {
@@ -186,6 +222,7 @@ func r18Flows(file string, block Block) ([]FlowSpec, []MigrationRecord, []ParseI
 				})
 			}
 		}
+		flow.Intents = deriveIntents(flow.ID, flow.Consume, flow.Produce)
 		flows = append(flows, flow)
 		records = append(records, MigrationRecord{
 			File: file, Line: entry.KeyLine, Key: entry.Key, Kind: "r18Flow",

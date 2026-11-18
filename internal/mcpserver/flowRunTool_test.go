@@ -15,7 +15,9 @@ import (
 
 	"github.com/RuiCat/Neko/internal/engine"
 	"github.com/RuiCat/Neko/internal/entity"
+	"github.com/RuiCat/Neko/internal/events"
 	"github.com/RuiCat/Neko/internal/flow/condition"
+	"github.com/RuiCat/Neko/internal/function"
 	"github.com/RuiCat/Neko/internal/registry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -29,8 +31,8 @@ type flowFixture struct {
 }
 
 // flowFixtureDocument is the cropped m1 artifact: 吃饭 consumes 食物 at the
-// kitchen, maps 身体.饱食 onto 代谢.胃内容, and carries a task template so task
-// advancement is observable.
+// kitchen, carries one data-layer effect and a task template. The task stage and
+// every reward stay with taskRules.neko, so flow_run only writes data rows.
 func flowFixtureDocument() map[string]any {
 	return map[string]any{
 		"schemaVersion": 1,
@@ -44,13 +46,14 @@ func flowFixtureDocument() map[string]any {
 			"produce":  []any{},
 			"steps":    []any{"摆好碗筷", "一口一口吃饭"},
 			"effects": []any{map[string]any{
-				"path":         "身体.饱食",
-				"kind":         "set",
-				"value":        80,
+				"path":         "标记.饥饿",
+				"kind":         "bool",
+				"value":        false,
 				"source":       map[string]any{"file": "fixture/behavior.neko", "line": 40},
-				"target":       "代谢.胃内容",
-				"targetReason": "C3 指定：饱食投影自 代谢.胃内容",
+				"target":       "标记.饥饿",
+				"targetReason": "状态内核同名字段",
 			}},
+			"intents": []any{map[string]any{"action": "吃", "target": "食物"}},
 		}},
 		"taskTemplates": []any{map[string]any{
 			"id":        "吃饭",
@@ -228,7 +231,6 @@ func requireNoFile(t *testing.T, path string) {
 type ledgerDocument struct {
 	Version     int               `json:"version"`
 	Settlements []json.RawMessage `json:"settlements"`
-	Advances    []json.RawMessage `json:"advances"`
 }
 
 // TestFlowRunSettlesAndPersists covers the tool registration, the full
@@ -249,33 +251,33 @@ func TestFlowRunSettlesAndPersists(t *testing.T) {
 	if body.Completion.Result != "完成" {
 		t.Fatalf("completion result = %q", body.Completion.Result)
 	}
-	if body.Task == nil || body.Task.ToStage != "完成" || body.Task.Progress != 100 {
-		t.Fatalf("task transition = %+v", body.Task)
-	}
 	if len(body.Report.Changes) == 0 {
 		t.Fatal("report has no change rows")
 	}
 
 	actor := fixture.store.Get("猫猫")
-	requireIntRow(t, actor, "代谢.胃内容", 1200)
+	requireIntRow(t, actor, "代谢.胃内容", 300)
 	requireIntRow(t, actor, "任务.进度", 100)
-	requireIntRow(t, actor, "成长.经验", 5)
-	requireIntRow(t, actor, "关系.数值.好感度", 2)
+	if value := actor.GetOrNone("成长.经验"); value != nil && value != 0 {
+		t.Fatalf("成长.经验 = %v, want no reward from flow_run", value)
+	}
+	if value := actor.GetOrNone("关系.数值.好感度"); value != nil && value != 0 {
+		t.Fatalf("关系.数值.好感度 = %v, want no reward from flow_run", value)
+	}
 	if current, err := actor.Get("任务.当前"); err != nil || current != "吃饭" {
 		t.Fatalf("任务.当前 = %v (%v), want 吃饭", current, err)
 	}
 	if material := fixture.store.Get("素材:S001-KT@食物"); material == nil {
 		t.Fatal("consumed material entity disappeared")
 	} else {
-		requireIntRow(t, material, "数量", 0)
+		requireIntRow(t, material, "数量", 1)
 	}
 
 	public := readPersistedData(t, filepath.Join(fixture.dataDir, "entities.json"), "素材:S001-KT@食物")
-	requirePersistedNumber(t, public, "数量", 0)
+	requirePersistedNumber(t, public, "数量", 1)
 	user := readPersistedData(t, filepath.Join(fixture.dataDir, "user", "entities.json"), "猫猫")
-	requirePersistedNumber(t, user, "代谢.胃内容", 1200)
+	requirePersistedNumber(t, user, "代谢.胃内容", 300)
 	requirePersistedNumber(t, user, "任务.进度", 100)
-	requirePersistedNumber(t, user, "成长.经验", 5)
 }
 
 // TestFlowRunUnknownFlow refuses a flow absent from the spec without writing.
@@ -335,7 +337,7 @@ func TestFlowRunRejectsWithoutWrites(t *testing.T) {
 	if body.Verdict.Reasons[0].Code != condition.REASON_MISSING_ITEM {
 		t.Fatalf("reason code = %q", body.Verdict.Reasons[0].Code)
 	}
-	if body.Completion != nil || body.Task != nil {
+	if body.Completion != nil {
 		t.Fatalf("rejected body carries results: %+v", body)
 	}
 	if !reflect.DeepEqual(before, fixture.store.Get("猫猫").Snapshot()) {
@@ -367,11 +369,8 @@ func TestFlowRunReplaysOnce(t *testing.T) {
 	if second.Report == nil || len(second.Report.Changes) != 0 || len(second.Report.Errors) != 0 {
 		t.Fatalf("replay report = %+v", second.Report)
 	}
-	if second.Task == nil || !second.Task.Replay {
-		t.Fatalf("replay task = %+v", second.Task)
-	}
-	if second.Verdict == nil || second.Verdict.OK {
-		t.Fatalf("replay verdict should describe the current snapshot: %+v", second.Verdict)
+	if second.Verdict == nil {
+		t.Fatal("replay body has no verdict")
 	}
 	if !reflect.DeepEqual(afterFirst, fixture.store.Get("猫猫").Snapshot()) {
 		t.Fatal("replay mutated the actor")
@@ -379,12 +378,13 @@ func TestFlowRunReplaysOnce(t *testing.T) {
 	if !bytes.Equal(userFirst, readFixtureBytes(t, userPath)) || !bytes.Equal(publicFirst, readFixtureBytes(t, publicPath)) {
 		t.Fatal("replay rewrote the entity files")
 	}
-	requireIntRow(t, fixture.store.Get("猫猫"), "成长.经验", 5)
+	if value := fixture.store.Get("猫猫").GetOrNone("成长.经验"); value != nil && value != 0 {
+		t.Fatalf("成长.经验 = %v, want no replay reward", value)
+	}
 
 	ledger := readLedgerDocument(t, filepath.Join(fixture.dataDir, FLOW_LEDGER_FILE))
-	if len(ledger.Settlements) != 1 || len(ledger.Advances) != 1 {
-		t.Fatalf("ledger settlements = %d advances = %d, want 1/1",
-			len(ledger.Settlements), len(ledger.Advances))
+	if len(ledger.Settlements) != 1 {
+		t.Fatalf("ledger settlements = %d, want 1", len(ledger.Settlements))
 	}
 }
 
@@ -473,4 +473,83 @@ func readLedgerDocument(t *testing.T, path string) ledgerDocument {
 		t.Fatalf("decode ledger: %v", err)
 	}
 	return document
+}
+
+// TestFlowRunThenTick proves the corrected split: flow_run writes only the
+// interaction/task data rows, and the following .neko tick owns the computed
+// 代谢.胃内容 and the task stage (taskRules.neko).
+func TestFlowRunThenTick(t *testing.T) {
+	dataDir := t.TempDir()
+	writeFixtureJSON(t, filepath.Join(dataDir, "templates", "素材.json"), map[string]any{
+		"名称": "", "所属场景": "", "数量": 1, "描述": "",
+		"持有人": "", "食物": map[string]any{"可食": false},
+	})
+	writeFixtureJSON(t, filepath.Join(dataDir, FLOW_SPEC_FILE), flowFixtureDocument())
+	store := entity.NewStore(dataDir)
+	if err := store.Load(); err != nil {
+		t.Fatalf("load store: %v", err)
+	}
+	if _, err := store.Create("猫猫", "NPC", map[string]any{
+		"基础": map[string]any{"名字": "猫猫", "代谢修正": 1000},
+		"位置": map[string]any{"场景": "S001-KT"},
+		"代谢": map[string]any{"胃内容": 999, "流逝分钟": 1, "基础代谢": 1200},
+		"器官性状": map[string]any{"胃": map[string]any{"内容": []any{
+			map[string]any{"能量": 300, "水分": 100, "重量": 100, "温度": 37},
+		}}},
+		"任务": map[string]any{"当前": "", "进度": 0, "阶段": "未激活", "完成标记": false},
+		"标记": map[string]any{"饥饿": true},
+	}, nil); err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	if _, err := store.Create("素材:S001-KT@食物", "素材", map[string]any{
+		"名称": "食物", "所属场景": "S001-KT", "数量": 1, "持有人": "猫猫",
+		"食物": map[string]any{"可食": true},
+	}, nil); err != nil {
+		t.Fatalf("create material: %v", err)
+	}
+	machine := engine.New(store)
+	funcs := function.New(store)
+	machine.SetFuncCaller(funcs)
+	system := events.NewSystem(store, funcs)
+	reg, err := registry.New(store, machine, filepath.Join(dataDir, "scripts.json"), filepath.Join("..", "..", "scripts"))
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	reg.SetFunctionSink(system)
+	if _, err := reg.BootstrapFromSources(); err != nil {
+		t.Fatalf("bootstrap scripts: %v", err)
+	}
+	server := New(store, machine, reg)
+	server.SetDataDir(dataDir)
+
+	body := server.RunFlow("猫猫", "吃饭", "")
+	requireBodyOK(t, body)
+	for _, change := range body.Report.Changes {
+		if strings.HasPrefix(change.Path, "代谢.") || strings.HasPrefix(change.Path, "行为.") || strings.HasPrefix(change.Path, "睡眠.") {
+			t.Fatalf("flow_run wrote a computed row: %+v", change)
+		}
+	}
+	actor := store.Get("猫猫")
+	before := actor.GetOrNone("代谢.胃内容")
+	if before != 999 {
+		t.Fatalf("pre-tick 代谢.胃内容 = %v, want 999 (flow_run must not compute it)", before)
+	}
+	if stage := actor.GetOrNone("任务.阶段"); stage != "未激活" {
+		t.Fatalf("pre-tick 任务.阶段 = %v, want 未激活 (flow_run only writes data rows)", stage)
+	}
+	if action := actor.GetOrNone("交互.动作"); action != "吃" {
+		t.Fatalf("交互.动作 = %v, want 吃", action)
+	}
+	if target := actor.GetOrNone("交互.目标"); target != "食物" {
+		t.Fatalf("交互.目标 = %v, want 食物", target)
+	}
+
+	machine.Tick("")
+	after := actor.GetOrNone("代谢.胃内容")
+	if after == before {
+		t.Fatalf("tick did not own 代谢.胃内容: still %v", after)
+	}
+	if stage := actor.GetOrNone("任务.阶段"); stage == "未激活" || stage == "" {
+		t.Fatalf("taskRules did not advance 任务.阶段: %v", stage)
+	}
 }

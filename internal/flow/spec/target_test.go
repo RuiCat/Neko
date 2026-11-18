@@ -1,12 +1,9 @@
-// target_test.go pins D6: every effect has a sourcePaths target or a null with
+// target_test.go pins D6: every effect has a data-layer target or a null with
 // an explicit reason, forbidden projection namespaces are never targets, and
-// the emitted target set stays a subset of settle's sourcePaths whitelist.
+// the emitted target set stays inside settlement's data-layer write domain.
 package spec
 
 import (
-	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -40,8 +37,10 @@ func TestEffectTargetCoverage(t *testing.T) {
 		}
 		targetsByPath[effect.Path] = append(targetsByPath[effect.Path], effect.Target)
 	}
-	if mapped != 30 || null != 25 {
-		t.Fatalf("mapped=%d null=%d, want 30/25", mapped, null)
+	// Computed-layer rows (代谢/行为/睡眠/事件) are intentionally null: their
+	// .neko tick owns the value, so only data-layer effects carry a target.
+	if mapped != 11 || null != 44 {
+		t.Fatalf("mapped=%d null=%d, want 11/44", mapped, null)
 	}
 	for path, targets := range targetsByPath {
 		first := targetString(targets[0])
@@ -53,33 +52,21 @@ func TestEffectTargetCoverage(t *testing.T) {
 	}
 }
 
-func TestTargetWhitelistIsSettleSourcePaths(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "settle", "paths.go"))
-	if err != nil {
-		t.Fatalf("read settle paths.go: %v", err)
-	}
-	text := string(data)
-	const marker = "var sourcePaths = map[string]struct{}{"
-	start := strings.Index(text, marker)
-	if start < 0 {
-		t.Fatalf("sourcePaths map not found in settle/paths.go")
-	}
-	block := text[start:]
-	end := strings.Index(block, "\n}\n")
-	if end < 0 {
-		t.Fatalf("sourcePaths map end not found")
-	}
-	block = block[:end]
-	sourcePaths := map[string]struct{}{}
-	for _, match := range regexp.MustCompile(`"([^"]+)"`).FindAllStringSubmatch(block, -1) {
-		sourcePaths[match[1]] = struct{}{}
-	}
-	if len(sourcePaths) == 0 {
-		t.Fatal("parsed no sourcePaths entries")
-	}
+// TestTargetWhitelistIsSettlementWritable checks every emitted target stays in
+// the settlement data-layer domain: 标记./关系.数值./成长. only. Computed
+// namespaces (代谢./行为./睡眠./事件./状态.) are rejected at settlement.
+func TestTargetWhitelistIsSettlementWritable(t *testing.T) {
+	dataLayer := []string{"标记.", "关系.数值.", "成长."}
 	for target := range targetWhitelist {
-		if _, ok := sourcePaths[target]; !ok {
-			t.Fatalf("targetWhitelist %q is not in settle sourcePaths", target)
+		writable := false
+		for _, prefix := range dataLayer {
+			if strings.HasPrefix(target, prefix) && len(target) > len(prefix) {
+				writable = true
+				break
+			}
+		}
+		if !writable {
+			t.Fatalf("targetWhitelist %q is not a settlement data-layer field", target)
 		}
 	}
 	for path, decision := range effectTargetDecisions {
@@ -88,9 +75,6 @@ func TestTargetWhitelistIsSettleSourcePaths(t *testing.T) {
 		}
 		if !isAllowedTarget(decision.target) {
 			t.Fatalf("%s: mapped target %q is not in targetWhitelist", path, decision.target)
-		}
-		if _, ok := sourcePaths[decision.target]; !ok {
-			t.Fatalf("%s: mapped target %q is not in settle sourcePaths", path, decision.target)
 		}
 	}
 }

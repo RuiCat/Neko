@@ -75,9 +75,9 @@ func newApplyPlan(store *entity.Store, changes []settle.Change) (*applyPlan, err
 // add dispatches one settlement row by its operation.
 func (p *applyPlan) add(change settle.Change) error {
 	switch change.Op {
-	case settle.OP_SPEND, settle.OP_EFFECT:
+	case settle.OP_SPEND, settle.OP_INTENT, settle.OP_EFFECT:
 		return p.addField(change)
-	case settle.OP_CONSUME, settle.OP_PRODUCE:
+	case settle.OP_PRODUCE:
 		return p.addItem(change)
 	default:
 		return fmt.Errorf("unknown change op %q", change.Op)
@@ -150,9 +150,9 @@ func (t *targetWrites) added(path string, delta any) (int, error) {
 	return base + step, nil
 }
 
-// addItem applies one item quantity delta. A consume needs the material entity
-// to exist; a produce creates it when it does not, and the create is queued
-// until commit so a later refusal creates nothing.
+// addItem applies one produced item quantity. It adds to an existing material or
+// queues a creation; settlement never writes a consumed material, because
+// consume is an interaction intent the tick resolves.
 func (p *applyPlan) addItem(change settle.Change) error {
 	if change.Entity == "" {
 		return fmt.Errorf("item name is empty")
@@ -164,19 +164,11 @@ func (p *applyPlan) addItem(change settle.Change) error {
 	if material := p.material(change.Entity, change.Scene); material != nil {
 		return p.adjustQuantity(material, delta)
 	}
-	switch change.Op {
-	case settle.OP_CONSUME:
-		return fmt.Errorf("item %q in scene %q not found", change.Entity, change.Scene)
-	case settle.OP_PRODUCE:
-		return p.queueCreation(change, delta)
-	default:
-		return fmt.Errorf("item %q: %s needs an existing material entity", change.Entity, change.Op)
-	}
+	return p.queueCreation(change, delta)
 }
 
 // adjustQuantity moves one material's 数量 by delta and refuses a negative
-// result; the K4 report already rejects a short consume, so this guard keeps the
-// store honest for a hand-built batch.
+// result, so a hand-built batch cannot drive an item below zero.
 func (p *applyPlan) adjustQuantity(material *entity.Entity, delta int) error {
 	target := p.target(material)
 	current := target.read(settle.PATH_ITEM_QUANTITY)

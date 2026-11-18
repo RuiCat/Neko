@@ -1,13 +1,14 @@
 // flowRunTool.go registers flow_run, the explicit entry of the frozen P4 flow
 // engine: one call reads the runtime flow spec, judges the preconditions,
-// advances the steps to done, settles the flow, advances the task and saves.
+// advances the steps to done, settles the flow, marks the task data rows and
+// saves. It owns no business calculation: the task stage and every reward stay
+// with scripts/rules/task/taskRules.neko.
 package mcpserver
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,7 +20,6 @@ import (
 	"github.com/RuiCat/Neko/internal/flow/settle"
 	"github.com/RuiCat/Neko/internal/flow/spec"
 	"github.com/RuiCat/Neko/internal/flow/step"
-	"github.com/RuiCat/Neko/internal/flow/task"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -39,6 +39,14 @@ const (
 	FLOW_DEFAULT_TICK = 0
 	// FLOW_DEFAULT_DATA_DIR is used when the server has no data dir wired.
 	FLOW_DEFAULT_DATA_DIR = "data"
+	// PATH_TASK_CURRENT is the active task id row. Settlement only writes data:
+	// the stage machine and the reward belong to scripts/rules/task/taskRules.neko.
+	PATH_TASK_CURRENT = "任务.当前"
+	// PATH_TASK_PROGRESS is the 0-100 progress row read by tkFinish.
+	PATH_TASK_PROGRESS = "任务.进度"
+	// PROGRESS_COMPLETE is the terminal progress value; the task rule owns the
+	// stage transition that consumes it.
+	PROGRESS_COMPLETE = 100
 )
 
 type flowRunArgs struct {
@@ -55,7 +63,6 @@ type flowRunResult struct {
 	OK         bool               `json:"ok"`
 	Completion *settle.Completion `json:"completion,omitempty"`
 	Report     *flowRunReport     `json:"report,omitempty"`
-	Task       *task.Transition   `json:"task,omitempty"`
 	Verdict    *condition.Verdict `json:"verdict,omitempty"`
 	Error      string             `json:"error,omitempty"`
 }
@@ -72,7 +79,7 @@ type flowRunReport struct {
 func (s *Server) addFlowTool(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "flow_run",
-		Description: "显式执行一条 flow：判定 → 推进步骤到 done → 结算 → 推进任务并落盘。" +
+		Description: "显式执行一条 flow：判定 → 推进步骤到 done → 结算 → 写任务数据行并落盘。" +
 			"读 <data-dir>/flow-spec.json；同一 (entity, flow) 只结算一次。",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args flowRunArgs) (*mcp.CallToolResult, any, error) {
 		return jsonResult(s.RunFlow(args.Entity, args.Flow, args.ExecutionID))
@@ -127,7 +134,7 @@ func (s *Server) runFlowLocked(entityID, flowID, executionID string) flowRunResu
 	}
 	store := host.NewEntityStore(s.store)
 	if recorded, settled := ledger.SettlementLedger().Lookup(flow.ID, entityID); settled {
-		return s.replayFlow(flow, recorded, document.TaskTemplates, store, ledger)
+		return s.replayFlow(flow, recorded, store)
 	}
 	snapshot, err := store.Snapshot(entityID)
 	if err != nil {
@@ -157,21 +164,12 @@ func (s *Server) runFlowLocked(entityID, flowID, executionID string) flowRunResu
 		return body
 	}
 	body.Completion = &completion
-	transition, taskErr := task.Advance(completion, document.TaskTemplates, task.Deps{
-		Store:  store,
-		Ledger: ledger.TaskLedger(),
-	})
-	switch {
-	case taskErr == nil:
-		body.Task = &transition
-	case errors.Is(taskErr, task.ErrUnknownFlow):
-		// The flow has no task template: settlement alone is the whole result.
-	default:
-		body.Error = fmt.Sprintf("任务推进失败: %v", taskErr)
+	if err := markTaskRows(store, entityID, flow.ID); err != nil {
+		body.Error = fmt.Sprintf("写入任务数据失败: %v", err)
 		if saveErr := store.Flush(); saveErr != nil {
 			body.Error += fmt.Sprintf("；保存失败: %v", saveErr)
 		} else {
-			body.Error += "（结算已落盘，重复调用只重试任务推进）"
+			body.Error += "（结算已落盘，重复调用只补写任务数据）"
 		}
 		return body
 	}
@@ -184,42 +182,43 @@ func (s *Server) runFlowLocked(entityID, flowID, executionID string) flowRunResu
 }
 
 // replayFlow answers an already settled (flow, entity) from the ledger. It never
-// settles again: the recorded completion is returned, and only a task advance
-// that has not landed yet (for example a retry after a task failure) may write.
-// The verdict is re-read from the current snapshot for information only; ok
-// still means the replay itself succeeded.
+// settles or pays again: the recorded completion is returned and only the two
+// task data rows are written if a previous run failed before they landed. The
+// verdict is re-read from the current snapshot for information only.
 func (s *Server) replayFlow(
 	flow spec.FlowSpec,
 	recorded settle.Completion,
-	templates []spec.TaskTemplateSpec,
 	store *host.EntityStore,
-	ledger *host.Ledger,
 ) flowRunResult {
 	body := flowRunResult{OK: true, Completion: &recorded, Report: newFlowRunReport()}
 	if snapshot, err := store.Snapshot(recorded.Entity); err == nil {
 		verdict := condition.Judge(flow, snapshot)
 		body.Verdict = &verdict
 	}
-	transition, err := task.Advance(recorded, templates, task.Deps{
-		Store:  store,
-		Ledger: ledger.TaskLedger(),
-	})
-	switch {
-	case err == nil:
-		body.Task = &transition
-		if !transition.Replay {
-			if saveErr := store.Flush(); saveErr != nil {
-				body.OK = false
-				body.Error = fmt.Sprintf("保存失败: %v", saveErr)
-			}
-		}
-	case errors.Is(err, task.ErrUnknownFlow):
-		// A flow without a task template records settlement only.
-	default:
+	if err := markTaskRows(store, recorded.Entity, recorded.FlowID); err != nil {
 		body.OK = false
-		body.Error = fmt.Sprintf("任务推进失败: %v", err)
+		body.Error = fmt.Sprintf("写入任务数据失败: %v", err)
+		return body
+	}
+	if err := store.Flush(); err != nil {
+		body.OK = false
+		body.Error = fmt.Sprintf("保存失败: %v", err)
 	}
 	return body
+}
+
+// markTaskRows writes the two task data rows a settled flow owes the task rule:
+// the active task id and the terminal progress. It deliberately writes no
+// reward and no stage: tkFinish/tkReward in taskRules.neko own those, and a
+// second writer would double-pay or skip the stage machine.
+func markTaskRows(store *host.EntityStore, entityID, flowID string) error {
+	if err := store.Set(entityID, PATH_TASK_CURRENT, flowID); err != nil {
+		return fmt.Errorf("%s: %w", PATH_TASK_CURRENT, err)
+	}
+	if err := store.Set(entityID, PATH_TASK_PROGRESS, PROGRESS_COMPLETE); err != nil {
+		return fmt.Errorf("%s: %w", PATH_TASK_PROGRESS, err)
+	}
+	return nil
 }
 
 // finishedFlowState starts one K3 execution and consumes every step, so the

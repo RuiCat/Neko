@@ -11,12 +11,17 @@ import (
 	"github.com/RuiCat/Neko/internal/flow/spec"
 )
 
-// planEffects validates every effect and converts it to one OP_EFFECT change.
-// It collects all errors so the caller sees every offending row at once.
+// planEffects validates every mapped effect and converts it to one OP_EFFECT
+// change. An effect with a nil target is intentionally unmapped: its field is
+// computed by a .neko tick, so settlement skips it instead of writing or
+// refusing. It collects all errors so the caller sees every offending row.
 func planEffects(entity string, effects []spec.EffectSpec) ([]Change, []error) {
 	changes := make([]Change, 0, len(effects))
 	var errs []error
 	for index, effect := range effects {
+		if effect.Target == nil {
+			continue
+		}
 		target, err := resolveTarget(effect)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("effect[%d] %w", index, err))
@@ -38,17 +43,12 @@ func planEffects(entity string, effects []spec.EffectSpec) ([]Change, []error) {
 	return changes, errs
 }
 
-// resolveTarget returns the D6 settlement target. A nil target is refused with
-// its audit reason: settlement never falls back to the legacy Path. A non-nil
-// target must still pass the sourcePaths whitelist as a defensive check, which
-// also rejects a legacy projection path used as the target.
+// resolveTarget returns the settlement target of one mapped effect. A non-nil
+// target must pass the closed write-domain check, which also rejects a legacy
+// projection or computed-layer path used as the target.
 func resolveTarget(effect spec.EffectSpec) (string, error) {
 	if effect.Target == nil {
-		reason := strings.TrimSpace(effect.TargetReason)
-		if reason == "" {
-			reason = "targetReason is empty"
-		}
-		return "", fmt.Errorf("path %q has no settlement target: %s", effect.Path, reason)
+		return "", fmt.Errorf("path %q has no settlement target", effect.Path)
 	}
 	target := *effect.Target
 	if strings.TrimSpace(target) == "" {
@@ -69,7 +69,7 @@ func effectValue(effect spec.EffectSpec, target string) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return convertEffectValue(effect.Path, target, effect.Kind, value), nil
+		return value, nil
 	case spec.EFFECT_KIND_TEXT:
 		text, ok := effect.Value.(string)
 		if !ok {

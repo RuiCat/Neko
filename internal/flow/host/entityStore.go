@@ -1,7 +1,7 @@
-// entityStore.go implements the two write seams over one real entity.Store:
-// settle.Store.Apply applies a whole settlement batch all-or-nothing, and
-// task.Store reads and writes one field. Persistence is explicit: both seams only
-// mutate in-memory entity state, and Flush writes the store to disk.
+// entityStore.go implements the settlement write seam and the single-field data
+// seam over one real entity.Store: Apply applies a whole settlement batch
+// all-or-nothing, and Get/Set read or write one field. Persistence is explicit:
+// both seams only mutate in-memory entity state, and Flush writes to disk.
 package host
 
 import (
@@ -9,12 +9,11 @@ import (
 
 	"github.com/RuiCat/Neko/internal/entity"
 	"github.com/RuiCat/Neko/internal/flow/settle"
-	"github.com/RuiCat/Neko/internal/flow/task"
 )
 
-// EntityStore adapts one entity store to the K4 settlement store and the K4 task
-// store. It keeps no copy of the data: reads and writes go to the entities the
-// store owns.
+// EntityStore adapts one entity store to the settlement store and the
+// single-field data seam. It keeps no copy of the data: reads and writes go to
+// the entities the store owns.
 type EntityStore struct {
 	store *entity.Store
 }
@@ -24,8 +23,7 @@ func NewEntityStore(store *entity.Store) *EntityStore {
 	return &EntityStore{store: store}
 }
 
-// Get implements task.Store. An absent entity or an unknown path reports false,
-// which is how task advancement reads a task that never started as 未激活.
+// Get reads one entity field. An absent entity or an unknown path reports false.
 func (s *EntityStore) Get(entityID, path string) (any, bool) {
 	if s.store == nil {
 		return nil, false
@@ -41,9 +39,9 @@ func (s *EntityStore) Get(entityID, path string) (any, bool) {
 	return value, true
 }
 
-// Set implements task.Store. The write lands in the entity's memory; call Flush
-// to persist it. A missing entity is an error because silently dropping a task
-// write would let an advance report success without a row.
+// Set writes one entity field. The write lands in the entity's memory; call
+// Flush to persist it. A missing entity is an error because silently dropping a
+// data write would let a settlement report success without a row.
 func (s *EntityStore) Set(entityID, path string, value any) error {
 	if s.store == nil {
 		return fmt.Errorf("set %s on %q: no entity store", path, entityID)
@@ -84,6 +82,3 @@ func (s *EntityStore) Apply(flowID string, changes []settle.Change) error {
 
 // EntityStore is the settlement target.
 var _ settle.Store = (*EntityStore)(nil)
-
-// EntityStore is the task advancement target.
-var _ task.Store = (*EntityStore)(nil)

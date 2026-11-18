@@ -11,9 +11,11 @@ import (
 )
 
 // Settle turns one finished execution into a K4 Completion and applies the
-// flow's trade request, consumed/produced items and effects. Settlement is
-// refused with a Report error when the K2 verdict is not ok, the K3 state is
-// not done, or any planned write targets a non-source path. A replay of an
+// flow's trade intent, interaction intent, produced items and data-layer
+// effects. Settlement writes requests and data only; every computed field is
+// left to the .neko tick. It is refused with a Report error when the K2 verdict
+// is not ok, the K3 state is not done, or any planned write targets a computed
+// or unknown path. A replay of an
 // already settled (flowID, entity) returns the recorded Completion, an empty
 // change list and no write call. All writes are validated first and applied
 // through one Store.Apply call, so a refusal leaves zero writes behind.
@@ -47,14 +49,16 @@ func Settle(flow spec.FlowSpec, verdict condition.Verdict, state step.State, dep
 func planChanges(flow spec.FlowSpec, deps Deps) ([]Change, []error) {
 	var changes []Change
 	var errs []error
-	spend, err := planSpend(flow, deps.Entity)
+	trade, err := planTradeIntent(flow, deps.Entity)
 	if err != nil {
 		errs = append(errs, err)
 	}
-	changes = append(changes, spend...)
-	consumed, consumeErrs := planConsume(flow, deps.Snapshot)
-	changes = append(changes, consumed...)
-	errs = append(errs, consumeErrs...)
+	changes = append(changes, trade...)
+	interaction, err := planInteraction(flow, deps.Entity)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	changes = append(changes, interaction...)
 	produced, produceErrs := planProduce(flow)
 	changes = append(changes, produced...)
 	errs = append(errs, produceErrs...)
@@ -64,20 +68,77 @@ func planChanges(flow spec.FlowSpec, deps Deps) ([]Change, []error) {
 	return changes, errs
 }
 
-// planSpend converts a positive flow cost into trade-kernel request rows. The
-// currency field is deliberately never assigned here (C5): the trade tick owns
-// the actual balance change.
-func planSpend(flow spec.FlowSpec, entity string) ([]Change, error) {
+// planTradeIntent converts a positive flow cost into trade-kernel request
+// rows. It deliberately writes no 成交额/结果: the .neko trade tick owns the
+// actual balance change and result.
+func planTradeIntent(flow spec.FlowSpec, entity string) ([]Change, error) {
 	if flow.Cost < 0 {
 		return nil, fmt.Errorf("flow %q: negative cost %d", flow.ID, flow.Cost)
 	}
 	if flow.Cost == 0 {
 		return nil, nil
 	}
+	object := tradeObject(flow)
+	if object == "" {
+		return nil, fmt.Errorf("flow %q: cost %d has no trade object", flow.ID, flow.Cost)
+	}
 	return []Change{
-		{Op: OP_SPEND, Entity: entity, Path: PATH_TRADE_AMOUNT, Kind: spec.EFFECT_KIND_SET, Value: flow.Cost},
-		{Op: OP_SPEND, Entity: entity, Path: PATH_TRADE_RESULT, Kind: spec.EFFECT_KIND_TEXT, Value: RESULT_SPENT},
+		{Op: OP_SPEND, Entity: entity, Path: PATH_TRADE_INTENT, Kind: spec.EFFECT_KIND_TEXT, Value: TRADE_SIDE_BUY},
+		{Op: OP_SPEND, Entity: entity, Path: PATH_TRADE_OBJECT, Kind: spec.EFFECT_KIND_TEXT, Value: object},
+		{Op: OP_SPEND, Entity: entity, Path: PATH_TRADE_PRICE, Kind: spec.EFFECT_KIND_SET, Value: flow.Cost},
 	}, nil
+}
+
+// tradeObject returns the first trade intent subject, falling back to the first
+// consume item and then the first produced item.
+func tradeObject(flow spec.FlowSpec) string {
+	for _, intent := range flow.Intents {
+		if intent.TradeSide != "" && intent.Object != "" {
+			return intent.Object
+		}
+	}
+	if len(flow.Consume) > 0 {
+		return flow.Consume[0]
+	}
+	if len(flow.Produce) > 0 {
+		return flow.Produce[0].Name
+	}
+	return ""
+}
+
+// planInteraction writes the interaction request rows for a consume flow: the
+// first derived interaction verb (or 使用) and the first consumed item. It never
+// touches the material entity; the interaction tick consumes it.
+func planInteraction(flow spec.FlowSpec, entity string) ([]Change, error) {
+	if len(flow.Consume) == 0 {
+		return nil, nil
+	}
+	if flow.Consume[0] == "" {
+		return nil, fmt.Errorf("flow %q: first consume item is empty", flow.ID)
+	}
+	action := interactionAction(flow)
+	for _, row := range []struct{ path, value string }{
+		{PATH_INTERACT_ACTION, action},
+		{PATH_INTERACT_TARGET, flow.Consume[0]},
+	} {
+		if err := validateTargetPath(row.path); err != nil {
+			return nil, fmt.Errorf("flow %q: %w", flow.ID, err)
+		}
+	}
+	return []Change{
+		{Op: OP_INTENT, Entity: entity, Path: PATH_INTERACT_ACTION, Kind: spec.EFFECT_KIND_TEXT, Value: action},
+		{Op: OP_INTENT, Entity: entity, Path: PATH_INTERACT_TARGET, Kind: spec.EFFECT_KIND_TEXT, Value: flow.Consume[0]},
+	}, nil
+}
+
+// interactionAction returns the first non-trade intent verb, defaulting to 使用.
+func interactionAction(flow spec.FlowSpec) string {
+	for _, intent := range flow.Intents {
+		if intent.TradeSide == "" && intent.Action != "" {
+			return intent.Action
+		}
+	}
+	return DEFAULT_INTERACT_ACTION
 }
 
 // refusal wraps one refusal error into a K4 report.

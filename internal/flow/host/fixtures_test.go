@@ -41,6 +41,7 @@ const npcTemplate = `{
 // settlement row after an earlier row in the same batch was written.
 const readonlyNPCTemplate = `{
   "位置": {"场景": "S001-KT"},
+  "交互": {"动作": "", "目标": ""},
   "交易": {"货币": 100, "成交额": 0, "结果": "", "声誉": 50},
   "代谢": {"胃内容": 0},
   "标记": {"饥饿": true},
@@ -148,10 +149,9 @@ func buyingFlow() spec.FlowSpec {
 	}
 }
 
-// eatingFlow is the corpus 吃饭 flow with two actor rows: the metabolism target
-// first and the readonly-marked status flag second.
+// eatingFlow is the corpus 吃饭 flow with one data-layer effect. Computed rows
+// such as 代谢.胃内容 stay with the metabolism tick and are not written here.
 func eatingFlow() spec.FlowSpec {
-	stomach := "代谢.胃内容"
 	hunger := "标记.饥饿"
 	return spec.FlowSpec{
 		ID:       "吃饭",
@@ -160,9 +160,9 @@ func eatingFlow() spec.FlowSpec {
 		Consume:  []string{"食物"},
 		Steps:    []string{"摆好碗筷", "一口一口吃饭"},
 		Effects: []spec.EffectSpec{
-			{Path: "饱食", Kind: spec.EFFECT_KIND_SET, Value: 80, Target: &stomach, TargetReason: "测试映射"},
 			{Path: "饥饿", Kind: spec.EFFECT_KIND_BOOL, Value: false, Target: &hunger, TargetReason: "测试映射"},
 		},
+		Intents: []spec.IntentSpec{{Action: "吃", Target: "食物"}},
 	}
 }
 

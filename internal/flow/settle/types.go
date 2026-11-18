@@ -26,16 +26,17 @@ type Completion struct {
 // ChangeOp classifies one report row by what it represents.
 type ChangeOp string
 
-// Change operations. Spend rows carry the trade request; consume/produce rows
-// target one material item; effect rows write one K1 effect.
+// Change operations. Spend rows carry the trade request, intent rows the
+// interaction request, produce rows one material item and effect rows one
+// data-layer write.
 const (
 	// OP_SPEND is one trade-kernel request row for the flow cost.
 	OP_SPEND ChangeOp = "spend"
-	// OP_CONSUME removes quantity from a material item in the flow scene.
-	OP_CONSUME ChangeOp = "consume"
+	// OP_INTENT is one interaction-kernel request row.
+	OP_INTENT ChangeOp = "interact"
 	// OP_PRODUCE adds a template item to the flow scene.
 	OP_PRODUCE ChangeOp = "produce"
-	// OP_EFFECT writes one K1 effect to a source-layer field.
+	// OP_EFFECT writes one data-layer or intent field.
 	OP_EFFECT ChangeOp = "effect"
 )
 

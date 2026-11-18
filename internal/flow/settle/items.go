@@ -1,6 +1,6 @@
-// items.go resolves the read-only 素材.物品 view and plans the consume and
-// produce rows. Items are located by (name, scene, quantity): a same-name item
-// in another scene is never touched (C5).
+// items.go resolves the read-only 素材.物品 view and plans the produce rows.
+// Consume is an interaction intent only, so this file never mutates a consumed
+// material.
 package settle
 
 import (
@@ -27,63 +27,6 @@ type Item struct {
 	Name     string
 	Scene    string
 	Quantity int
-}
-
-// planConsume builds one quantity decrement per consumed item name. Duplicate
-// names are aggregated into one row so the store never has to reason about
-// intermediate quantities; a missing or short item refuses the settlement.
-func planConsume(flow spec.FlowSpec, snap condition.Snapshot) ([]Change, []error) {
-	if len(flow.Consume) == 0 {
-		return nil, nil
-	}
-	items, err := readItems(snap)
-	if err != nil {
-		return nil, []error{fmt.Errorf("consume: %w", err)}
-	}
-	order, counts, err := consumeCounts(flow.Consume)
-	if err != nil {
-		return nil, []error{err}
-	}
-	changes := make([]Change, 0, len(order))
-	var errs []error
-	for _, name := range order {
-		want := counts[name]
-		row, ok := findItemRow(items, name, flow.Scene)
-		if !ok {
-			errs = append(errs, fmt.Errorf("consume item %q in scene %q not found", name, flow.Scene))
-			continue
-		}
-		if row.Quantity < want {
-			errs = append(errs, fmt.Errorf("consume item %q in scene %q: have %d, need %d", name, flow.Scene, row.Quantity, want))
-			continue
-		}
-		changes = append(changes, Change{
-			Op:     OP_CONSUME,
-			Entity: name,
-			Scene:  flow.Scene,
-			Path:   PATH_ITEM_QUANTITY,
-			Kind:   spec.EFFECT_KIND_ADD,
-			Value:  -want,
-		})
-	}
-	return changes, errs
-}
-
-// consumeCounts validates the consume list and aggregates duplicates while
-// preserving first-seen order so the report is deterministic.
-func consumeCounts(names []string) ([]string, map[string]int, error) {
-	order := make([]string, 0, len(names))
-	counts := make(map[string]int, len(names))
-	for _, name := range names {
-		if name == "" {
-			return nil, nil, fmt.Errorf("consume item name is empty")
-		}
-		if _, seen := counts[name]; !seen {
-			order = append(order, name)
-		}
-		counts[name]++
-	}
-	return order, counts, nil
 }
 
 // planProduce builds one item creation row per produced item name. Duplicate
