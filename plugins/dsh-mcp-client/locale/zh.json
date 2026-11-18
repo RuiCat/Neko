@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "MCP 客户端（astrbox）",
+    "description": "mcp-astrbox：通过 MCP 连接 astrbox 引擎，向会话提供 mcp__astrbox__* 工具；启动参数默认指向 ~/.dsh-neko/Neko/bin/dsh-mcp。"
+  }
+}

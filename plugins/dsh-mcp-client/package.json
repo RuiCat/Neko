@@ -2,10 +2,11 @@
   "name": "dsh-mcp-client",
   "version": "0.0.0",
   "private": true,
+  "description": "mcp-astrbox：以 MCP 连接 astrbox 引擎（dsh-astrbox 的子功能组件）",
   "type": "module",
   "main": "./lib/plugin.mjs",
-  "exports": { ".": "./lib/plugin.mjs", "./package.json": "./package.json" },
-  "files": ["lib/**/*.mjs", "package.json"],
+  "exports": { ".": "./lib/plugin.mjs", "./package.json": "./package.json", "./locale/*.json": "./locale/*.json" },
+  "files": ["lib/**/*.mjs", "locale/*.json", "package.json"],
   "engines": { "node": "^22.19.0 || >=24.0.0" },
   "dependencies": { "@deepseek-ai/dsh-mcp-client": "0.2.2-rc.1" }
 }

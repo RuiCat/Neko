@@ -10,6 +10,7 @@ import { SessionId } from '@deepseek-ai/dsh-session';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { mainSessionTitle } from '../shared/sessionTitles.ts';
 import { mintSessionId } from './session-id.ts';
+import { attachWorkspaceWhenPersisted } from './attachWorkspace.ts';
 import { installMainSessionPrompt, type MainPromptHandle } from './mainPrompt.ts';
 import type { ModelResolver } from '../model/model-resolver.ts';
 import type { ModelRoute } from '../model/types.ts';
@@ -264,7 +265,14 @@ export class MainSession {
     this.attachMainPrompt(agent);
     // 与 QQ 子会话同一工作区：侧边栏按 bot 工作区挂载，主/子会话都在该工作区下可见；
     // 工作区显示名用机器人名（绑定实体名），旧默认名 QQBot 会被迁移。
-    void this.deps.host.attachSessionToWorkspace(sessionId, this.deps.workspaceDir(), this.deps.workspaceTitle());
+    // 新建会话需等头文件落盘再 attach，否则会被宿主拒绝并掉进「未分组」。
+    void attachWorkspaceWhenPersisted(
+      this.deps.host,
+      sessionId,
+      () => this.deps.workspaceDir(),
+      () => this.deps.workspaceTitle(),
+      this.deps.logger,
+    );
     this.deps.logger.info(`main session ready: key=${key} sessionId=${sessionId} preset=${agentPreset ?? 'none'}`);
     return sessionId;
   }

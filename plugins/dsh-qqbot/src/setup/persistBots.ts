@@ -15,6 +15,7 @@ import {
   type PersistLogger,
 } from './persist.ts';
 import type { SetupCredentials } from './persist.ts';
+import { DEFAULT_BOT_ID } from '../configBots.ts';
 
 /** 读取 im-qqbot 条目 config 里 bots[] 中 botId 的映射（不存在返回 undefined，重复 id fail-closed）。 */
 function findBotItem(config: YAMLMap, botId: string): YAMLMap | undefined {
@@ -337,6 +338,125 @@ export function addBotToProfile(
 }
 
 /**
+ * 新增机器人（单次写入）：bots[] 为空时先把旧单 bot 迁移成 `default` 项，
+ * 再追加新机器人。避免两次写 patch 触发两次 HMR 重载、请求中途断流。
+ */
+export function addBotToProfileMigratingLegacy(
+  botId: string,
+  label: string | undefined,
+  legacy: { appId: string; appSecret: string } | undefined,
+  profileDir?: string,
+  logger?: PersistLogger,
+): boolean {
+  const log = logger ?? console;
+  if (!profileDir) {
+    log.warn('未定位到 profile 目录，机器人未新增');
+    return false;
+  }
+  try {
+    let created = false;
+    const ok = editProfilePatch(
+      profileDir,
+      ({ config, attached, appendEntry }) => {
+        created = false;
+        const node = config.get('bots', true);
+        const seq = isSeq(node) ? node : ensureBotsSeq(config);
+        if (legacy !== undefined && seq.items.length === 0) {
+          const legacyItem = new YAMLMap();
+          legacyItem.set('id', DEFAULT_BOT_ID);
+          legacyItem.set('label', '默认机器人');
+          legacyItem.set('enabled', true);
+          legacyItem.set('appId', legacy.appId);
+          legacyItem.set('appSecret', legacy.appSecret);
+          seq.add(legacyItem);
+        }
+        if (findBotItem(config, botId) !== undefined) return seq.items.length > 0;
+        const item = new YAMLMap();
+        item.set('id', botId);
+        if (label !== undefined && label !== '') item.set('label', label);
+        item.set('appId', '');
+        item.set('appSecret', '');
+        item.set('enabled', false);
+        seq.add(item);
+        if (!attached) appendEntry();
+        created = true;
+        return true;
+      },
+      {},
+      (config) => config !== undefined && findBotItem(config, botId) !== undefined,
+      log,
+    );
+    if (ok && created) log.info(`✔ 机器人 ${botId} 已新增，请在该 bot 页填写凭据`);
+    if (!created) log.warn(`机器人 ${botId} 已存在，未新增`);
+    return ok && created;
+  } catch (err) {
+    if (err instanceof PatchFormatError) {
+      log.warn(`拒绝写入 cordis.patch.yml: ${err.message}（原文件保留）`);
+      return false;
+    }
+    log.warn(`新增机器人失败: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
+
+/**
+ * 把旧版顶层单 bot 迁移成 bots[] 的第一项（id=`default`）。
+ *
+ * 只在 bots[] 缺失/为空时写入；顶层字段（provider/model/cwd/entity/access 等）
+ * 继续作为 base 被各 bot 继承，因此这里只写凭据与身份字段即可保持行为不变。
+ */
+export function addLegacyBotToProfile(
+  appId: string,
+  appSecret: string,
+  profileDir?: string,
+  logger?: PersistLogger,
+): boolean {
+  const log = logger ?? console;
+  if (!profileDir) {
+    log.warn('未定位到 profile 目录，旧单 bot 未迁移');
+    return false;
+  }
+  try {
+    let migrated = false;
+    const ok = editProfilePatch(
+      profileDir,
+      ({ config, attached, appendEntry }) => {
+        const node = config.get('bots', true);
+        // 已有 bots[]：说明已经迁移过（或用户手写过），不重复写。
+        if (isSeq(node) && node.items.length > 0) return false;
+        const seq = ensureBotsSeq(config);
+        const item = new YAMLMap();
+        item.set('id', DEFAULT_BOT_ID);
+        item.set('label', '默认机器人');
+        item.set('enabled', true);
+        item.set('appId', appId);
+        item.set('appSecret', appSecret);
+        seq.add(item);
+        if (!attached) appendEntry();
+        migrated = true;
+        return true;
+      },
+      {},
+      (config) => {
+        if (config === undefined) return false;
+        const node = config.get('bots', true);
+        return isSeq(node) && node.items.length > 0;
+      },
+      log,
+    );
+    if (ok && migrated) log.info(`✔ 旧单 bot 已迁移进 bots[]（id=${DEFAULT_BOT_ID}），可继续新增机器人`);
+    return ok && migrated;
+  } catch (err) {
+    if (err instanceof PatchFormatError) {
+      log.warn(`拒绝写入 cordis.patch.yml: ${err.message}（原文件保留）`);
+      return false;
+    }
+    log.warn(`迁移旧单 bot 失败: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
+
+/**
  * 从 bots[] 删除一个机器人条目（含凭据）。
  * @param botId - 要删除的 bot id
  * @param profileDir - profile 目录
@@ -364,6 +484,12 @@ export function removeBotFromProfile(
         });
         if (index < 0) return false;
         node.items.splice(index, 1);
+        // 删掉最后一个 bot 时同步清掉顶层凭据：否则 normalizeBots 会回落成 legacy 单 bot，
+        // 让刚删除的机器人（以及顶层 appId）在下次加载/迁移时复活。
+        if (node.items.length === 0) {
+          config.delete('appId');
+          config.delete('appSecret');
+        }
         return true;
       },
       { force: true },

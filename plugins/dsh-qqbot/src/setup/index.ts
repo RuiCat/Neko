@@ -27,6 +27,7 @@ import { botBindPaths, type QqSessionWire } from '../shared/bind-protocol.ts';
 import { createBrowserPresenter, createTerminalPresenter, isDesktopHost } from './presenters.ts';
 import {
   addBotToProfile,
+  addBotToProfileMigratingLegacy,
   persistBotCredentialRefToProfile,
   persistBotCredentialsToProfile,
   removeBotCredentialsFromProfile,
@@ -42,6 +43,7 @@ import {
   type CredentialsLike,
 } from './credentialStore.ts';
 import { getProfileDir } from '../shared/index.ts';
+import { ensureBridgeEntity } from '../shared/astrboxBridge.ts';
 
 export type { SetupCredentials } from './persist.ts';
 export { persistCredentialsToProfile } from './persist.ts';
@@ -185,6 +187,8 @@ export interface BotCredentialRouteOptions {
   credentials?: CredentialsLike;
   /** NPC 实体目录来源（桥接服务可用时返回数组；不可用返回 undefined → 省略字段，K8） */
   entities?: () => ReadonlyArray<string> | undefined;
+  /** 旧版顶层单 bot 的凭据：首次新增机器人时把它迁移进 bots[]（id=default）后再追加新项 */
+  legacyBot?: { appId: string; appSecret: string };
 }
 
 /**
@@ -217,7 +221,8 @@ export function registerBotCredentialRoutes(
   bots: readonly BotRouteTarget[],
   options: BotCredentialRouteOptions = {},
 ): void {
-  if (bots.length === 0) return;
+  // 即使一个机器人都没有也注册列表路由：设置页靠 GET /qqbot/bots 判断多机器人模式，
+  // 空列表时渲染「+ 新增机器人」而不是回退成旧单 bot 扫码页。
   (ctx as unknown as {
     inject(deps: readonly string[], callback: (scoped: Context) => void): unknown;
   }).inject(['webServer'], (scoped) => {
@@ -257,7 +262,9 @@ export function registerBotCredentialRoutes(
           ...(entities === undefined ? {} : { entities: [...entities] }),
         };
       }, {
-        onCreate: (id, label) => persistNewBot(id, label, logger),
+        // 旧单 bot 配置：同一次写入里先迁移成 bots[] 的 default 项，再追加新机器人，
+        // 避免两次写 patch 触发两次 HMR 重载。
+        onCreate: (id, label) => createBotWithWorkspace(id, label, logger, options.legacyBot),
         onDelete: (id) => deleteBot(id, logger),
       }),
     ];
@@ -270,7 +277,16 @@ export function registerBotCredentialRoutes(
       unavailableReason: () => (bot.appId !== '' && !bot.enabled
         ? '机器人已停用或凭据未加载（检查 appSecretRef 与凭据库）'
         : undefined),
-      onUpdateConfig: (config) => updateBotProfileConfig(bot.id, config, getProfileDir() ?? undefined, logger),
+      onUpdateConfig: async (config) => {
+        const ok = updateBotProfileConfig(bot.id, config, getProfileDir() ?? undefined, logger);
+        if (ok) {
+          const entity = typeof config.entity === 'string' ? config.entity : undefined;
+          if (entity !== undefined && entity.trim() !== '') {
+            void ensureBridgeEntity(ctx, entity, 'NPC', logger);
+          }
+        }
+        return ok;
+      },
       paths: botBindPaths(bot.id),
     })));
     (scoped as unknown as { effect(fn: () => () => void, name?: string): void }).effect(() => {
@@ -345,9 +361,21 @@ async function removeBotCredentials(
   return { persisted: true };
 }
 
-/** 新增机器人条目（空凭据，等待手动绑定/配置） */
-function persistNewBot(botId: string, label: string | undefined, logger: Logger): { ok: boolean; error?: string } {
-  const added = addBotToProfile(botId, label, getProfileDir() ?? undefined, logger);
+/** 新增机器人：只写 profile 条目（必要时迁移旧单 bot）。
+ *
+ * 工作区不在这里建：机器人的 cwd 依赖绑定实体（`bots/<实体名|id>/workspace`），
+ * 提前按 bot id 建目录会在之后设置实体时留下孤儿目录。工作区在运行时启动
+ * （`createBotRuntime` → `ensureBotWorkspace`）按最终 cwd 创建。
+ */
+function createBotWithWorkspace(
+  botId: string,
+  label: string | undefined,
+  logger: Logger,
+  legacy?: { appId: string; appSecret: string },
+): { ok: boolean; error?: string } {
+  const added = legacy === undefined
+    ? addBotToProfile(botId, label, getProfileDir() ?? undefined, logger)
+    : addBotToProfileMigratingLegacy(botId, label, legacy, getProfileDir() ?? undefined, logger);
   return added ? { ok: true } : { ok: false, error: `机器人 ${botId} 已存在或写入失败` };
 }
 

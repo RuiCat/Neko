@@ -209,6 +209,23 @@ export function createControlClient(options) {
     },
 
     /**
+     * `POST /entities/create`：确保实体存在（不存在则由模板链创建）。
+     * @param {string} entity 实体 id
+     * @param {string} [type] 模板类型，缺省 NPC
+     * @returns {Promise<any>} 响应体 `{ok, entity, type, created}`
+     */
+    async createEntity(entity, type = 'NPC') {
+      const response = await send({
+        method: 'POST',
+        path: '/entities/create',
+        body: { entity, type },
+        timeoutMs: requestTimeoutMs,
+      })
+      if (response.status !== 200) throw errorFromResponse(response)
+      return response.body
+    },
+
+    /**
      * `POST /entities/delete`：删除实体（K19；控制面同时清该实体黑板）。
      * @param {string} entity 实体 id
      * @returns {Promise<any>} 响应体 `{ok, deleted}`

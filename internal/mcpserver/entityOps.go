@@ -105,3 +105,26 @@ func (s *Server) DeleteEntity(entityID string) error {
 		return nil
 	})
 }
+
+// CreateEntity creates one entity from its template chain unless the id is
+// already present, and saves the store under the shared state gate. It reports
+// created=false for an existing entity so callers can be idempotent.
+func (s *Server) CreateEntity(entityID, typeName string, data map[string]any) (bool, error) {
+	if s.store.Get(entityID) != nil {
+		return false, nil
+	}
+	var created bool
+	err := s.WithStateWrite(func() error {
+		ent, err := s.store.Create(entityID, typeName, data, nil)
+		if err != nil {
+			return err
+		}
+		if err := s.store.Save(); err != nil {
+			return fmt.Errorf("保存失败: %w", err)
+		}
+		s.seedObservations(ent.ID, ent.Snapshot())
+		created = true
+		return nil
+	})
+	return created, err
+}

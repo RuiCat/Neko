@@ -477,7 +477,7 @@ describe('getOrCreate — 会话创建/恢复后挂载到对应工作区', () =>
     const record = await manager.getOrCreate('c2c', PEER, PEER, REPLY);
 
     // attach 是 fire-and-forget，等待其落到工作区
-    await vi.waitFor(() => expect(ws.attachSession).toHaveBeenCalledWith(record.sessionId));
+    await vi.waitFor(() => expect(ws.attachSession).toHaveBeenCalledWith(record.sessionId), { timeout: 3000 });
     // 关键回归：cwd 必须等于 meta.cwd（resolveAgentCwd(config.cwd)），而非 process.cwd()
     expect(workspaceRegistry.create).toHaveBeenCalledWith(join(env.home, 'workspace'), 'QQBot');
   });
@@ -492,7 +492,7 @@ describe('getOrCreate — 会话创建/恢复后挂载到对应工作区', () =>
     const record = await manager.getOrCreate('c2c', PEER, PEER, REPLY);
 
     expect(record.sessionId).toBe('session-current');
-    await vi.waitFor(() => expect(ws.attachSession).toHaveBeenCalledWith('session-current'));
+    await vi.waitFor(() => expect(ws.attachSession).toHaveBeenCalledWith('session-current'), { timeout: 3000 });
     expect(workspaceRegistry.create).toHaveBeenCalledWith(join(env.home, 'workspace'), 'QQBot');
   });
 });

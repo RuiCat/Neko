@@ -20,6 +20,11 @@ export interface AstrboxBridgeLike {
   mainSessionPrompt?(entityId: string): string;
   /** 重拉实体列表并预取当前绑定实体人设（失败静默） */
   refresh?(): Promise<void>;
+  /**
+   * K33：确保实体存在（不存在则由控制面按模板创建）；旧版桥接没有该字段，
+   * 调用方必须按可选处理。失败会 reject，由调用方决定是否降级。
+   */
+  ensureEntity?(entityId: string, type?: string): Promise<{ created?: boolean } | undefined>;
 }
 
 /** 取插件上下文上的可选服务读取函数（cordis Context.get）。 */
@@ -136,5 +141,33 @@ export function refreshBridge(ctx: Context): void {
     void Promise.resolve(bridge.refresh()).catch(() => {});
   } catch {
     // 同步抛错同样静默：预热失败不影响 QQ 收发
+  }
+}
+
+/**
+ * 确保绑定实体存在（K33）：不存在时由控制面按模板创建；服务缺失/旧版桥接/失败
+ * 一律静默降级，返回是否本次创建。
+ * @param ctx - 插件上下文
+ * @param entityId - 绑定的实体 id（空串/未绑定直接跳过）
+ * @param type - 模板类型（缺省 NPC）
+ * @param logger - 可选的告警出口（失败时记一条）
+ * @returns 本次是否创建了新实体
+ */
+export async function ensureBridgeEntity(
+  ctx: Context,
+  entityId: string | undefined,
+  type = 'NPC',
+  logger?: { warn?: (message: string) => void },
+): Promise<boolean> {
+  const id = typeof entityId === 'string' ? entityId.trim() : '';
+  if (id === '') return false;
+  const bridge = getAstrboxBridge(ctx);
+  if (bridge === undefined || typeof bridge.ensureEntity !== 'function') return false;
+  try {
+    const result = await bridge.ensureEntity(id, type);
+    return result?.created === true;
+  } catch (error) {
+    logger?.warn?.(`im-qqbot: 实体 ${id} 自动创建失败（继续启动）: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
   }
 }

@@ -152,13 +152,18 @@ function BotSettingsSection({ bots }: { bots: BotSummary[] }): ReactNode {
   const [selectedId, setSelectedId] = useState(bots[0]?.id ?? '');
   const selected = bots.find(bot => bot.id === selectedId) ?? bots[0];
   const createBot = useCallback((): void => {
-    const id = window.prompt('新机器人 id（小写字母/数字/连字符，2-32 位）');
-    if (id === null || id.trim() === '') return;
-    const label = window.prompt('展示名（可留空）') ?? '';
+    // 只问展示名（可中文）；id 是内部标识（路由/目录/工具归属），自动生成 ASCII id。
+    const label = window.prompt('机器人展示名（可中文；留空用自动名称）');
+    if (label === null) return;
+    const labelText = label.trim();
+    const taken = new Set(bots.map(bot => bot.id));
+    let index = bots.length + 1;
+    while (taken.has(`bot-${index}`)) index += 1;
+    const id = `bot-${index}`;
     void fetch(BOTS_LIST_PATH, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: id.trim(), label: label.trim() }),
+      body: JSON.stringify({ id, label: labelText }),
     })
       .then(async (res) => {
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
@@ -166,7 +171,7 @@ function BotSettingsSection({ bots }: { bots: BotSummary[] }): ReactNode {
         window.alert(body.error ?? `新增失败（HTTP ${res.status}）`);
       })
       .catch((err: unknown) => { window.alert(err instanceof Error ? err.message : String(err)); });
-  }, []);
+  }, [bots]);
   const deleteBot = useCallback((): void => {
     if (selected === undefined) return;
     if (!window.confirm(`删除机器人「${selected.label}」？其凭据将一并移除。`)) return;
@@ -182,7 +187,18 @@ function BotSettingsSection({ bots }: { bots: BotSummary[] }): ReactNode {
       })
       .catch((err: unknown) => { window.alert(err instanceof Error ? err.message : String(err)); });
   }, [selected]);
-  if (selected === undefined) return createElement(LegacySettingsSection);
+  // 「+ 新增机器人」在空列表时也要出现：先有机器人，才有可绑定的对象，
+  // 不要把空态回退成旧单 bot 的扫码页。
+  const actions = createElement('div', { className: 'imqb-botActions' },
+    createElement('button', { type: 'button', className: 'imqb-ghost', onClick: createBot }, '+ 新增机器人'),
+    createElement('button', { type: 'button', className: 'imqb-ghost', onClick: deleteBot, disabled: selected === undefined }, '删除当前机器人'),
+  );
+  if (selected === undefined) {
+    return createElement('div', null,
+      actions,
+      createElement('p', { className: 'imqb-hint' }, '还没有机器人：点「+ 新增机器人」创建，然后在机器人页扫码或手动填写凭据。'),
+    );
+  }
   const paths = botBindPaths(selected.id);
   const tabs = bots.map(bot => createElement('button', {
     key: bot.id,
@@ -192,10 +208,7 @@ function BotSettingsSection({ bots }: { bots: BotSummary[] }): ReactNode {
   }, botTabLabel(bot)));
   return createElement('div', null,
     createElement('div', { className: 'imqb-botTabs' }, ...tabs),
-    createElement('div', { className: 'imqb-botActions' },
-      createElement('button', { type: 'button', className: 'imqb-ghost', onClick: createBot }, '+ 新增机器人'),
-      createElement('button', { type: 'button', className: 'imqb-ghost', onClick: deleteBot, disabled: selected === undefined }, '删除当前机器人'),
-    ),
+    actions,
     createElement<NonNullable<Parameters<typeof BindPanelBody>[0]>>(BindPanelBody, { paths, state: undefined }),
     createElement<NonNullable<Parameters<typeof ConfigPanel>[0]>>(ConfigPanel, { configPath: paths.config }),
   );
@@ -236,11 +249,6 @@ function QQBotSettingsSection(): ReactNode {
   const { bots, checked, mode } = useBotList();
   if (!checked) return null;
   if (mode === 'legacy') return createElement(LegacySettingsSection);
-  if (bots.length === 0) {
-    return createElement('div', { className: 'imqb-panel' },
-      createElement('p', { className: 'imqb-hint' }, '暂无机器人：请在插件设置页点「新增机器人」'),
-    );
-  }
   return createElement(BotSettingsSection, { bots });
 }
 

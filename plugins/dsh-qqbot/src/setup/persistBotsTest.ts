@@ -8,6 +8,8 @@ import { parse } from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 import {
   addBotToProfile,
+  addBotToProfileMigratingLegacy,
+  addLegacyBotToProfile,
   persistBotCredentialRefToProfile,
   persistBotCredentialsToProfile,
   removeBotCredentialsFromProfile,
@@ -204,6 +206,76 @@ describe('persistBotCredentialRefToProfile', () => {
       expect(entry?.appSecret).toBeUndefined();
       expect(entry?.appSecretRef).toBeUndefined();
       expect(entry?.enabled).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+const LEGACY = `- id: im-qqbot
+  config:
+    appId: legacy-app
+    appSecret: legacy-secret
+    entity: 猫猫
+`;
+
+describe('addLegacyBotToProfile', () => {
+  it('旧单 bot 迁移成 bots[] 的 default 项（幂等）', () => {
+    const { dir, cleanup } = makeProfile(LEGACY);
+    try {
+      expect(addLegacyBotToProfile('legacy-app', 'legacy-secret', dir, createLogger())).toBe(true);
+      const entry = botEntry(dir, 'default');
+      expect(entry?.appId).toBe('legacy-app');
+      expect(entry?.appSecret).toBe('legacy-secret');
+      expect(entry?.enabled).toBe(true);
+      expect(addLegacyBotToProfile('legacy-app', 'legacy-secret', dir, createLogger())).toBe(false);
+      const row = rows(dir).find(item => item.id === 'im-qqbot');
+      const bots = (row?.config as { bots?: unknown[] } | undefined)?.bots;
+      expect(bots).toHaveLength(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('已有 bots[] 时不迁移', () => {
+    const { dir, cleanup } = makeProfile(BASE);
+    try {
+      expect(addLegacyBotToProfile('legacy-app', 'legacy-secret', dir, createLogger())).toBe(false);
+      expect(botEntry(dir, 'default')).toBeUndefined();
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('addBotToProfileMigratingLegacy', () => {
+  it('旧单 bot + 新机器人：一次写入内完成迁移与追加', () => {
+    const { dir, cleanup } = makeProfile(LEGACY);
+    try {
+      expect(addBotToProfileMigratingLegacy('helper', '助手', { appId: 'legacy-app', appSecret: 'legacy-secret' }, dir, createLogger())).toBe(true);
+      expect(botEntry(dir, 'default')?.appId).toBe('legacy-app');
+      expect(botEntry(dir, 'helper')?.enabled).toBe(false);
+      const row = rows(dir).find(item => item.id === 'im-qqbot');
+      const bots = (row?.config as { bots?: unknown[] } | undefined)?.bots;
+      expect(bots).toHaveLength(2);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('删除最后一个机器人', () => {
+  it('同时清掉顶层 appId/appSecret，避免 legacy 回落复活', () => {
+    const { dir, cleanup } = makeProfile(LEGACY);
+    try {
+      addBotToProfileMigratingLegacy('helper', '助手', { appId: 'legacy-app', appSecret: 'legacy-secret' }, dir, createLogger());
+      expect(removeBotFromProfile('helper', dir, createLogger())).toBe(true);
+      expect(removeBotFromProfile('default', dir, createLogger())).toBe(true);
+      const row = rows(dir).find(item => item.id === 'im-qqbot');
+      const cfg = row?.config as { bots?: unknown[]; appId?: string; appSecret?: string } | undefined;
+      expect(cfg?.appId).toBeUndefined();
+      expect(cfg?.appSecret).toBeUndefined();
+      expect(cfg?.bots).toEqual([]);
     } finally {
       cleanup();
     }

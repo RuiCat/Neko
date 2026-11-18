@@ -20,6 +20,7 @@ import { selectConversationPrompt } from '../shared/conversationPrompts.ts';
  * 挂载 preset（工具集、prompt sections 等），实现场景化配置。
  */
 import { legacyDerivedSessionId, mintSessionId } from './session-id.ts';
+import { attachWorkspaceWhenPersisted } from './attachWorkspace.ts';
 import { peerSessionTitle } from '../shared/sessionTitles.ts';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import type { Context } from '@deepseek-ai/cordis';
@@ -570,6 +571,27 @@ export class SessionManager {
     return this.main.id;
   }
 
+  /** 本 bot 的工作区绝对路径（遗弃会话清理用）。 */
+  get workspaceDirectory(): string {
+    return this.workspaceDir();
+  }
+
+  /**
+   * 本 bot 当前仍被引用的会话 id：主会话 + prefs 里该 appId 的记录 + 内存中活动会话。
+   * 供遗弃会话清理做保留集合（不唤醒会话、不写盘）。
+   * @returns 会话 id 数组
+   */
+  knownSessionIds(): string[] {
+    const ids = new Set<string>();
+    if (this.mainSessionId !== undefined) ids.add(this.mainSessionId);
+    const prefix = `qqbot:${this.config.appId}:`;
+    for (const entry of this.modelResolver.listSessionEntries()) {
+      if (entry.sessionKey.startsWith(prefix)) ids.add(entry.sessionId);
+    }
+    for (const record of this.sessions.values()) ids.add(record.sessionId);
+    return [...ids];
+  }
+
   /** 获取或恢复或创建会话（get → resume → create）；同 key 并发合并为一次 */
   async getOrCreate(
     scope: ChatScope,
@@ -729,8 +751,14 @@ export class SessionManager {
     // 宿主只在客户端 session.create RPC 时挂载会话，插件会话不走那条路径，
     // 闲置回收后会从侧边栏消失（详见 host/adapter.ts 的 attachSessionToWorkspace）。
     // cwd 必须与 meta.cwd 同源（workspaceDir()），否则 attachSession 的
-    // header.cwd 校验（realpath 后须等于工作区 path）会失败。
-    void this.host.attachSessionToWorkspace(sessionId, this.workspaceDir(), this.workspaceTitle());
+    // header.cwd 校验（realpath 后须等于工作区 path）会失败；新建会话还要等头文件落盘。
+    void attachWorkspaceWhenPersisted(
+      this.host,
+      sessionId,
+      () => this.workspaceDir(),
+      () => this.workspaceTitle(),
+      this.logger,
+    );
 
     return record;
   }

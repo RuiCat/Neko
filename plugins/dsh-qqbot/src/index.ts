@@ -11,6 +11,7 @@ import { startBotCoordinator } from './gateway/index.ts';
 import type { DshAgentRegistry } from './session/index.ts';
 import { getProfileDir, resolveAgentCwd } from './shared/index.ts';
 import { readBridgeEntities } from './shared/astrboxBridge.ts';
+import { addLegacyBotToProfile } from './setup/persistBots.ts';
 import { normalizeBots, type EffectiveBot } from './configBots.ts';
 import {
   ensureCredentials,
@@ -100,6 +101,12 @@ export async function apply(ctx: Context, rawConfig: ImQQBotConfig): Promise<voi
   // ── 凭据缺失时唤起扫码绑定 ──
   if (!appId || !appSecret) {
     logger.info('凭据未配置，启动扫码绑定...');
+    // K34：Web 设置页统一走多机器人视图。还没有任何机器人时返回空列表：
+    // 客户端显示「+ 新增机器人」，不预置一个"默认机器人"，也不回退成单 bot 扫码页。
+    // 终端扫码流程仍然保留（无 Web 时使用）。
+    registerBotCredentialRoutes(ctx, logger, [], {
+      entities: () => readBridgeEntities(ctx),
+    });
 
     // 关键：不 await 扫码结果。boot 会等 Loader 树稳定（loader.await()），
     // 无限期等待用户扫码会阻塞 Host ready——Desktop 界面无法进入、
@@ -150,5 +157,28 @@ export async function apply(ctx: Context, rawConfig: ImQQBotConfig): Promise<voi
   // 已绑定：注册常驻路由（状态回显 + 手动编辑/更换凭据 + 配置编辑）
   registerBoundCredentialRoutes(ctx, logger, appId, { ...config });
 
-  startBotCoordinator(ctx, agents, [{ ...legacyBot, enabled: true }], logger);
+  // K34：把旧单 bot 幂等迁移进 bots[]（只写一次）。多机器人 UI 的配置/绑定写入
+  // 都以 bots[] 条目为落点；先迁移可避免首次保存/绑定时找不到条目而失败。
+  addLegacyBotToProfile(appId, appSecret, getProfileDir() ?? undefined, logger);
+
+  const coordinator = startBotCoordinator(ctx, agents, [{ ...legacyBot, enabled: true }], logger);
+  // K34：legacy 也暴露多机器人路由，否则设置页探测不到 /qqbot/bots 会回退成
+  // 「手动填写凭据」单 bot 界面，永远没有新增入口。首次新增时把当前单 bot
+  // 迁移进 bots[]（legacyBot 选项），旧机器人不会因新增而消失。
+  registerBotCredentialRoutes(ctx, logger, [{
+    id: legacyBot.id,
+    label: legacyBot.label,
+    appId,
+    enabled: true,
+    config: { ...legacyBot.config } as unknown as Record<string, unknown>,
+    accountName: () => coordinator.nameOf(legacyBot.id),
+    entity: legacyBot.config.entity,
+    cwd: resolveAgentCwd(legacyBot.config.cwd, undefined, legacyBot.config.entity),
+    mainSessionId: () => coordinator.mainSessionIdOf(legacyBot.id),
+    qqSessions: () => coordinator.qqSessionsOf(legacyBot.id),
+  }], {
+    ...(credentials === undefined ? {} : { credentials }),
+    entities: () => readBridgeEntities(ctx),
+    legacyBot: { appId, appSecret },
+  });
 }

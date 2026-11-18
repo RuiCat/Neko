@@ -29,6 +29,9 @@ import { DeliverablesDeliverer } from '../transport/deliverables.ts';
 import type { DeliveryTargetResolver } from '../transport/turn-tracker.ts';
 import { resolveMediaRoot } from '../shared/dirs.ts';
 import { ensureBotWorkspace } from '../workspace/index.ts';
+import { ensureBridgeEntity } from '../shared/astrboxBridge.ts';
+import { migrateBotWorkspace } from '../workspace/migrate.ts';
+import { pruneOrphanSessions } from '../session/pruneSessions.ts';
 
 /**
  * interaction 统一分发器：按 button_data 的顶层 `t` 判别字段，路由到对应
@@ -62,6 +65,38 @@ export interface BotRuntimeHandle {
 }
 
 /**
+ * 迁移后更新侧边栏注册表：删掉旧 cwd 的工作区项、登记新 cwd（fail-soft）。
+ * @param ctx - 插件上下文
+ * @param from - 旧 cwd（无记录时 undefined）
+ * @param to - 新 cwd
+ * @param title - 工作区标题
+ * @param logger - 日志器
+ */
+async function cleanupMigratedWorkspace(
+  ctx: Context,
+  from: string | undefined,
+  to: string,
+  title: string,
+  logger: Logger,
+): Promise<void> {
+  try {
+    const accessor = (ctx as unknown as { get?: (name: string) => unknown }).get;
+    const registry = (typeof accessor === 'function' ? accessor.call(ctx, 'workspaceRegistry') : undefined) as {
+      list?: () => ReadonlyArray<{ id?: string; path?: string }>;
+      delete?: (id: string) => Promise<boolean>;
+      create?: (path: string, title?: string) => Promise<unknown>;
+    } | undefined;
+    if (registry?.list !== undefined && typeof registry.delete === 'function' && from !== undefined) {
+      const old = registry.list().find(item => item.path === from);
+      if (old?.id !== undefined) await registry.delete(old.id);
+    }
+    if (typeof registry?.create === 'function') await registry.create(to, title);
+  } catch (error) {
+    logger.warn(`im-qqbot: 工作区注册表更新失败（继续）: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
  * 装配单个机器人：QQBot SDK + 中间件 + 入站/出站 + 问答/审批通道 + 生命周期。
  * 只负责一个 bot 的运行时；全局工具注册由 BotCoordinator 统一完成（多机器人只注册一次）。
  */
@@ -79,6 +114,11 @@ export function createBotRuntime(
   // workspaceTitle 让侧边栏工作区按机器人名/绑定实体名显示（缺省回落 QQBot）。
   // 新增/加载机器人：按模板初始化工作区（幂等；legacy 单 bot 保持旧行为不初始化）。
   if (botId !== undefined && !legacy) {
+    // 实体/工作目录变化时先重命名旧工作区与会话存储，再按最终 cwd 建模板（不留孤儿目录）。
+    const migration = migrateBotWorkspace({ botId, cwdConfig: config.cwd, entity: config.entity, logger });
+    if (migration.moved) {
+      void cleanupMigratedWorkspace(ctx, migration.from, migration.to, workspaceTitle?.trim() || 'QQBot', logger);
+    }
     try {
       const init = ensureBotWorkspace(botId, { cwdConfig: config.cwd, entity: config.entity });
       if (init.workspace.created.length > 0 || init.neko.deployed.length > 0) {
@@ -94,9 +134,24 @@ export function createBotRuntime(
       logger.warn(`im-qqbot: 机器人 ${botId} 工作区初始化失败（继续启动）: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+  // K33：绑定的实体不存在时由控制面按模板创建（fire-and-forget；失败只记日志，不阻塞启动）。
+  if (config.entity !== undefined && config.entity.trim() !== '') {
+    void ensureBridgeEntity(ctx, config.entity, 'NPC', logger);
+  }
   const manager = new SessionManager(ctx, agents, config, logger, legacy ? undefined : botId, workspaceTitle);
   // 主会话（Neko 主体）：每 bot 一个常驻父会话，QQ 私聊/群聊子会话挂到它下面。
-  void manager.ensureMainSession();
+  // 主会话就绪后再清理该工作区里不再被引用的旧会话（等 prefs/主会话都落定）。
+  void manager.ensureMainSession().then(() => {
+    try {
+      pruneOrphanSessions({
+        workspaceDir: manager.workspaceDirectory,
+        keep: new Set(manager.knownSessionIds()),
+        logger,
+      });
+    } catch (error) {
+      logger.warn(`im-qqbot: 遗弃会话清理失败（继续）: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  });
   const mediaRoot = resolveMediaRoot(botId, legacy, config.entity);
 
   // ── 回合归属：入站登记 + 回合跟踪，出站/提问/审批/发文件共享同一投递目标解析 ──

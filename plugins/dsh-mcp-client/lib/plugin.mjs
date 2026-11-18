@@ -34,18 +34,41 @@ function defaultConfig() {
   }
 }
 
+/**
+ * 按 upstream 的 Config schema 归一化：apply 侧依赖 schema 填出的默认值
+ * （stdio 的 `env = {}`、`args = []`、`reconnect` 等）。本包装在 apply 里
+ * 自行组装配置，绕过了 Cordis 的 schema 归一化；不补这一步，
+ * `McpTemplateBinding` 里的 `Object.values(config.env)` 会抛
+ * TypeError: Cannot convert undefined or null to object。
+ */
+function normalizeConfig(config) {
+  return typeof upstream.Config === 'function' ? upstream.Config(config) : config
+}
+
+/**
+ * 解析一行/文件/默认值三级配置，并归一化到 upstream schema。
+ * @param raw - 行配置（可为空）。
+ * @returns 已填好 schema 默认值的完整 stdio/HTTP 配置。
+ */
 export function resolveConfig(raw) {
-  if (raw && typeof raw === 'object' && Object.keys(raw).length > 0) return raw
+  if (raw && typeof raw === 'object' && Object.keys(raw).length > 0) return normalizeConfig(raw)
   if (existsSync(CONFIG_PATH)) {
+    let parsed
     try {
-      return JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))
+      parsed = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))
     } catch (error) {
       throw new Error(`dsh-mcp-client: 配置不是合法 JSON: ${CONFIG_PATH}: ${error.message}`)
     }
+    return normalizeConfig(parsed)
   }
-  return defaultConfig()
+  return normalizeConfig(defaultConfig())
 }
 
+/**
+ * 以解析后的配置启动 upstream MCP client。
+ * @param ctx - 宿主上下文。
+ * @param rawConfig - 行配置（可为空）。
+ */
 export async function apply(ctx, rawConfig) {
   return upstream.apply(ctx, resolveConfig(rawConfig))
 }

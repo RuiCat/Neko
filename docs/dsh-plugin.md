@@ -40,16 +40,23 @@
 ## 安装
 
 ```bash
-# 1) 构建两个二进制：bin/astrbox-mcp 与 bin/dsh-mcp
+# 1) 构建两个二进制并拷贝运行时到生产运行根 ~/.dsh-neko/Neko
 make build
-
-# 2) 把运行时（bin/scripts/config）拷贝到生产运行根 ~/.dsh-neko/Neko
 make install-runtime
+
+# 2) 构建并安装插件包到 ~/.dsh-neko/plugins
+make install-plugins
 ```
 
 `make install-runtime` 在 Makefile 内直接完成：把 `bin/dsh-mcp`、`bin/astrbox-mcp`、`scripts/**`、
 `config.json` **拷贝**到 `~/.dsh-neko/Neko`。可用 `NEKO_HOME=` 改目标、`PRUNE=1` 先清空旧脚本，
 `make -n install-runtime` 为 dry-run。
+
+`make install-plugins` 把 5 个插件包构建后**拷贝**到 `~/.dsh-neko/plugins/<包名>`（生产态安装根）：
+先构建 qqbot 的 `lib/`，再按各包 `package.json` 的 `files` 清单 `npm pack` 解包（不把 `src/`、测试带进去），
+qqbot 的运行时依赖（含 peer）从仓库 `node_modules` 整体拷贝，最后在安装根内重建两条解析链。
+可用 `PLUGIN_HOME=` / `PLUGINS_OUT=` 改目标，`make -n install-plugins` 为 dry-run。
+**安装副本与仓库解耦：改完仓库代码要重跑本目标，再重启 DSH。**
 
 `plugins/dsh-astrbox` 是**聚合 bundle**：`package.json` 的 dependencies 带入 4 个同级组件
 （`dsh-mcp-client` / `@tencent-connect/dsh-qqbot` / `dsh-plugin-diary` / `dsh-plugin-bilibili`），
@@ -57,50 +64,55 @@ make install-runtime
 `~/.dsh-neko/Neko/data/<组件>.config.json` 读取；MCP 启动参数由 `dsh-mcp-client` 包装插件默认指向
 `~/.dsh-neko/Neko/bin/dsh-mcp`（可用 `mcp-astrbox.json` 覆盖）。
 
-### `link:` 安装与依赖解析（必读）
+### 安装根与依赖解析（必读）
 
-DSH 的 loader 在 **profile 目录**上解析 patch 里的**裸包名**；而 pnpm 的 `link:` 只建符号链接，
-**不会安装被链 bundle 自己的 dependencies**。所以「dependencies 带入组件」只对**真实安装**（拷贝/打包）成立，
-`link:` 安装下裸名能否解析取决于 profile 的 `node_modules`，缺一个就是启动告警
-`<id> (<name>): failed to import: Cannot find package '<name>'`，该行静默不激活。
+profile 的依赖指向安装副本 `~/.dsh-neko/plugins/<包名>`（`link:`），运行时代码从安装根加载，
+**不再指向仓库**。DSH 的 loader 在 **profile 目录**上解析 patch 里的**裸包名**；而 pnpm 的 `link:`
+只建符号链接，**不会安装被链 bundle 自己的 dependencies**。所以：
 
-本仓库对两种安装都成立的写法：
+- `dsh-astrbox` 是**唯一**被选为 bundle 的包（`dsh.profile.bundles`）；
+- `dsh-mcp-client` / `dsh-qqbot` / `dsh-plugin-diary` / `dsh-plugin-bilibili` 是 astrbox 的**子功能包**，
+  `package.json` 里**不声明 `dsh.bundle`**，只作为 profile 的 `link:` 依赖存在（供聚合 patch 的裸包名解析，
+  同时让 qqbot 的客户端半边按包名加载）；它们不会出现在「已安装插件」列表里；
+- 裸名能否解析取决于 profile 的 `node_modules`，缺一个就是启动告警
+  `<id> (<name>): failed to import: Cannot find package '<name>'`，该行静默不激活。
 
-| 行 | 入口 | `link:` 安装要求 |
+| 行 | 入口 | 安装要求 |
 |---|---|---|
-| `mcp-astrbox` | `./lib/mcpClientEntry.mjs`（bundle 内相对入口，loader 会锚定到 bundle 目录） | 仓库内两处 `node_modules` 链接（见下） |
+| `mcp-astrbox` | `dsh-mcp-client`（裸包名；包自带 `locale/` 标题与介绍） | profile 的 `node_modules` 里必须有该包 |
 | `astrbox-bridge` | `dsh-astrbox`（自己，profile 一定可解析） | — |
 | `im-qqbot` / `diary` / `bilibili` | 裸包名 | profile 的 `node_modules` 里必须有同名包 |
 
-仓库内链接依赖（幂等，且已被 `.gitignore` 的 `/plugins/*/node_modules/` 覆盖）：
+`make install-plugins` 还会建立包装插件的上游链接：
 
 ```bash
-cd /path/to/Neko
-mkdir -p plugins/dsh-astrbox/node_modules plugins/dsh-mcp-client/node_modules/@deepseek-ai
-ln -sfn ../../dsh-mcp-client plugins/dsh-astrbox/node_modules/dsh-mcp-client
-ln -sfn "$DSH_HOME/profiles/node_modules/@deepseek-ai/dsh-mcp-client" \
-        plugins/dsh-mcp-client/node_modules/@deepseek-ai/dsh-mcp-client
+~/.dsh-neko/plugins/dsh-mcp-client/node_modules/@deepseek-ai/dsh-mcp-client -> $DSH_HOME/profiles/node_modules/@deepseek-ai/dsh-mcp-client
 ```
 
-第一条让 `mcpClientEntry.mjs` 找得到 `dsh-mcp-client`；第二条让包装插件找得到它自己的上游
-`@deepseek-ai/dsh-mcp-client`（`link:` 下 Node 按真实路径解析，不经过 `~/.dsh/profiles/node_modules`
-这一层目录——必须显式链到宿主那份，才能与宿主共用同一个模块实例与版本）。
+它让 `dsh-mcp-client` 找得到自己的上游 `@deepseek-ai/dsh-mcp-client`（`link:` 下 Node 按真实路径解析，
+不经过 `~/.dsh/profiles/node_modules` 这一层目录——必须显式链到宿主那份，才能与宿主共用同一个模块实例与版本）。
 
-其余 4 行的包在 profile 里也得有；本机 profile 是用 `dsh plugin --profile web add link:<组件路径>`
-分别装过的产物。换机器或重装 profile 后，缺哪个就在 profile 里补 link 哪个（或改用真实安装，
-让 pnpm 一次装齐）。
+### 装进 profile
+
+子功能包先作为**纯依赖**装（它们不声明 `dsh.bundle`，不会被选成 profile 层），
+最后再用 `dsh plugin` 装聚合 bundle：
 
 ```bash
-# 3) 用户执行：以 link 方式把本仓库的 dsh/ 装进 web profile
-dsh plugin --profile web add link:/path/to/Neko/plugins/dsh-astrbox
+cd ~/.dsh/profiles/web
+pnpm add "link:$HOME/.dsh-neko/plugins/dsh-mcp-client" \
+         "link:$HOME/.dsh-neko/plugins/dsh-qqbot" \
+         "link:$HOME/.dsh-neko/plugins/dsh-plugin-diary" \
+         "link:$HOME/.dsh-neko/plugins/dsh-plugin-bilibili"
+dsh plugin --profile web add "link:$HOME/.dsh-neko/plugins/dsh-astrbox"
 ```
 
-`dsh plugin add` 会把 `dsh-astrbox` 写进 profile 的 `package.json` 的
-`dsh.profile.bundles`，并在下次启动时应用它的 `dsh.bundle.patch`。装完重启 DSH。
+`dsh plugin add` 会把 `dsh-astrbox` 写进 profile 的 `package.json` 的 `dsh.profile.bundles`，
+并在下次启动时应用它的 `dsh.bundle.patch`。装完重启 DSH。
 
-> 仓库路径变化（移动目录、换机器）后要重新 `make build && make install-runtime`、
-> 重做上面的仓库内 `node_modules` 链接，并重启 DSH：`install-runtime` 的落点是绝对路径，
-> 链接是相对路径（`plugins/*/node_modules` 不入库）。
+> 仓库路径变化只影响 `make install-plugins` 的来源；安装根与 profile 的 `link:` 目标不变。
+> 换机器时按顺序执行 `make build && make install-runtime && make install-plugins`，
+> 再按上面的「装进 profile」执行，最后重启 DSH。
+
 
 ## 配置键
 
@@ -198,6 +210,35 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
 
 解析输入是 `agent.session.header.cwd`（会话事件与 pre-step 都用同一来源）。同一个刷新窗口内，
 不同实体的会话各取各的现状卡，**不会串实体**。
+
+### 实体不存在时自动创建（K33）
+
+qqbot 在新机器人启动、以及保存 bot 配置（`entity` 被设置/修改）时，会调用桥接的
+`astrboxBridge.ensureEntity(entity, 'NPC')`：
+
+- 桥接转发控制面 `POST /entities/create`（body `{entity, type?, data?}`）；
+- 控制面按模板链创建（默认类型 `NPC`），**幂等**：实体已存在时返回 `created=false`，不覆盖已有状态；
+- 模板类型不存在 → `400`（错误里列出可用类型）；成功创建后桥接会强制刷新实体目录；
+- 桥接/控制面不可用时 qqbot 只记一条 warn，不阻塞机器人启动。
+
+### 多机器人入口（K34）
+
+- 配置里有 `bots[]` 时每项一个机器人；只有顶层 `appId/appSecret` 的旧配置视为单 bot（legacy）。
+- legacy 模式**也会注册** `GET /qqbot/bots`，否则设置页探测到 404 会回退成「手动填写凭据」，
+  永远没有「+ 新增机器人」入口。
+- 首次新增机器人时，同一次 patch 写入里先把旧单 bot 迁移成 `bots[]` 的 `default` 项
+  （只写 id/label/enabled/appId/appSecret；其余顶层字段继续作为 base 被各 bot 继承），再追加新机器人，
+  旧机器人不会消失，也不会因为两次写入触发两次 HMR 重载。
+- 工作区**不在新增时**创建：cwd 依赖绑定实体（`bots/<实体名|id>/workspace`），提前按 bot id 建目录
+  会在之后设置实体时留下孤儿目录。工作区在机器人运行时启动（`ensureBotWorkspace`）按最终 cwd 创建，
+  标题 = 实体名 > label。
+- **实体/工作目录变化时是重命名而不是新建**：启动时按 `~/.dsh-neko/state/qqbot-workspaces.json`
+  记录的上次 cwd，把工作区目录整体 rename 到新路径，同时把 `~/.dsh/sessions/<编码 cwd>` 会话存储
+  rename 过去并改写每个会话头的 `cwd`，再删旧工作区注册项、登记新路径（`workspace/migrate.ts`）。
+- 迁移后的 default 机器人与其它 bot 一样使用 `bots/<实体名|id>/workspace`，**不再**沿用
+  `~/.dsh-neko/workspace`（旧目录只属于迁移前的单 bot 时代）。
+- 删除最后一个机器人时会同步清掉顶层 `appId/appSecret`：否则 `normalizeBots` 会回落成 legacy 单 bot，
+  下次加载时把刚删除的机器人重新迁移回来（删不掉）。
 
 ### 服务契约（K2 `astrboxBridge`）
 

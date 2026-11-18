@@ -1,18 +1,14 @@
 # dsh-astrbox 聚合 bundle patch
 #
 # 组件：mcp-astrbox / astrbox-bridge / im-qqbot / diary / bilibili。
-# 组件包由本包 package.json 的 dependencies（file:）引入；但 `link:` 安装时 pnpm
-# **不会**安装被链包自己的依赖，所以裸包名只在「真实安装」时能解析。
-# mcp-astrbox 因此写**相对入口** './lib/mcpClientEntry.mjs'：loader 会把相对名锚定到
-# 本文件所在目录（app-boot 的 anchorInsertedPluginNames），再顺符号链接落回仓库；
-# 拷贝安装时同一条相对路径也落在包内。它转发 plugins/dsh-mcp-client，
-# 需要仓库内两条 node_modules 链接（见 docs/dsh-plugin.md「link: 安装与依赖解析」）。
-# 其余四行仍是裸包名 ⇒ 目标 profile 的 node_modules 里必须有同名包（见 docs/dsh-plugin.md）。
+# 5 行都是裸包名：profile 的 node_modules 里必须有同名包（`link:` 安装不会安装
+# 被链包自己的 dependencies）。子功能包（dsh-mcp-client / qqbot / diary / bilibili）
+# 由 profile 以纯依赖方式安装、不声明 dsh.bundle，因此不会各自出现在插件列表里。
 # 全部不写 config：运行配置由各插件从 ~/.dsh-neko/Neko/data/<组件>.json 读取；
 # MCP 启动参数默认指向 ~/.dsh-neko/Neko/bin/dsh-mcp（可用 mcp-astrbox.json 覆盖）。
 - insert:
     - id: mcp-astrbox
-      name: './lib/mcpClientEntry.mjs'
+      name: 'dsh-mcp-client'
 
 - insert:
     - id: astrbox-bridge

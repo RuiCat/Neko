@@ -91,7 +91,7 @@ export interface BindRoutesOptions {
   /**
    * 配置写入处理（默认：最小合并写入 profile patch）。
    */
-  onUpdateConfig?: (config: Record<string, unknown>) => boolean;
+  onUpdateConfig?: (config: Record<string, unknown>) => boolean | Promise<boolean>;
   /** 该组路由的路径（默认旧单 bot 固定路径；多 bot 传 botBindPaths(botId)） */
   paths?: BindRoutePaths;
   /** 平台账号昵称（网关 READY 后可用；未知时 undefined） */
@@ -183,7 +183,7 @@ const MAX_CONFIG_BODY_BYTES = 2 * 1024 * 1024;
 // 列表端点：只读、脱敏（appId 非机密，可回显；appSecret 永不出现）。
 /** 列表端点的写操作（新增/删除机器人条目；不触发凭据回显）。 */
 export interface BotsAdminHandlers {
-  onCreate?: (id: string, label?: string) => { ok: boolean; error?: string };
+  onCreate?: (id: string, label?: string) => { ok: boolean; error?: string } | Promise<{ ok: boolean; error?: string }>;
   onDelete?: (id: string) => { ok: boolean; error?: string };
 }
 
@@ -192,7 +192,10 @@ function parseCreateBody(body: unknown): { id: string; label?: string } {
   if (typeof body !== 'object' || body === null) throw new Error('请求体必须是对象');
   const raw = body as { id?: unknown; label?: unknown };
   if (typeof raw.id !== 'string' || !BOT_ID_PATTERN.test(raw.id.trim())) {
-    throw new Error('id 需匹配 [a-z0-9][a-z0-9-]{1,31}');
+    throw new Error('id 是内部标识（路由/目录/工具归属），需匹配 [a-z0-9][a-z0-9-]{1,31}；展示名可用中文');
+  }
+  if (raw.id.trim() === 'default') {
+    throw new Error('id "default" 保留给旧单 bot 迁移，请换一个');
   }
   if (raw.label !== undefined && typeof raw.label !== 'string') throw new Error('label 必须是字符串');
   if (typeof raw.label === 'string' && raw.label.length > 64) throw new Error('label 过长');
@@ -245,7 +248,7 @@ export function registerBotsListRoute(
         sendJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) });
         return;
       }
-      const result = handlers.onCreate(parsed.id, parsed.label);
+      const result = await handlers.onCreate(parsed.id, parsed.label);
       sendJson(res, result.ok ? 200 : 400, result);
     },
   }));
@@ -583,7 +586,7 @@ async function handleConfig(req: IncomingMessage, res: ServerResponse, options: 
 
   const persisted = options.onUpdateConfig === undefined
     ? updateProfileConfig(validated, getProfileDir() ?? undefined, undefined)
-    : options.onUpdateConfig(validated);
+    : await options.onUpdateConfig(validated);
   if (!persisted) {
     sendJson(res, 500, { ok: false, error: '无法定位 profile 目录或写入失败' });
     return;

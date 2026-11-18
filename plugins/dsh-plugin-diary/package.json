@@ -14,11 +14,6 @@
     "cordis.patch.yml",
     "README.md"
   ],
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    }
-  },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   }

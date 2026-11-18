@@ -30,6 +30,11 @@ func (s *Server) dispatch(r *http.Request) response {
 			return methodNotAllowed(http.MethodPost)
 		}
 		return s.handleEntityDelete(r)
+	case "/entities/create":
+		if r.Method != http.MethodPost {
+			return methodNotAllowed(http.MethodPost)
+		}
+		return s.handleEntityCreate(r)
 	case "/entities":
 		if r.Method != http.MethodGet {
 			return methodNotAllowed(http.MethodGet)

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "MCP client (astrbox)",
+    "description": "mcp-astrbox: connects to the astrbox engine over MCP and exposes the mcp__astrbox__* tools to sessions; the default entry points at ~/.dsh-neko/Neko/bin/dsh-mcp."
+  }
+}

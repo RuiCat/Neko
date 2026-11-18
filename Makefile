@@ -33,7 +33,7 @@ LDFLAGS := -X main.version=$(VERSION)
 # code-modularity 技能脚本：默认全局安装；CI/换用户时用 MODULARITY_LINT=... 覆盖。
 MODULARITY_LINT ?= $(HOME)/.dsh/skills/code-modularity/scripts/lintCodeModularity.sh
 
-.PHONY: all build test lint design monitor install-runtime doctor run clean
+.PHONY: all build test lint design monitor install-runtime install-plugins doctor run clean
 
 all: build
 
@@ -108,6 +108,14 @@ lint:
 NEKO_HOME ?= $(HOME)/.dsh-neko/Neko
 PRUNE ?= 0
 
+# 插件包安装（生产态）：按各包 files 清单打包后解到 ~/.dsh-neko/plugins。
+# 用法：make install-plugins [PLUGIN_HOME=...]；make -n install-plugins 为 dry-run。
+# 安装副本与仓库解耦：改完仓库代码要重跑本目标（DSH 侧用 link: 指向安装副本）。
+PLUGIN_HOME ?= $(HOME)/.dsh-neko
+PLUGINS_OUT ?= $(PLUGIN_HOME)/plugins
+DSH_PROFILE_NODE_MODULES ?= $(HOME)/.dsh/profiles/node_modules
+PLUGIN_PKGS := dsh-astrbox dsh-mcp-client dsh-qqbot dsh-plugin-diary dsh-plugin-bilibili
+
 install-runtime: build
 	@case "$(NEKO_HOME)" in "$(CURDIR)"|"$(CURDIR)"/*) echo "NEKO_HOME 不能位于仓库内: $(NEKO_HOME)" >&2; exit 1;; esac
 	@mkdir -p "$(NEKO_HOME)/bin" "$(NEKO_HOME)/data" "$(NEKO_HOME)/scripts"
@@ -127,6 +135,29 @@ install-runtime: build
 		sed -i "s|__WORKSPACE_PREFIX__|$(NEKO_HOME)|" "$(NEKO_HOME)/data/bridge.config.json"; \
 	fi
 	@echo "runtime installed: $(NEKO_HOME)"
+
+# 安装插件包到 $(PLUGINS_OUT)（默认 ~/.dsh-neko/plugins）：
+#   1. 构建 qqbot 的 lib/（其余包的 lib/ 已随仓库签入）；
+#   2. 按各包 package.json 的 files 清单 npm pack 后解包，避免把 src/、测试与 node_modules 带进安装根；
+#   3. qqbot 的运行时依赖（含 peer）从仓库 node_modules 整体拷贝；
+#   4. 重建安装根内的两条解析链（astrbox 相对入口 → 包装插件 → 宿主实现）。
+install-plugins:
+	@case "$(PLUGINS_OUT)" in "$(CURDIR)"|"$(CURDIR)"/*) echo "PLUGINS_OUT 不能位于仓库内: $(PLUGINS_OUT)" >&2; exit 1;; esac
+	cd plugins/dsh-qqbot && npm run build
+	@mkdir -p "$(PLUGINS_OUT)"
+	@set -e; \
+	for p in $(PLUGIN_PKGS); do \
+		tmp=$$(mktemp -d); \
+		printf 'pack %s\n' "$$p"; \
+		(cd "plugins/$$p" && npm pack --silent --pack-destination "$$tmp" >/dev/null); \
+		rm -rf "$(PLUGINS_OUT)/$$p"; mkdir -p "$(PLUGINS_OUT)/$$p"; \
+		tar -xzf "$$tmp"/*.tgz -C "$(PLUGINS_OUT)/$$p" --strip-components=1; \
+		rm -rf "$$tmp"; \
+	done
+	rsync -a --delete plugins/dsh-qqbot/node_modules/ "$(PLUGINS_OUT)/dsh-qqbot/node_modules/"
+	@mkdir -p "$(PLUGINS_OUT)/dsh-mcp-client/node_modules/@deepseek-ai"
+	ln -sfn "$(DSH_PROFILE_NODE_MODULES)/@deepseek-ai/dsh-mcp-client" "$(PLUGINS_OUT)/dsh-mcp-client/node_modules/@deepseek-ai/dsh-mcp-client"
+	@echo "plugins installed: $(PLUGINS_OUT)"
 
 # Spawn bin/dsh-mcp, run the MCP handshake and check the frozen tool set.
 doctor: $(DSH_BIN)
