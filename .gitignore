@@ -31,6 +31,8 @@ scripts/*.tmp
 /data/archives/
 /data/logs/
 /data/llm_decisions.json
+/data/flow-spec.json
+/data/flow-ledger.json
 /data/entities.json
 /internal/compiler/testdata/python_rule_ids.json
 
