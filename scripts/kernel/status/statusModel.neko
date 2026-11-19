@@ -4,6 +4,13 @@
   "状态": {
     "身体[str]": "正常"
   },
+  // 兼容投影：metabolismProjectionTick（9000 段）与 statusFunctions 读写这三个字段。
+  // 规范账本是 基础.角色状态.*；这里保留旧路径，避免「写到没有声明的路径上」。
+  "身体": {
+    "体力[int,min:0,max:100]": 75,
+    "饱食[int,min:0,max:100]": 82,
+    "水分[int,min:0,max:100]": 60
+  },
   "标记": {
     "疼痛[bool]": false,
     "饥饿[bool]": false,

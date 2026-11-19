@@ -1,13 +1,15 @@
 // 生殖内核（L4）模板：周期相位、受孕、妊娠与避孕的持久状态。
+// 上限按 种族参数 的最大值留足：周期天 ≤60 → 周期日 0–59；孕期周 ≤90 → 孕周 ≤92、孕期分钟 ≤92×10080。
 // 只存状态，不含结算；结算见 reproductiveCycleFunctions / reproductivePregnancyFunctions 与各自 Tick。
 @定义 生殖内核 {
   "生殖": {
     "周期相位[int,min:0,max:99]": 0,
-    "周期日[int,min:0,max:27]": 0,
+    "周期分钟[int,min:0,max:1000000]": 0,
+    "周期日[int,min:0,max:59]": 0,
     "受孕窗口[bool]": false,
     "怀孕状态[str,@事件分娩]": "未孕",
-    "孕周[int,min:0,max:42]": 0,
-    "孕期分钟[int,min:0,max:604800]": 0,
+    "孕周[int,min:0,max:92]": 0,
+    "孕期分钟[int,min:0,max:927360]": 0,
     "避孕[bool]": false,
     "受孕概率[int,min:0,max:100]": 20,
     "能量需求[int,min:0,max:1200]": 0,
