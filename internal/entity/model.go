@@ -23,9 +23,13 @@ type Entity struct {
 	mu   sync.RWMutex
 	ID   string
 	Type string
-	Data map[string]any
-	Keys map[string]string
-	Meta map[string]any
+	// Types is the @实例 type list (`[角色定义:猫娘, ...]`). The instance data is
+	// materialized from these types at creation; the list is kept for auditing
+	// and for re-applying content.
+	Types []string
+	Data  map[string]any
+	Keys  map[string]string
+	Meta  map[string]any
 
 	// Templates is shared with the store and only read for fallback lookups.
 	Templates map[string]map[string]any

@@ -19,6 +19,7 @@ func TestSchemaInheritsUnsetParentConstraints(t *testing.T) {
 			"值": map[string]any{"type": "int", "event": "值事件", "min": float64(0), "max": float64(100)},
 		},
 	})
+	store.SetTemplateParents("父:子", []string{"父"})
 	store.AddTemplate("父:子", map[string]any{
 		"值": float64(2),
 		"__annotations__": map[string]any{

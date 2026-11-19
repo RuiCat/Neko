@@ -26,7 +26,7 @@ func newKernelFixRuntime(t *testing.T) (*entity.Store, *engine.StateMachine, *en
 	machine.SetFuncCaller(funcs)
 	loadRepoScripts(t, store, machine, funcs, ev, dataDir)
 
-	if _, err := store.Create("猫猫", "角色基础:猫娘", map[string]any{
+	if _, err := store.Create("猫猫", "角色定义:猫娘", map[string]any{
 		"基础": map[string]any{"名字": "猫猫", "性别": "女", "年龄": 20},
 	}, nil); err != nil {
 		t.Fatalf("create: %v", err)

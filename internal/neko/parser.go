@@ -50,6 +50,26 @@ func parseBlock(ast *ScriptAST, block Block) {
 
 	case "at_data", "at_instance":
 		name := strings.TrimSpace(block.Name)
+		parents := []string(nil)
+		if block.Kind == "at_instance" {
+			parsedName, parsedParents, err := ParseInstanceHeader(name)
+			if err != nil {
+				ast.Errors = append(ast.Errors, &ParseError{
+					Message: err.Error(),
+					Pos:     pos,
+					Hint:    "@实例 分类:名称 [类型1, 类型2] { JSON }",
+				})
+				return
+			}
+			name, parents = parsedName, parsedParents
+		} else if strings.ContainsRune(name, '[') {
+			ast.Errors = append(ast.Errors, &ParseError{
+				Message: "@定义 不接受方括号列表",
+				Pos:     pos,
+				Hint:    "纯模板用 @定义 名称 { JSON }；需要组合类型或声明实例请用 @实体 / @实例",
+			})
+			return
+		}
 		data, ok := decodeEntityBody(block.Body, ast, pos)
 		if !ok {
 			return
@@ -70,6 +90,7 @@ func parseBlock(ast *ScriptAST, block Block) {
 		ast.DataDefs = append(ast.DataDefs, DataDef{
 			TypeName: name,
 			Data:     data,
+			Parents:  parents,
 			IsEntity: block.Kind == "at_data",
 			Pos:      pos,
 		})

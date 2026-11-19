@@ -18,6 +18,7 @@ import (
 type contentInstance struct {
 	Source string
 	Type   string
+	Types  []string
 	ID     string
 	Data   map[string]any
 }
@@ -59,22 +60,33 @@ func runApply(runtime *bootstrap.Runtime, args []string) error {
 	}
 	created, updated, skipped := 0, 0, 0
 	for _, instance := range instances {
-		typeKnown := runtime.Store.GetTemplate(instance.Type) != nil || len(runtime.Store.Ancestors(instance.Type)) > 0
-		if !typeKnown {
-			return fmt.Errorf("%s: 类型 %q 没有模板或继承链", instance.Source, instance.Type)
+		// The classification path (instance.Type) is a namespace and need not be a
+		// template; every listed type must resolve, or the fields cannot be built.
+		if len(instance.Types) == 0 {
+			if runtime.Store.GetTemplate(instance.Type) == nil && len(runtime.Store.Ancestors(instance.Type)) == 0 {
+				return fmt.Errorf("%s: 类型 %q 没有模板或继承链（也没有 [] 类型列表）", instance.Source, instance.Type)
+			}
+		}
+		for _, typeName := range instance.Types {
+			if runtime.Store.GetTemplate(typeName) == nil && len(runtime.Store.Ancestors(typeName)) == 0 {
+				return fmt.Errorf("%s: [] 里的类型 %q 没有模板或继承链", instance.Source, typeName)
+			}
 		}
 		existing := runtime.Store.Get(instance.ID)
 		switch {
 		case existing == nil:
 			if *dryRun {
-				fmt.Printf("would create %s (%s) <- %s\n", instance.ID, instance.Type, instance.Source)
+				fmt.Printf("would create %s (%s; types=%v) <- %s\n", instance.ID, instance.Type, instance.Types, instance.Source)
 				created++
 				continue
 			}
-			if _, err := runtime.Store.Create(instance.ID, instance.Type, instance.Data, nil); err != nil {
+			composed := runtime.Store.ComposeDefaults(append([]string{instance.Type}, instance.Types...), instance.Data)
+			createdEntity, err := runtime.Store.Create(instance.ID, instance.Type, composed, nil)
+			if err != nil {
 				return fmt.Errorf("%s: 创建 %s 失败: %w", instance.Source, instance.ID, err)
 			}
-			fmt.Printf("created %s (%s)\n", instance.ID, instance.Type)
+			createdEntity.Types = append([]string(nil), instance.Types...)
+			fmt.Printf("created %s (%s; types=%v)\n", instance.ID, instance.Type, instance.Types)
 			created++
 		case !*overwrite:
 			fmt.Printf("skip %s (已存在)\n", instance.ID)
@@ -143,7 +155,10 @@ func collectContent(dir string) ([]contentInstance, error) {
 			}
 			seen[id] = file
 			markExplicitAgeKnown(def.Data)
-			instances = append(instances, contentInstance{Source: file, Type: typeName, ID: id, Data: def.Data})
+			instances = append(instances, contentInstance{
+				Source: file, Type: typeName, Types: append([]string(nil), def.Parents...),
+				ID: id, Data: def.Data,
+			})
 		}
 	}
 	return instances, nil

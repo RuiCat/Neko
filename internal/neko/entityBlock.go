@@ -51,47 +51,68 @@ func scanEntityBlock(lines []string, start int) (Block, int) {
 // list. Whitespace separates the name from `[`; both ASCII and full-width
 // commas are accepted between parents.
 func ParseEntityHeader(header string) (string, []string, error) {
+	return splitNameAndParents(header, "@实体", "父模板", true)
+}
+
+// ParseInstanceHeader splits `<分类>:<名称> [类型, ...]` for @实例. The name is
+// kept whole (the last colon segment is the entity id); the bracketed list
+// names the types whose fields the instance draws from.
+func ParseInstanceHeader(header string) (string, []string, error) {
+	return splitNameAndParents(header, "@实例", "类型", false)
+}
+
+// splitNameAndParents parses `<name> [item, item]` for the @实体/@实例 headers.
+// The name keeps colons (namespace / classification path); the list entries are
+// validated as template references.
+func splitNameAndParents(header, keyword, itemLabel string, strictName bool) (string, []string, error) {
 	text := strings.TrimSpace(header)
 	if text == "" {
-		return "", nil, fmt.Errorf("@实体 缺少类型名")
+		return "", nil, fmt.Errorf("%s 缺少名称", keyword)
+	}
+	validName := func(name string) bool {
+		if strictName {
+			return entityTypeNameRe.MatchString(name)
+		}
+		// 实体 id 允许连字符、括号等：只要非空、不含方括号和空白即可。
+		return name != "" && !strings.ContainsAny(name, "[] \t\r\n")
 	}
 	open := strings.IndexRune(text, '[')
 	if open < 0 {
-		if !entityTypeNameRe.MatchString(text) {
-			return "", nil, fmt.Errorf("@实体 类型名非法: %q", text)
+		if !validName(text) {
+			return "", nil, fmt.Errorf("%s 名称非法: %q", keyword, text)
 		}
 		return text, nil, nil
 	}
 	close := strings.LastIndex(text, "]")
 	if close < open {
-		return "", nil, fmt.Errorf("@实体 父列表缺少 ']'")
+		return "", nil, fmt.Errorf("%s 列表缺少 ']'", keyword)
 	}
 	name := strings.TrimSpace(text[:open])
-	if !entityTypeNameRe.MatchString(name) {
-		return "", nil, fmt.Errorf("@实体 类型名非法: %q", name)
+	if !validName(name) {
+		return "", nil, fmt.Errorf("%s 名称非法: %q", keyword, name)
 	}
 	if trailing := strings.TrimSpace(text[close+1:]); trailing != "" {
-		return "", nil, fmt.Errorf("@实体 父列表之后存在多余内容: %q", trailing)
+		return "", nil, fmt.Errorf("%s 列表之后存在多余内容: %q", keyword, trailing)
 	}
 	inside := strings.TrimSpace(text[open+1 : close])
 	if inside == "" {
 		return name, nil, nil
 	}
-	parents := []string{}
+	items := []string{}
 	seen := map[string]bool{}
 	for _, raw := range strings.FieldsFunc(inside, func(r rune) bool { return r == ',' || r == '，' }) {
-		parent := strings.TrimSpace(raw)
-		if parent == "" {
+		item := strings.TrimSpace(raw)
+		if item == "" {
 			continue
 		}
-		if !entityTypeNameRe.MatchString(parent) {
-			return "", nil, fmt.Errorf("@实体 父模板名非法: %q", parent)
+		if !entityTypeNameRe.MatchString(item) {
+			return "", nil, fmt.Errorf("%s %s名非法: %q", keyword, itemLabel, item)
 		}
-		if seen[parent] {
-			return "", nil, fmt.Errorf("@实体 父模板重复: %q", parent)
+		if seen[item] {
+			return "", nil, fmt.Errorf("%s %s重复: %q", keyword, itemLabel, item)
 		}
-		seen[parent] = true
-		parents = append(parents, parent)
+		seen[item] = true
+		items = append(items, item)
 	}
-	return name, parents, nil
+	return name, items, nil
 }

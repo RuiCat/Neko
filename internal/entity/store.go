@@ -127,10 +127,11 @@ func (s *Store) loadEntitiesFileLocked(path string) error {
 	}
 	var payload struct {
 		Entities map[string]struct {
-			Type string            `json:"type"`
-			Data map[string]any    `json:"data"`
-			Keys map[string]string `json:"keys"`
-			Meta map[string]any    `json:"_meta"`
+			Type  string            `json:"type"`
+			Types []string          `json:"types"`
+			Data  map[string]any    `json:"data"`
+			Keys  map[string]string `json:"keys"`
+			Meta  map[string]any    `json:"_meta"`
 		} `json:"entities"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
@@ -143,11 +144,40 @@ func (s *Store) loadEntitiesFileLocked(path string) error {
 	for id, item := range payload.Entities {
 		stripTemplateMetadata(item.Data)
 		s.entities[id] = &Entity{
-			ID: id, Type: item.Type, Data: item.Data, Keys: item.Keys,
+			ID: id, Type: item.Type, Types: item.Types, Data: item.Data, Keys: item.Keys,
 			Meta: item.Meta, Templates: s.templates, Parents: s.parents,
 		}
 	}
 	return nil
+}
+
+// isLocalEntityType reports whether one entity belongs to the local-only store:
+// driven role/user entities stay on this machine, plain content stays public.
+func isLocalEntityType(typeName string) bool {
+	for _, prefix := range []string{"角色", "用户"} {
+		if strings.HasPrefix(typeName, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// ComposeDefaults materializes an instance's field defaults: every listed type's
+// template chain (ancestors first), then the instance body.
+func (s *Store) ComposeDefaults(typeNames []string, body map[string]any) map[string]any {
+	merged := map[string]any{}
+	for _, name := range typeNames {
+		for _, item := range s.ResolveOrder(name) {
+			if template := s.GetTemplate(item); template != nil {
+				merged = DeepMerge(merged, template)
+			}
+		}
+	}
+	if body != nil {
+		merged = DeepMerge(merged, body)
+	}
+	stripTemplateMetadata(merged)
+	return merged
 }
 
 // Save atomically writes public entities and local-only role entities.
@@ -162,10 +192,10 @@ func (s *Store) saveLocked() error {
 	user := map[string]any{}
 	for id, ent := range s.entities {
 		record := map[string]any{
-			"id": ent.ID, "type": ent.Type, "keys": ent.Keys,
+			"id": ent.ID, "type": ent.Type, "types": ent.Types, "keys": ent.Keys,
 			"data": ent.Snapshot(), "_meta": ent.Meta,
 		}
-		if strings.HasPrefix(ent.Type, "角色基础") {
+		if isLocalEntityType(ent.Type) {
 			user[id] = record
 		} else {
 			public[id] = record

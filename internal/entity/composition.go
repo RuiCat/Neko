@@ -8,15 +8,12 @@ import (
 	"strings"
 )
 
-// EffectiveParents returns the templates merged before typeName: the implicit
-// colon chain (`A:B:C` inherits `A` and `A:B`) followed by the explicit parents
-// declared by an @实体 block, in declaration order.
+// EffectiveParents returns the templates merged before typeName: only the
+// explicit parents declared by an @实体/@实例 list, in declaration order.
+// Colons in the name are namespace/classification separators and never imply
+// inheritance; field composition comes from the list alone.
 func EffectiveParents(typeName string, parents map[string][]string) []string {
-	chain := TypeChain(typeName)
-	out := make([]string, 0, len(chain)+len(parents[typeName]))
-	if len(chain) > 1 {
-		out = append(out, chain[:len(chain)-1]...)
-	}
+	out := make([]string, 0, len(parents[typeName]))
 	for _, parent := range parents[typeName] {
 		if parent == "" || parent == typeName {
 			continue
@@ -46,9 +43,6 @@ func ResolveTemplateOrder(typeName string, templates map[string]map[string]any, 
 				return fmt.Errorf("模板 '%s' 不能把自己声明为父模板", name)
 			}
 			if _, ok := templates[parent]; !ok {
-				if isImplicitPrefix(name, parent) {
-					continue
-				}
 				return fmt.Errorf("组合模板 '%s' 的父模板 '%s' 不存在", name, parent)
 			}
 			if err := visit(parent, append(stack, name)); err != nil {
@@ -65,17 +59,14 @@ func ResolveTemplateOrder(typeName string, templates map[string]map[string]any, 
 	return order, nil
 }
 
-// TemplateOrder is ResolveTemplateOrder with a legacy fallback on error. It is
-// used by read paths that must not fail, such as template fallback lookups.
+// TemplateOrder is ResolveTemplateOrder for read paths that must not fail:
+// a type that cannot be resolved contributes no templates (no implicit colon
+// inheritance is assumed).
 func TemplateOrder(typeName string, templates map[string]map[string]any, parents map[string][]string) []string {
 	if order, err := ResolveTemplateOrder(typeName, templates, parents); err == nil {
 		return order
 	}
-	return TypeChain(typeName)
-}
-
-func isImplicitPrefix(typeName, parent string) bool {
-	return parent != typeName && strings.HasPrefix(typeName, parent+":")
+	return nil
 }
 
 // TemplateLeafPaths flattens one template into leaf dotted paths, skipping the

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/RuiCat/Neko/internal/bootstrap"
+	"github.com/RuiCat/Neko/internal/entity"
 )
 
 func TestSplitInstanceName(t *testing.T) {
@@ -148,5 +149,43 @@ func toNum(value any) float64 {
 		return float64(typed)
 	default:
 		return -1
+	}
+}
+
+// TestApplyInstanceClassificationWithTypeList covers the classification-path
+// form: 分类:名称 + [类型…]，实体的 type 存分类路径，字段由 [] 里的类型组合。
+func TestApplyInstanceClassificationWithTypeList(t *testing.T) {
+	runtime := newApplyRuntime(t)
+	contentDir := t.TempDir()
+	payload := "@实例 角色:猫猫 [角色定义:猫娘] {\n  \"基础\": {\"名字\": \"猫猫\", \"性别\": \"女\", \"年龄\": 20}\n}\n"
+	if err := os.WriteFile(filepath.Join(contentDir, "cat.neko"), []byte(payload), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := runApply(runtime, []string{"-content", contentDir}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	cat := runtime.Store.Get("猫猫")
+	if cat == nil {
+		t.Fatal("猫猫 没有创建")
+	}
+	if cat.Type != "角色" {
+		t.Fatalf("type = %q，期望分类路径 角色", cat.Type)
+	}
+	if len(cat.Types) != 1 || cat.Types[0] != "角色定义:猫娘" {
+		t.Fatalf("types = %v，期望 [角色定义:猫娘]", cat.Types)
+	}
+	if race, _ := cat.Get("种族标识"); race != "猫娘" {
+		t.Fatalf("种族标识 = %v，期望由 角色定义:猫娘 组合进来", race)
+	}
+	if _, ok := cat.GetOrNone("基础.名字").(string); !ok {
+		t.Fatalf("基础.名字 缺失，说明内核模板没有合并进来")
+	}
+	// 分类前缀匹配：$[角色] 命中 角色:猫猫。
+	selector, err := entity.ParseEntityRef("角色[*]")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matched := runtime.Store.QuerySelector(selector); len(matched) != 1 || matched[0].ID != "猫猫" {
+		t.Fatalf("分类前缀匹配失败：%v", matched)
 	}
 }
