@@ -20,7 +20,7 @@ func TestTemplatePersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := `@Data 测试类型 {
+	script := `@定义 测试类型 {
   "值": 1
 }
 @规则[$[测试类型]] {

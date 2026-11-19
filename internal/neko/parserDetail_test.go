@@ -240,29 +240,29 @@ func detailOf(ast *ScriptAST) detailAST {
 }
 
 // synthScripts covers block forms absent from the corpus (@多规则, threshold
-// range rules, multi-if, legacy key:value rules and @描述/@data/@函数 variants).
+// range rules, multi-if, legacy key:value rules and @描述/@实例/@函数 variants).
 var synthScripts = map[string]string{
-	"multicond": "@多规则[$[NPC:猫猫]] {\n" +
-		"  优先级: 300\n  id: multi-1\n  规则A: {\n    条件: $[NPC:猫猫].身体.体力 < 20\n" +
+	"multicond": "@多规则[$[角色基础:猫猫]] {\n" +
+		"  优先级: 300\n  id: multi-1\n  规则A: {\n    条件: $[角色基础:猫猫].身体.体力 < 20\n" +
 		"    动作: $.状态.触发 = \"低\"\n  },\n  规则B: {\n    动作: $.状态.触发 = \"高\"\n" +
 		"    动作: $.计数 += 1\n  }\n}\n",
-	"range": "@规则[$[NPC:猫猫]]:$.状态.情绪 {\n  =开心: { 动作: $.状态.情绪值 = 100 },\n" +
+	"range": "@规则[$[角色基础:猫猫]]:$.状态.情绪 {\n  =开心: { 动作: $.状态.情绪值 = 100 },\n" +
 		"  >50: { 动作: $.状态.情绪值 += 1 },\n  30: { 动作: $.状态.情绪值 = 30 },\n" +
 		"  20.5: { 动作: $.状态.情绪值 = 20.5 },\n  悲伤: { 动作: $.状态.情绪值 = 0 }\n}\n",
-	"multiif": "@规则[$[NPC:猫猫]] {\n  优先级: 10\n  id: mi-1\n" +
-		"  $[NPC:猫猫].身体.饱食 < 40 ∧ $[NPC:猫猫].状态.情绪 in {开心, 平静} {\n" +
+	"multiif": "@规则[$[角色基础:猫猫]] {\n  优先级: 10\n  id: mi-1\n" +
+		"  $[角色基础:猫猫].身体.饱食 < 40 ∧ $[角色基础:猫猫].状态.情绪 in {开心, 平静} {\n" +
 		"    $.状态.触发 = \"饿\"\n  },\n  {e}.标记.疲劳 == true {\n" +
-		"    动作: $.状态.触发 = \"累\"\n  },\n  $[NPC:猫猫].行为.主人行为 in {无} {\n" +
+		"    动作: $.状态.触发 = \"累\"\n  },\n  $[角色基础:猫猫].行为.主人行为 in {无} {\n" +
 		"    $.状态.触发 = \"等\"\n  }\n}\n",
 	"legacy": "@规则[$1[NPC.性别=女]，场景] {\n  id: legacy-1\n  优先级: 200\n" +
 		"  状态: 身体.疲劳 > 80\n  条件: $1.身体.疲劳 > 90\n  条件: 场景.天气 == \"雨\"\n" +
 		"  动作: $1.亲密 += 5\n  动作: 场景.事件 += {\"类型\": \"见面\"}\n  动作: $1.计数 -= 2\n" +
 		"  动作: {e}.标记.疲劳 = true\n  分支: {\n    体力 < 10 → 状态 = 昏厥\n" +
 		"    默认 → 状态.情绪 = \"平静\"\n  }\n}\n",
-	"eventfunc": "@描述 模块 {\n  说明: 只是文档\n}\n@data 通用块 {\n  \"键\": 1\n}\n" +
+	"eventfunc": "@描述 模块 {\n  说明: 只是文档\n}\n@实例 通用块 {\n  \"键\": 1\n}\n" +
 		"@定义 定义块 {\n  \"键\": 2\n}\n@事件:心跳 {\n  条件: 变化量 > 0\n  处理器: onTick\n" +
 		"  标记 = 1\n}\n@函数 加法(a: int, b: int) -> int {\n  返回 a + b\n}\n" +
-		"#世界观: 合成样例\n#规则: $[NPC].a = 1 → $.b = 2\n",
+		"#世界观: 合成样例\n#规则: $[角色基础].a = 1 → $.b = 2\n",
 }
 
 // TestDetailDump prints value-level AST summaries when NEKO_DETAIL_FILES is set,

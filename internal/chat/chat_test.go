@@ -32,7 +32,7 @@ func newChatFixture(t *testing.T, status int, answer string) *chatFixture {
 	if err := store.Load(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Create("猫猫", "NPC", map[string]any{"状态": map[string]any{"情绪": "平静"}}, nil); err != nil {
+	if _, err := store.Create("猫猫", "角色基础", map[string]any{"状态": map[string]any{"情绪": "平静"}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +98,7 @@ func TestTurnWritesCompleteRecordWithPackage(t *testing.T) {
 func TestDryRunSkipsProvider(t *testing.T) {
 	store := entity.NewStore(t.TempDir())
 	_ = store.Load()
-	_, _ = store.Create("猫猫", "NPC", map[string]any{"状态": map[string]any{"情绪": "平静"}}, nil)
+	_, _ = store.Create("猫猫", "角色基础", map[string]any{"状态": map[string]any{"情绪": "平静"}}, nil)
 	writer := journal.NewWriter(t.TempDir())
 	fixture, err := New(Options{
 		Store: store, Schema: hardstate.DefaultSchema(), Sequence: hardstate.NewSequence(),

@@ -304,6 +304,7 @@ func (r *Registry) releaseLocked(entry *Entry, result *ApplyResult, persist bool
 					_ = r.store.DeleteTemplateFile(typeName)
 				}
 				result.Removed.Templates = append(result.Removed.Templates, typeName)
+				r.engine.InvalidateBounds()
 			}
 		}
 	}
@@ -544,7 +545,7 @@ func validateName(name string) string {
 func bootstrapPass(raw []byte) int {
 	text := string(raw)
 	switch {
-	case strings.Contains(text, "@定义") || strings.Contains(text, "@Data"):
+	case strings.Contains(text, "@定义"):
 		return 0
 	case strings.Contains(text, "@实体"):
 		return 1

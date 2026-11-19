@@ -9,7 +9,7 @@ import (
 
 func TestAttachDiagnosticsModes(t *testing.T) {
 	server := &Server{diagnostics: diagnostics.New(16)}
-	ent := &entity.Entity{ID: "猫猫", Type: "NPC:猫猫"}
+	ent := &entity.Entity{ID: "猫猫", Type: "角色基础:猫猫"}
 	server.diagnostics.Add(diagnostics.Record{
 		Code: "tick.rule.error", Severity: diagnostics.SEVERITY_ERROR,
 		Entity: "猫猫", Message: "boom",

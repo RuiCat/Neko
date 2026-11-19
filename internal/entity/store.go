@@ -21,6 +21,10 @@ type Store struct {
 	parents   map[string][]string
 	entities  map[string]*Entity
 	loaded    bool
+	// order caches ResolveOrder(typeName). The ancestor chain only changes when a
+	// template or a parents sidecar changes, so every mutator clears it. Hot paths
+	// (engine.clampValue, bridge.HandleChange) resolve it on every write.
+	order map[string][]string
 	// OnCreate is called after a new entity is stored (used by the event bridge).
 	OnCreate func(entity *Entity)
 }
@@ -29,7 +33,7 @@ type Store struct {
 func NewStore(dataDir string) *Store {
 	return &Store{
 		dataDir: dataDir, templates: map[string]map[string]any{},
-		parents: map[string][]string{}, entities: map[string]*Entity{},
+		parents: map[string][]string{}, entities: map[string]*Entity{}, order: map[string][]string{},
 	}
 }
 
@@ -108,7 +112,7 @@ func (s *Store) loadEntitiesLocked() error {
 	return s.loadEntitiesFileLocked(s.userEntitiesPath())
 }
 
-// userEntitiesPath is the local-only NPC entity store.
+// userEntitiesPath is the local-only 角色基础 entity store.
 func (s *Store) userEntitiesPath() string {
 	return filepath.Join(s.dataDir, "user", "entities.json")
 }
@@ -146,7 +150,7 @@ func (s *Store) loadEntitiesFileLocked(path string) error {
 	return nil
 }
 
-// Save atomically writes public entities and local-only NPC entities.
+// Save atomically writes public entities and local-only role entities.
 func (s *Store) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -161,7 +165,7 @@ func (s *Store) saveLocked() error {
 			"id": ent.ID, "type": ent.Type, "keys": ent.Keys,
 			"data": ent.Snapshot(), "_meta": ent.Meta,
 		}
-		if strings.HasPrefix(ent.Type, "NPC") {
+		if strings.HasPrefix(ent.Type, "角色基础") {
 			user[id] = record
 		} else {
 			public[id] = record
@@ -197,14 +201,14 @@ func (s *Store) MigrateUserEntities() error {
 	if _, err := os.Stat(s.userEntitiesPath()); err == nil {
 		return nil
 	}
-	hasNPC := false
+	hasRole := false
 	for _, ent := range s.entities {
-		if strings.HasPrefix(ent.Type, "NPC") {
-			hasNPC = true
+		if strings.HasPrefix(ent.Type, "角色基础") {
+			hasRole = true
 			break
 		}
 	}
-	if !hasNPC {
+	if !hasRole {
 		return nil
 	}
 	return s.saveLocked()
@@ -251,12 +255,28 @@ func (s *Store) GetTemplate(typeName string) map[string]any {
 	return deepCopyMap(template)
 }
 
+// WithTemplate runs fn on the template map without copying it. The map and its
+// nested values are read-only for the duration of the call; fn must not retain
+// them. Hot paths (engine.clampValue runs once per numeric write) use this
+// instead of GetTemplate, whose deep copy dominated tick cost.
+func (s *Store) WithTemplate(typeName string, fn func(template map[string]any)) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	template, ok := s.templates[typeName]
+	if !ok {
+		return false
+	}
+	fn(template)
+	return true
+}
+
 // AddTemplate stores or deep-merges a template. Merging (instead of replacing)
 // matches the Python store: later scripts may redefine a type without repeating
 // every field or annotation.
 func (s *Store) AddTemplate(typeName string, data map[string]any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.order = map[string][]string{}
 	if existing, ok := s.templates[typeName]; ok {
 		s.templates[typeName] = DeepMerge(existing, data)
 		return
@@ -303,6 +323,7 @@ func (s *Store) RemoveTemplate(typeName string) bool {
 	_, ok := s.templates[typeName]
 	delete(s.templates, typeName)
 	delete(s.parents, typeName)
+	s.order = map[string][]string{}
 	return ok
 }
 

@@ -21,20 +21,20 @@ func TestRewriteCondition(t *testing.T) {
 	}
 	t.Cleanup(config.Reset)
 
-	primary := []neko.Subject{{Kind: "primary", TypeName: "NPC"}}
+	primary := []neko.Subject{{Kind: "primary", TypeName: "角色基础"}}
 	cases := []struct {
 		name, input, want string
 		subjects          []neko.Subject
 	}{
-		{"typed subject", "$[NPC].身体.体力 < 20", "{e}.身体.体力 < 20", primary},
+		{"typed subject", "$[角色基础].身体.体力 < 20", "{e}.身体.体力 < 20", primary},
 		{"bare field", "体力 < 10", "{e}.身体.体力 < 10", primary},
 		{"mapped field", "主人行为 in {抚摸}", "{e}.行为.主人行为 in {抚摸}", primary},
 		{"global unchanged", "场景.事件 = 1", "场景.事件 = 1", primary},
 		{"multi subject kept", "$1.亲密 > 5", "$1.亲密 > 5",
-			[]neko.Subject{{Kind: "multi", Var: "$1", TypeName: "NPC"}}},
+			[]neko.Subject{{Kind: "multi", Var: "$1", TypeName: "角色基础"}}},
 		{"logical split", "疼痛>95 ∨ 出血>70", "{e}.状态.疼痛 > 95 ∨ {e}.伤害.出血 > 70", primary},
 		{"dollar path", "$.状态.身体 = \"活跃\"", "{e}.状态.身体 = \"活跃\"", primary},
-		{"function arg", "危险度($[NPC].身体.体力) > 50", "危险度({e}.身体.体力) > 50", primary},
+		{"function arg", "危险度($[角色基础].身体.体力) > 50", "危险度({e}.身体.体力) > 50", primary},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -48,9 +48,9 @@ func TestRewriteCondition(t *testing.T) {
 
 func TestCompileSimpleRule(t *testing.T) {
 	def := neko.RuleDef{
-		Subjects:   []neko.Subject{{Kind: "primary", TypeName: "NPC"}},
-		HeaderRaw:  "@规则[$[NPC]]",
-		Conditions: []string{"$[NPC].身体.体力 < 20"},
+		Subjects:   []neko.Subject{{Kind: "primary", TypeName: "角色基础"}},
+		HeaderRaw:  "@规则[$[角色基础]]",
+		Conditions: []string{"$[角色基础].身体.体力 < 20"},
 		Actions: []neko.ActionOp{
 			{Op: "set", Target: "状态.身体", Value: "疲惫"},
 		},
@@ -59,7 +59,7 @@ func TestCompileSimpleRule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile rule: %v", err)
 	}
-	if rule.Match != "NPC[*]" {
+	if rule.Match != "角色基础[*]" {
 		t.Fatalf("match = %q", rule.Match)
 	}
 	if rule.When == nil || *rule.When != "{e}.身体.体力 < 20" {
@@ -77,11 +77,11 @@ func TestCompileSimpleRule(t *testing.T) {
 }
 
 func TestCompileScriptText(t *testing.T) {
-	text := `@Data NPC:猫娘 {
+	text := `@定义 角色基础:猫娘 {
   "身体": {"体力": 60}
 }
 
-@规则[$[NPC]] {
+@规则[$[角色基础]] {
   条件: 身体.体力 < 20
   动作: 状态.身体 = "疲惫"
 }
@@ -94,7 +94,7 @@ func TestCompileScriptText(t *testing.T) {
 	if !result.OK() {
 		t.Fatalf("compile errors: %v", result.Errors)
 	}
-	template := result.Templates["NPC:猫娘"]
+	template := result.Templates["角色基础:猫娘"]
 	if template == nil {
 		t.Fatalf("template missing: %v", result.Templates)
 	}
@@ -103,18 +103,18 @@ func TestCompileScriptText(t *testing.T) {
 	}
 }
 
-// TestCompileDuplicateDataRejected pins the duplicate @Data contract: the
+// TestCompileDuplicateDataRejected pins the duplicate @定义 contract: the
 // second declaration is reported instead of silently overwriting the first.
 func TestCompileDuplicateDataRejected(t *testing.T) {
 	ast := &neko.ScriptAST{DataDefs: []neko.DataDef{
-		{TypeName: "NPC:猫猫", IsEntity: true, Data: map[string]any{"a": 1}},
-		{TypeName: "NPC:猫猫", IsEntity: true, Data: map[string]any{"b": 2}},
+		{TypeName: "角色基础:猫猫", IsEntity: true, Data: map[string]any{"a": 1}},
+		{TypeName: "角色基础:猫猫", IsEntity: true, Data: map[string]any{"b": 2}},
 	}}
 	result := CompileScript(ast)
 	if len(result.Errors) == 0 {
-		t.Fatal("同一脚本重复 @Data 未报错")
+		t.Fatal("同一脚本重复 @定义 未报错")
 	}
-	if _, ok := result.Templates["NPC:猫猫"]; !ok {
+	if _, ok := result.Templates["角色基础:猫猫"]; !ok {
 		t.Fatal("首个声明应保留")
 	}
 	if len(result.Templates) != 1 {

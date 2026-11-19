@@ -24,8 +24,8 @@ func newJournalEnv(t *testing.T) (*bootstrap.Runtime, *Server) {
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
-	runtime.Store.AddTemplate("NPC", map[string]any{"状态": map[string]any{"情绪": "平静"}})
-	if _, err := runtime.Store.Create("猫猫", "NPC", nil, nil); err != nil {
+	runtime.Store.AddTemplate("角色基础", map[string]any{"状态": map[string]any{"情绪": "平静"}})
+	if _, err := runtime.Store.Create("猫猫", "角色基础", nil, nil); err != nil {
 		t.Fatalf("create entity: %v", err)
 	}
 	// 默认实体是数据；这里给测试实体，生产由 config.default_entity 提供。

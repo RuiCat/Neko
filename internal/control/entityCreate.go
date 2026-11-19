@@ -40,7 +40,7 @@ func (s *Server) handleEntityCreate(r *http.Request) response {
 	}
 	typeName := strings.TrimSpace(request.Type)
 	if typeName == "" {
-		typeName = "NPC"
+		typeName = "角色基础"
 	}
 	if !s.runtime.Store.HasTemplate(typeName) {
 		return badRequest(fmt.Sprintf("实体模板类型 '%s' 不存在（可用: %s）", typeName, strings.Join(s.runtime.Store.ListTemplates(), ", ")))

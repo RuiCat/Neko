@@ -70,7 +70,7 @@ func extractDocument(file string, doc Document) extractedDocument {
 			out.Flows = append(out.Flows, flows...)
 			out.Records = append(out.Records, records...)
 			out.Issues = append(out.Issues, issues...)
-		case "NPC":
+		case "角色基础":
 			out.Skipped = append(out.Skipped, SkippedBlock{
 				File: file, Line: block.Line, Directive: "@定义 NPC",
 				Reason: "state schema definition; not a K1 flow or task template",

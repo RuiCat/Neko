@@ -13,13 +13,18 @@ type Bridge struct {
 	bus         *Bus
 	mu          sync.RWMutex
 	schemas     map[string]*entity.EntitySchema
+	// merged caches schemaFor(typeName): the merged ancestor view was rebuilt on
+	// every single field write (Validate/GetEvent), which dominated tick cost.
+	// It only depends on (typeName, schemas), and Refresh is the only writer of
+	// schemas, so it is rebuilt there.
+	merged      map[string]*entity.EntitySchema
 	records     []string
 	validations []map[string]any
 }
 
 // NewBridge builds a bridge and refreshes schemas from current templates.
 func NewBridge(store *entity.Store, bus *Bus) *Bridge {
-	bridge := &Bridge{store: store, bus: bus, schemas: map[string]*entity.EntitySchema{}}
+	bridge := &Bridge{store: store, bus: bus, schemas: map[string]*entity.EntitySchema{}, merged: map[string]*entity.EntitySchema{}}
 	bridge.Refresh()
 	return bridge
 }
@@ -42,6 +47,7 @@ func (b *Bridge) Refresh() {
 	}
 	b.mu.Lock()
 	b.schemas = schemas
+	b.merged = map[string]*entity.EntitySchema{}
 	b.mu.Unlock()
 	b.AttachAll()
 }
@@ -123,11 +129,24 @@ func (b *Bridge) HandleChange(ent *entity.Entity, path string, oldValue, newValu
 }
 
 func (b *Bridge) schemaFor(typeName string) *entity.EntitySchema {
+	// Fast path: the merged view only depends on (typeName, schemas) and schemas
+	// is only replaced by Refresh, which clears this cache. HandleChange runs once
+	// per field write, so recomputing here was the dominant tick cost.
+	b.mu.RLock()
+	cached, ok := b.merged[typeName]
+	b.mu.RUnlock()
+	if ok {
+		return cached
+	}
+
 	// Resolve the order before taking the bridge lock: Refresh takes the store
 	// lock first and then the bridge lock, so this call order must not invert.
 	order := b.store.ResolveOrder(typeName)
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if cached, ok := b.merged[typeName]; ok {
+		return cached
+	}
 	merged := entity.NewEntitySchema()
 	found := false
 	for _, name := range order {
@@ -146,8 +165,12 @@ func (b *Bridge) schemaFor(typeName string) *entity.EntitySchema {
 		}
 	}
 	if !found {
+		// Cache the negative result too: unknown types are common while scripts
+		// load, and a miss is cheap to re-check but not free.
+		b.merged[typeName] = nil
 		return nil
 	}
+	b.merged[typeName] = merged
 	return merged
 }
 

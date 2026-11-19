@@ -20,7 +20,7 @@ func newSceneStore(t *testing.T) *entity.Store {
 	if _, err := store.Create("S001-LR", "场景", map[string]any{"事件": []any{}}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Create("猫猫", "NPC", map[string]any{
+	if _, err := store.Create("猫猫", "角色基础", map[string]any{
 		"位置": map[string]any{"场景": "S001-LR"},
 	}, nil); err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestSceneOpWithoutCurrentSceneIsSkipped(t *testing.T) {
 	if err := store.Load(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Create("猫猫", "NPC", map[string]any{"状态": map[string]any{"触发": ""}}, nil); err != nil {
+	if _, err := store.Create("猫猫", "角色基础", map[string]any{"状态": map[string]any{"触发": ""}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	result := applySceneOp(t, store, Op{Op: "append", Entity: "场景", Path: "事件", Value: "孤儿"})

@@ -1,5 +1,5 @@
 // apply_test.go covers the content loader: instance name parsing, materializing
-// @data blocks, idempotent re-runs and the overwrite option.
+// @实例 blocks, idempotent re-runs and the overwrite option.
 package main
 
 import (
@@ -17,7 +17,7 @@ func TestSplitInstanceName(t *testing.T) {
 		wantID   string
 	}{
 		{"食物:苹果", "食物", "苹果"},
-		{"NPC:猫娘:猫猫", "NPC:猫娘", "猫猫"},
+		{"角色基础:猫娘:猫猫", "角色基础:猫娘", "猫猫"},
 		{"场景", "", ""},
 		{":苹果", "", ""},
 		{"食物:", "", ""},
@@ -50,7 +50,7 @@ func newApplyRuntime(t *testing.T) *bootstrap.Runtime {
 func writeAppleContent(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	payload := "@data 食物:苹果 {\n  \"名称\": \"苹果\",\n  \"类别\": \"食物\",\n  \"数量\": 3,\n  \"价格\": 5,\n  \"食物\": { \"热量\": 95, \"可食\": true }\n}\n"
+	payload := "@实例 食物:苹果 {\n  \"名称\": \"苹果\",\n  \"类别\": \"食物\",\n  \"数量\": 3,\n  \"价格\": 5,\n  \"食物\": { \"热量\": 95, \"可食\": true }\n}\n"
 	if err := os.WriteFile(filepath.Join(dir, "food.neko"), []byte(payload), 0o644); err != nil {
 		t.Fatalf("write content: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestApplyOverwriteOnlyTouchesContentFields(t *testing.T) {
 func TestApplyRejectsDuplicateIDs(t *testing.T) {
 	runtime := newApplyRuntime(t)
 	contentDir := t.TempDir()
-	payload := "@data 食物:苹果 {\n  \"名称\": \"苹果\"\n}\n@data 食物:苹果 {\n  \"名称\": \"苹果2\"\n}\n"
+	payload := "@实例 食物:苹果 {\n  \"名称\": \"苹果\"\n}\n@实例 食物:苹果 {\n  \"名称\": \"苹果2\"\n}\n"
 	if err := os.WriteFile(filepath.Join(contentDir, "dup.neko"), []byte(payload), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestApplyRejectsDuplicateIDs(t *testing.T) {
 func TestApplyRejectsUnknownType(t *testing.T) {
 	runtime := newApplyRuntime(t)
 	contentDir := t.TempDir()
-	payload := "@data 不存在类型:某物 {\n  \"名称\": \"某物\"\n}\n"
+	payload := "@实例 不存在类型:某物 {\n  \"名称\": \"某物\"\n}\n"
 	if err := os.WriteFile(filepath.Join(contentDir, "bad.neko"), []byte(payload), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}

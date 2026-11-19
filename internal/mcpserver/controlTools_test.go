@@ -113,7 +113,7 @@ func TestEntityStateSetRejectsBadInput(t *testing.T) {
 func TestEntityDeleteTool(t *testing.T) {
 	fx := newTickFixture(t)
 	bus := wireObservations(t, fx)
-	if _, err := fx.server.store.Create("月月", "NPC", map[string]any{"状态": map[string]any{"情绪": "平静"}}, nil); err != nil {
+	if _, err := fx.server.store.Create("月月", "角色基础", map[string]any{"状态": map[string]any{"情绪": "平静"}}, nil); err != nil {
 		t.Fatalf("create 月月: %v", err)
 	}
 	if _, err := fx.server.WriteEntityPaths("月月", map[string]any{"状态.情绪": "开心"}, "test"); err != nil {

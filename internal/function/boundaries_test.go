@@ -11,8 +11,8 @@ import (
 func newBoundaryExecutor(t *testing.T) *Executor {
 	t.Helper()
 	store := entity.NewStore(t.TempDir())
-	store.AddTemplate("NPC", map[string]any{"设置": map[string]any{"a": 1, "b": 2}})
-	if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {
+	store.AddTemplate("角色基础", map[string]any{"设置": map[string]any{"a": 1, "b": 2}})
+	if _, err := store.Create("猫猫", "角色基础", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	return New(store)

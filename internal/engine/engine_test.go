@@ -16,13 +16,13 @@ func stringPtr(value string) *string { return &value }
 func newTestStore(t *testing.T) *entity.Store {
 	t.Helper()
 	store := entity.NewStore(t.TempDir())
-	store.AddTemplate("NPC", map[string]any{
+	store.AddTemplate("角色基础", map[string]any{
 		"状态":   map[string]any{"身体": "活跃", "情绪": "平静"},
 		"状态定义": map[string]any{"身体": []any{"活跃", "疲惫", "虚弱", "昏厥"}, "情绪": []any{"平静", "开心", "难过"}},
 		"身体":   map[string]any{"体力": 75.0},
 	})
 	for _, id := range []string{"猫猫", "梦梦"} {
-		if _, err := store.Create(id, "NPC", nil, nil); err != nil {
+		if _, err := store.Create(id, "角色基础", nil, nil); err != nil {
 			t.Fatalf("创建实体 %s 失败: %v", id, err)
 		}
 	}
@@ -53,15 +53,15 @@ func expectPath(t *testing.T, store *entity.Store, entityID, path string, want a
 }
 
 func newRule(id string, priority int, branches ...Branch) Rule {
-	return Rule{ID: id, Match: "NPC[*]", Priority: priority, Enabled: true, Branches: branches}
+	return Rule{ID: id, Match: "角色基础[*]", Priority: priority, Enabled: true, Branches: branches}
 }
 
 func TestBranchShortCircuit(t *testing.T) {
 	store := newTestStore(t)
 	machine := New(store)
 	machine.AddRule(newRule("r_fatigue", 0,
-		Branch{If: stringPtr("NPC[*].身体.体力 < 10"), State: map[string]any{"身体": "昏厥"}},
-		Branch{If: stringPtr("NPC[*].身体.体力 < 20"), State: map[string]any{"身体": "疲惫"}},
+		Branch{If: stringPtr("角色基础[*].身体.体力 < 10"), State: map[string]any{"身体": "昏厥"}},
+		Branch{If: stringPtr("角色基础[*].身体.体力 < 20"), State: map[string]any{"身体": "疲惫"}},
 		Branch{Else: true},
 	))
 	setPath(t, store, "猫猫", "身体.体力", 15.0)
@@ -76,8 +76,8 @@ func TestDeepBranch(t *testing.T) {
 	store := newTestStore(t)
 	machine := New(store)
 	machine.AddRule(newRule("r_deep", 0,
-		Branch{If: stringPtr("NPC[*].身体.体力 < 10"), State: map[string]any{"身体": "昏厥"}},
-		Branch{If: stringPtr("NPC[*].身体.体力 < 20"), State: map[string]any{"身体": "疲惫"}},
+		Branch{If: stringPtr("角色基础[*].身体.体力 < 10"), State: map[string]any{"身体": "昏厥"}},
+		Branch{If: stringPtr("角色基础[*].身体.体力 < 20"), State: map[string]any{"身体": "疲惫"}},
 		Branch{Else: true},
 	))
 	setPath(t, store, "猫猫", "身体.体力", 5.0)
@@ -89,7 +89,7 @@ func TestElseDefault(t *testing.T) {
 	store := newTestStore(t)
 	machine := New(store)
 	machine.AddRule(newRule("r_default", 0,
-		Branch{If: stringPtr("NPC[*].身体.体力 < 20"), State: map[string]any{"身体": "疲惫"}},
+		Branch{If: stringPtr("角色基础[*].身体.体力 < 20"), State: map[string]any{"身体": "疲惫"}},
 		Branch{Else: true, State: map[string]any{"身体": "活跃"}},
 	))
 	setPath(t, store, "猫猫", "身体.体力", 50.0)
@@ -102,7 +102,7 @@ func TestSideEffects(t *testing.T) {
 	machine := New(store)
 	machine.AddRule(newRule("r_effect", 0,
 		Branch{
-			If:   stringPtr("NPC[*].身体.体力 < 20"),
+			If:   stringPtr("角色基础[*].身体.体力 < 20"),
 			Then: []Op{{Op: "set", Path: "{e}.标记.疲劳", Value: true}},
 		},
 	))
@@ -115,7 +115,7 @@ func TestConflictNoMatch(t *testing.T) {
 	store := newTestStore(t)
 	machine := New(store)
 	machine.AddRule(newRule("r_conflict", 0,
-		Branch{If: stringPtr("NPC[*].身体.体力 < 1")},
+		Branch{If: stringPtr("角色基础[*].身体.体力 < 1")},
 	))
 	setPath(t, store, "猫猫", "身体.体力", 50.0)
 	result := machine.Tick("")
@@ -134,7 +134,7 @@ func TestResolveConflict(t *testing.T) {
 	store := newTestStore(t)
 	machine := New(store)
 	machine.AddRule(newRule("r_conflict2", 0,
-		Branch{If: stringPtr("NPC[*].身体.体力 < 1")},
+		Branch{If: stringPtr("角色基础[*].身体.体力 < 1")},
 	))
 	setPath(t, store, "猫猫", "身体.体力", 50.0)
 	result := machine.Tick("")
@@ -158,10 +158,10 @@ func TestPriority(t *testing.T) {
 	store := newTestStore(t)
 	machine := New(store)
 	machine.AddRule(newRule("r_low", 10,
-		Branch{If: stringPtr("NPC[*].身体.体力 < 30"), State: map[string]any{"身体": "疲惫"}},
+		Branch{If: stringPtr("角色基础[*].身体.体力 < 30"), State: map[string]any{"身体": "疲惫"}},
 	))
 	machine.AddRule(newRule("r_high", 100,
-		Branch{If: stringPtr("NPC[*].身体.体力 < 30"), State: map[string]any{"身体": "昏厥"}},
+		Branch{If: stringPtr("角色基础[*].身体.体力 < 30"), State: map[string]any{"身体": "昏厥"}},
 	))
 	setPath(t, store, "猫猫", "身体.体力", 20.0)
 	machine.Tick("")
@@ -174,7 +174,7 @@ func TestHighPriorityRulesNotStarved(t *testing.T) {
 	for index := 0; index < 300; index++ {
 		machine.AddRule(Rule{
 			ID:       "r_low_" + string(rune('A'+index%26)) + string(rune('a'+index/26)),
-			Match:    "NPC[*]",
+			Match:    "角色基础[*]",
 			Priority: 0,
 			Enabled:  true,
 			Branches: []Branch{{
@@ -184,7 +184,7 @@ func TestHighPriorityRulesNotStarved(t *testing.T) {
 	}
 	machine.AddRule(Rule{
 		ID:       "r_safety_high",
-		Match:    "NPC[*]",
+		Match:    "角色基础[*]",
 		Priority: 100,
 		Enabled:  true,
 		Branches: []Branch{{
@@ -217,13 +217,13 @@ func TestSameValueSetNoTransition(t *testing.T) {
 func clampEnv(t *testing.T) (*entity.Store, *StateMachine) {
 	t.Helper()
 	store := entity.NewStore(t.TempDir())
-	store.AddTemplate("NPC", map[string]any{
+	store.AddTemplate("角色基础", map[string]any{
 		"探索": map[string]any{"好奇心": 60.0},
 		"__annotations__": map[string]any{
 			"探索.好奇心": map[string]any{"type": "int", "min": 0.0, "max": 100.0},
 		},
 	})
-	if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {
+	if _, err := store.Create("猫猫", "角色基础", nil, nil); err != nil {
 		t.Fatalf("创建实体失败: %v", err)
 	}
 	return store, New(store)
@@ -361,20 +361,20 @@ func TestTickRecordsImplicitWrites(t *testing.T) {
 	}
 	t.Cleanup(config.Reset)
 	store := entity.NewStore(t.TempDir())
-	store.AddTemplate("NPC", map[string]any{"身体": map[string]any{"饱食": 40}})
-	if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {
+	store.AddTemplate("角色基础", map[string]any{"身体": map[string]any{"饱食": 40}})
+	if _, err := store.Create("猫猫", "角色基础", nil, nil); err != nil {
 		t.Fatalf("create entity: %v", err)
 	}
 	machine := New(store)
 	machine.AddRule(Rule{
-		ID: "r_feed", Match: "NPC[*]", Enabled: true,
+		ID: "r_feed", Match: "角色基础[*]", Enabled: true,
 		Branches: []Branch{{Then: []Op{{Op: "add", Path: "身体.饱食", Value: 5.0}}}},
 	})
 	machine.AddRule(Rule{
-		ID: "r_assign", Match: "NPC[*]", Enabled: true,
+		ID: "r_assign", Match: "角色基础[*]", Enabled: true,
 		Branches: []Branch{{Then: []Op{{Op: "set", Path: "状态.触发", Value: "身体状态=疲惫"}}}},
 	})
-	result := machine.Tick("NPC[*]")
+	result := machine.Tick("角色基础[*]")
 	if result.Status != "ok" {
 		t.Fatalf("status = %s (errors=%v)", result.Status, result.Errors)
 	}

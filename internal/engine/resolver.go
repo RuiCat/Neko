@@ -96,7 +96,7 @@ func (m *StateMachine) newEntityResolver(ent *entity.Entity) ValueResolver {
 			return nil, fmt.Errorf("无法解析: %s", path)
 		}
 		// Prefer the entity this rule is executing for when it matches the
-		// selector; this keeps wildcard paths ("NPC[*].x") per-entity instead of
+		// selector; this keeps wildcard paths ("角色基础[*].x") per-entity instead of
 		// silently reading whichever entity sorts first.
 		if m.store.EntityMatches(selector, ent) {
 			if value, err := getEntityField(ent, fields); err == nil {
@@ -164,45 +164,57 @@ func (m *StateMachine) clampValue(target *entity.Entity, path string, value any)
 	if !numeric {
 		return value
 	}
+	if low, high, cached := m.cachedBounds(target.Type, path); cached {
+		if low != nil && number < *low {
+			return *low
+		}
+		if high != nil && number > *high {
+			return *high
+		}
+		return value
+	}
+
 	var low, high *float64
+	// WithTemplate avoids GetTemplate's full deep copy; clampValue runs on every
+	// numeric write, so copying whole templates (hundreds of annotation entries)
+	// here dominated tick cost.
 	for _, typeName := range m.store.ResolveOrder(target.Type) {
-		template := m.store.GetTemplate(typeName)
-		if template == nil {
-			continue
-		}
-		annotations, ok := template["__annotations__"].(map[string]any)
-		if !ok {
-			continue
-		}
-		rawSchema, found := annotations[path]
-		if !found && strings.Contains(path, ".") {
-			tail := "." + path[strings.LastIndex(path, ".")+1:]
-			keys := make([]string, 0, len(annotations))
-			for key := range annotations {
-				keys = append(keys, key)
+		m.store.WithTemplate(typeName, func(template map[string]any) {
+			annotations, ok := template["__annotations__"].(map[string]any)
+			if !ok {
+				return
 			}
-			sort.Strings(keys)
-			for _, key := range keys {
-				if strings.HasSuffix(key, tail) {
-					rawSchema, found = annotations[key], true
-					break
+			rawSchema, found := annotations[path]
+			if !found && strings.Contains(path, ".") {
+				tail := "." + path[strings.LastIndex(path, ".")+1:]
+				keys := make([]string, 0, len(annotations))
+				for key := range annotations {
+					keys = append(keys, key)
+				}
+				sort.Strings(keys)
+				for _, key := range keys {
+					if strings.HasSuffix(key, tail) {
+						rawSchema, found = annotations[key], true
+						break
+					}
 				}
 			}
-		}
-		if !found {
-			continue
-		}
-		schema, ok := rawSchema.(map[string]any)
-		if !ok {
-			continue
-		}
-		if minValue, ok := toFloatValue(schema["min"]); ok {
-			low = &minValue
-		}
-		if maxValue, ok := toFloatValue(schema["max"]); ok {
-			high = &maxValue
-		}
+			if !found {
+				return
+			}
+			schema, ok := rawSchema.(map[string]any)
+			if !ok {
+				return
+			}
+			if minValue, ok := toFloatValue(schema["min"]); ok {
+				low = &minValue
+			}
+			if maxValue, ok := toFloatValue(schema["max"]); ok {
+				high = &maxValue
+			}
+		})
 	}
+	m.storeBounds(target.Type, path, low, high)
 	if low != nil && number < *low {
 		return *low
 	}

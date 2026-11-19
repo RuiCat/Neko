@@ -25,8 +25,8 @@ func TestMultiSubjectRightSidePath(t *testing.T) {
 	setPath(t, store, "梦梦", "状态.位置", "客厅")
 	machine := New(store)
 	machine.AddRule(Rule{
-		ID: "r_same_place", Match: "NPC[*]", Enabled: true,
-		Subjects: []string{"NPC[*]", "NPC[*]"},
+		ID: "r_same_place", Match: "角色基础[*]", Enabled: true,
+		Subjects: []string{"角色基础[*]", "角色基础[*]"},
 		Branches: []Branch{{
 			If: stringPtr("$1.状态.位置 = $2.状态.位置"),
 			Then: []Op{
@@ -48,8 +48,8 @@ func TestMultiSubjectCrossEntity(t *testing.T) {
 	setPath(t, store, "猫猫", "身体.体力", 10.0)
 	machine := New(store)
 	machine.AddRule(Rule{
-		ID: "r_care", Match: "NPC[*]", Enabled: true,
-		Subjects: []string{"NPC[*]", "NPC[*]"},
+		ID: "r_care", Match: "角色基础[*]", Enabled: true,
+		Subjects: []string{"角色基础[*]", "角色基础[*]"},
 		Branches: []Branch{{
 			If: stringPtr("$1.身体.体力 < 20 ∧ $2.身体.体力 > 50"),
 			Then: []Op{
@@ -96,8 +96,8 @@ func TestSameEntityNotDoubleBound(t *testing.T) {
 	store := newMultiStore(t)
 	machine := New(store)
 	machine.AddRule(Rule{
-		ID: "r_no_self", Match: "NPC[*]", Enabled: true,
-		Subjects: []string{"NPC[*]", "NPC[*]"},
+		ID: "r_no_self", Match: "角色基础[*]", Enabled: true,
+		Subjects: []string{"角色基础[*]", "角色基础[*]"},
 		Branches: []Branch{{
 			If:   stringPtr("true"),
 			Then: []Op{{Op: "set", Subject: 1, Path: "标记.配对", Value: true}},

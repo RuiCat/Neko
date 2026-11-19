@@ -3,6 +3,7 @@ package control
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 func (env *testEnv) addTransitionRule(t *testing.T) {
 	t.Helper()
 	env.runtime.Machine.AddRule(engine.Rule{
-		ID: "r_control_test", Match: "NPC[*]", Priority: 1, Enabled: true,
+		ID: "r_control_test", Match: "角色基础[*]", Priority: 1, Enabled: true,
 		Branches: []engine.Branch{{Then: []engine.Op{{
 			Op: "set", Path: "{e}.状态.控制测试", Value: "已触发",
 		}}}},
@@ -86,13 +87,17 @@ func TestTickBusyImmediate409(t *testing.T) {
 }
 
 // TestTickSaveFailureIsDirty forces a save failure and expects 500 dirty:true.
+//
+// 失败注入不用 chmod：测试以 root 运行时权限位对 root 无效，目录只读也照样能写，
+// 断言会假失败。改成在 atomicWrite 的临时文件位置放一个同名目录——
+// os.OpenFile("entities.json.tmp") 对目录必然返回错误，与运行身份无关。
 func TestTickSaveFailureIsDirty(t *testing.T) {
 	env := newTestEnv(t, Options{})
 	env.addTransitionRule(t)
-	if err := os.Chmod(env.dataDir, 0o500); err != nil {
-		t.Fatalf("chmod: %v", err)
+	blocker := filepath.Join(env.dataDir, "entities.json.tmp")
+	if err := os.MkdirAll(blocker, 0o755); err != nil {
+		t.Fatalf("mkdir blocker: %v", err)
 	}
-	defer func() { _ = os.Chmod(env.dataDir, 0o755) }()
 
 	recorder := env.call(t, http.MethodPost, "/tick", []byte(`{}`))
 	if recorder.Code != http.StatusInternalServerError {
@@ -141,7 +146,7 @@ func TestTickRejectsOversizedBody(t *testing.T) {
 func TestTickUsesSharedRunTick(t *testing.T) {
 	env := newTestEnv(t, Options{})
 	env.addTransitionRule(t)
-	recorder := env.call(t, http.MethodPost, "/tick", []byte(`{"scope":"NPC[*]"}`))
+	recorder := env.call(t, http.MethodPost, "/tick", []byte(`{"scope":"角色基础[*]"}`))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d (%s)", recorder.Code, recorder.Body.String())
 	}

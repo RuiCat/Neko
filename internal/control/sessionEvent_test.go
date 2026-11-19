@@ -228,7 +228,7 @@ func TestSessionEventValidation(t *testing.T) {
 func TestSessionEventExplicitEntity(t *testing.T) {
 	env := newTestEnv(t, Options{})
 	env.registerSessionFunction(t, DEFAULT_FUNCTION_NAME)
-	if _, err := env.runtime.Store.Create("梦梦", "NPC", nil, nil); err != nil {
+	if _, err := env.runtime.Store.Create("梦梦", "角色基础", nil, nil); err != nil {
 		t.Fatalf("create entity: %v", err)
 	}
 	body := []byte(`{"kind":"turn-end","sessionId":"s-entity","cwd":"/tmp/work","turn":4,"entity":"梦梦"}`)
@@ -308,7 +308,7 @@ func TestSessionEventUnknownEntityBeforeCallbackMissing(t *testing.T) {
 func TestSessionEventDefaultEntityFallback(t *testing.T) {
 	env := newTestEnv(t, Options{Entity: "梦梦"})
 	env.registerSessionFunction(t, DEFAULT_FUNCTION_NAME)
-	if _, err := env.runtime.Store.Create("梦梦", "NPC", nil, nil); err != nil {
+	if _, err := env.runtime.Store.Create("梦梦", "角色基础", nil, nil); err != nil {
 		t.Fatalf("create entity: %v", err)
 	}
 	cases := []struct {
@@ -343,7 +343,7 @@ func TestSessionEventDefaultEntityFallback(t *testing.T) {
 // of K3: the journaled snapshot belongs to the request entity, not the default.
 func TestSessionEventExplicitEntityDrivesTurnRecord(t *testing.T) {
 	runtime, server := newJournalEnv(t)
-	if _, err := runtime.Store.Create("梦梦", "NPC", nil, nil); err != nil {
+	if _, err := runtime.Store.Create("梦梦", "角色基础", nil, nil); err != nil {
 		t.Fatalf("create entity: %v", err)
 	}
 	body, err := json.Marshal(map[string]any{

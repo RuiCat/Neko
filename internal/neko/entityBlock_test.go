@@ -4,7 +4,7 @@ package neko
 import "testing"
 
 func TestParseEntityBlockWithParents(t *testing.T) {
-	source := `@实体 NPC:猫猫 [NPC:猫科, NPC:成年] {
+	source := `@实体 角色基础:猫猫 [角色基础:猫科, 角色基础:成年] {
   "毛色": "橘",
   "体型": "幼"
 }`
@@ -16,10 +16,10 @@ func TestParseEntityBlockWithParents(t *testing.T) {
 		t.Fatalf("data defs = %d, want 1", len(ast.DataDefs))
 	}
 	def := ast.DataDefs[0]
-	if def.TypeName != "NPC:猫猫" {
+	if def.TypeName != "角色基础:猫猫" {
 		t.Fatalf("type = %q", def.TypeName)
 	}
-	if len(def.Parents) != 2 || def.Parents[0] != "NPC:猫科" || def.Parents[1] != "NPC:成年" {
+	if len(def.Parents) != 2 || def.Parents[0] != "角色基础:猫科" || def.Parents[1] != "角色基础:成年" {
 		t.Fatalf("parents = %v", def.Parents)
 	}
 	if !def.IsEntity {

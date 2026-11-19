@@ -11,7 +11,7 @@ import (
 // from the template chain and persisted.
 func TestEntityCreateAddsEntity(t *testing.T) {
 	env := newTestEnv(t, Options{})
-	recorder := env.call(t, http.MethodPost, "/entities/create", []byte(`{"entity":"梦梦","type":"NPC","data":{"备注":"新实体"}}`))
+	recorder := env.call(t, http.MethodPost, "/entities/create", []byte(`{"entity":"梦梦","type":"角色基础","data":{"备注":"新实体"}}`))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d (%s)", recorder.Code, recorder.Body.String())
 	}
@@ -23,7 +23,7 @@ func TestEntityCreateAddsEntity(t *testing.T) {
 	if created == nil {
 		t.Fatal("entity not in the store")
 	}
-	if created.Type != "NPC" {
+	if created.Type != "角色基础" {
 		t.Fatalf("type = %q", created.Type)
 	}
 	if recorder := env.call(t, http.MethodGet, "/entities", nil); recorder.Code != http.StatusOK {
@@ -35,7 +35,7 @@ func TestEntityCreateAddsEntity(t *testing.T) {
 // created=false instead of a validation error.
 func TestEntityCreateIsIdempotent(t *testing.T) {
 	env := newTestEnv(t, Options{})
-	recorder := env.call(t, http.MethodPost, "/entities/create", []byte(`{"entity":"猫猫","type":"NPC"}`))
+	recorder := env.call(t, http.MethodPost, "/entities/create", []byte(`{"entity":"猫猫","type":"角色基础"}`))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d (%s)", recorder.Code, recorder.Body.String())
 	}

@@ -21,7 +21,7 @@ func TestConfiguredStateGroup(t *testing.T) {
 	if err := store.Load(); err != nil {
 		t.Fatal(err)
 	}
-	ent, err := store.Create("猫猫", "NPC", map[string]any{
+	ent, err := store.Create("猫猫", "角色基础", map[string]any{
 		"状况":   map[string]any{"身体": "活跃"},
 		"状态定义": map[string]any{"身体": []any{"活跃", "疲惫", "昏厥"}},
 	}, nil)
@@ -68,7 +68,7 @@ func TestConfiguredEmitTarget(t *testing.T) {
 	if _, err := store.Create("基地", "场景", map[string]any{"日志": []any{}}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {
+	if _, err := store.Create("猫猫", "角色基础", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	machine := New(store)

@@ -32,7 +32,7 @@ func newTickFixture(t *testing.T) *tickFixture {
 	if err := store.Load(); err != nil {
 		t.Fatalf("load store: %v", err)
 	}
-	ent, err := store.Create("猫猫", "NPC", map[string]any{"身体": map[string]any{"体力": 50}}, nil)
+	ent, err := store.Create("猫猫", "角色基础", map[string]any{"身体": map[string]any{"体力": 50}}, nil)
 	if err != nil {
 		t.Fatalf("create entity: %v", err)
 	}

@@ -67,8 +67,8 @@ func runAudit(runtime *bootstrap.Runtime) error {
 		}
 	}
 	fmt.Printf("\n注册脚本 %d 个，metabolismAttach=%v\n", len(registered), hasAttach)
-	fmt.Printf("NPC 父模板: %v\n", runtime.Store.GetTemplateParents("NPC"))
-	fmt.Printf("NPC:猫娘 解析顺序: %v\n", runtime.Store.ResolveOrder("NPC:猫娘"))
+	fmt.Printf("NPC 父模板: %v\n", runtime.Store.GetTemplateParents("角色基础"))
+	fmt.Printf("角色基础:猫娘 解析顺序: %v\n", runtime.Store.ResolveOrder("角色基础:猫娘"))
 
 	entities := runtime.Store.ListAll()
 	fmt.Printf("\n实体 %d 个:\n", len(entities))

@@ -20,7 +20,7 @@ func TestActionValueDollarRefsResolveCurrentEntity(t *testing.T) {
 	}
 	for _, tc := range cases {
 		machine.AddRule(Rule{
-			ID: tc.id, Match: "NPC[*]", Enabled: true,
+			ID: tc.id, Match: "角色基础[*]", Enabled: true,
 			Branches: []Branch{{
 				If:   &empty,
 				Then: []Op{{Op: "set", Path: "{e}." + tc.target, Value: tc.value}},

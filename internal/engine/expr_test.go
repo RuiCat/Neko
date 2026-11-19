@@ -11,13 +11,13 @@ import (
 func newExprEnv(t *testing.T) (*entity.Store, *StateMachine) {
 	t.Helper()
 	store := entity.NewStore(t.TempDir())
-	store.AddTemplate("NPC", map[string]any{
+	store.AddTemplate("角色基础", map[string]any{
 		"身体": map[string]any{"体力": 75.0},
 		"位置": map[string]any{"场景": "S001-LR"},
 		"状态": map[string]any{"身体": "活跃"},
 	})
 	for _, id := range []string{"猫猫", "场景"} {
-		if _, err := store.Create(id, "NPC", nil, nil); err != nil {
+		if _, err := store.Create(id, "角色基础", nil, nil); err != nil {
 			t.Fatalf("创建实体 %s 失败: %v", id, err)
 		}
 	}
@@ -53,17 +53,17 @@ func TestConcatExpressions(t *testing.T) {
 
 func TestEffectTextIntegration(t *testing.T) {
 	store := entity.NewStore(t.TempDir())
-	store.AddTemplate("NPC", map[string]any{
+	store.AddTemplate("角色基础", map[string]any{
 		"身体": map[string]any{"体力": 50.0, "疼痛": 50.0},
 	})
-	if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {
+	if _, err := store.Create("猫猫", "角色基础", nil, nil); err != nil {
 		t.Fatalf("创建实体失败: %v", err)
 	}
 	setPath(t, store, "猫猫", "行为.主人行为", "抚摸")
 	machine := New(store)
 	machine.AddRule(newRule("r_effect", 0,
 		Branch{
-			If:   stringPtr("NPC[*].行为.主人行为 == '抚摸'"),
+			If:   stringPtr("角色基础[*].行为.主人行为 == '抚摸'"),
 			Then: []Op{{Op: "set", Path: "{e}.状态.触发", Value: "情境修正:体力+15,疼痛-20"}},
 		},
 	))
@@ -84,10 +84,10 @@ func TestEffectTextUsesConfiguredMap(t *testing.T) {
 	t.Cleanup(func() { _ = config.Set(previous) })
 
 	store := entity.NewStore(t.TempDir())
-	store.AddTemplate("NPC", map[string]any{
+	store.AddTemplate("角色基础", map[string]any{
 		"关系": map[string]any{"撒娇欲": 50.0},
 	})
-	if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {
+	if _, err := store.Create("猫猫", "角色基础", nil, nil); err != nil {
 		t.Fatalf("创建实体失败: %v", err)
 	}
 	target := store.Get("猫猫")
@@ -113,11 +113,11 @@ func TestAssignTextInEngine(t *testing.T) {
 	}
 	for _, item := range cases {
 		store := entity.NewStore(t.TempDir())
-		store.AddTemplate("NPC", map[string]any{
+		store.AddTemplate("角色基础", map[string]any{
 			"行为": map[string]any{"安全等级": "green"},
 			"状态": map[string]any{"身体": "活跃"},
 		})
-		if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {
+		if _, err := store.Create("猫猫", "角色基础", nil, nil); err != nil {
 			t.Fatalf("创建实体失败: %v", err)
 		}
 		machine := New(store)

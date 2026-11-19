@@ -12,7 +12,7 @@ import (
 func TestEntitiesListsIDAndTypeSorted(t *testing.T) {
 	env := newTestEnv(t, Options{})
 	for _, id := range []string{"beta", "alpha"} {
-		if _, err := env.runtime.Store.Create(id, "NPC", nil, nil); err != nil {
+		if _, err := env.runtime.Store.Create(id, "角色基础", nil, nil); err != nil {
 			t.Fatalf("create %s: %v", id, err)
 		}
 	}
@@ -39,8 +39,8 @@ func TestEntitiesListsIDAndTypeSorted(t *testing.T) {
 		if entry["id"] != wantID {
 			t.Fatalf("entry %d id = %v, want %s", index, entry["id"], wantID)
 		}
-		if entry["type"] != "NPC" {
-			t.Fatalf("entry %d type = %v, want NPC", index, entry["type"])
+		if entry["type"] != "角色基础" {
+			t.Fatalf("entry %d type = %v, want 角色基础", index, entry["type"])
 		}
 		if len(entry) != 2 {
 			t.Fatalf("entry %d carries more than id/type (data leaked?): %v", index, entry)

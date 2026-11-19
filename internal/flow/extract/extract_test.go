@@ -85,10 +85,10 @@ func TestExtractTaskTemplatesAndSkippedBlocks(t *testing.T) {
 @定义 任务模板 {
   "收集任务": {"阶段": "已激活", "条件": "需要物品", "奖励": "经验20+好感5"}
 }
-@定义 NPC {
+@定义 角色基础 {
   "任务": {"阶段": "无"}
 }
-@规则[$[NPC:猫猫]] {
+@规则[$[角色基础:猫猫]] {
   优先级: 200
   $.任务.阶段 == "已激活" { $.测试.字段 <- "x" }
 }`)
@@ -137,7 +137,7 @@ func TestExtractTaskTemplatesAndSkippedBlocks(t *testing.T) {
 		t.Fatalf("partial dialog should be empty before Generate join: %+v", partial.Dialog)
 	}
 	if len(extracted.Skipped) != 2 {
-		t.Fatalf("skipped = %+v, want NPC and one rule", extracted.Skipped)
+		t.Fatalf("skipped = %+v, want 角色基础 and one rule", extracted.Skipped)
 	}
 	if extracted.Skipped[0].Directive != "@定义 NPC" || extracted.Skipped[1].Directive != "@规则" {
 		t.Fatalf("skipped order = %+v", extracted.Skipped)

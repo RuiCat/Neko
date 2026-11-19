@@ -48,17 +48,53 @@ func parseBlock(ast *ScriptAST, block Block) {
 	case "at_desc":
 		return
 
-	case "at_data", "at_data_legacy":
+	case "at_data", "at_instance":
 		name := strings.TrimSpace(block.Name)
 		data, ok := decodeEntityBody(block.Body, ast, pos)
 		if !ok {
 			return
+		}
+		// @实例 是「已经算好的值」：注解只在模板（@定义/@实体）里展开。
+		// 若在 @实例 里写了 `"体力[int,min:0,max:100]": 75`，键会被原样写成字面字段名，
+		// 真正的 `体力` 反而没有赋值，且不报错——这里直接拒绝，避免静默写坏存档。
+		if block.Kind == "at_instance" {
+			if path, found := findAnnotatedKey(data, ""); found {
+				ast.Errors = append(ast.Errors, &ParseError{
+					Message: fmt.Sprintf("@实例 里不能使用字段注解: %s", path),
+					Pos:     pos,
+					Hint:    "注解只用于模板（@定义 / @实体），会在编译期展开为字段与 __annotations__；@实例 里请直接写已确定的值",
+				})
+				return
+			}
 		}
 		ast.DataDefs = append(ast.DataDefs, DataDef{
 			TypeName: name,
 			Data:     data,
 			IsEntity: block.Kind == "at_data",
 			Pos:      pos,
+		})
+
+	case "at_unknown":
+		// scanJsonBlock 只剥掉了 "@"，这里补回来再取关键字本身。
+		fields := strings.Fields(block.Name)
+		head := "@"
+		if len(fields) > 0 {
+			head += fields[0]
+		}
+		message := fmt.Sprintf("未知的顶层关键字 %q", head)
+		hint := "可用的顶层块：@定义 / @实体 / @实例 / @规则 / @事件 / @函数 / @描述"
+		switch head {
+		case "@Data":
+			message = "@Data 已移除（不再作为 @定义 的别名）"
+			hint = "定义模板请用 @定义（或 @实体 组合模板）；建立数据实例请用 @实例"
+		case "@data":
+			message = "@data 已移除（关键字改为 @实例）"
+			hint = "建立数据实例请用 @实例；定义模板请用 @定义"
+		}
+		ast.Errors = append(ast.Errors, &ParseError{
+			Message: message,
+			Pos:     pos,
+			Hint:    hint,
 		})
 
 	case "at_entity":
@@ -133,6 +169,30 @@ func parseBlock(ast *ScriptAST, block Block) {
 
 // decodeEntityBody decodes a template body into a JSON object, reporting a
 // parse error and returning false when the body is malformed.
+// annotatedKeyRe matches a template-style annotated field name such as
+// `体力[int,@事件,min:0,max:100]`. @实例 blocks must not use it.
+var annotatedKeyRe = regexp.MustCompile(`^[^\[\]]+\[.*\]$`)
+
+// findAnnotatedKey walks instance data and returns the dotted path of the first
+// annotated key, if any.
+func findAnnotatedKey(data map[string]any, prefix string) (string, bool) {
+	for key, value := range data {
+		path := key
+		if prefix != "" {
+			path = prefix + "." + key
+		}
+		if annotatedKeyRe.MatchString(strings.TrimSpace(key)) {
+			return path, true
+		}
+		if child, ok := value.(map[string]any); ok {
+			if found, ok := findAnnotatedKey(child, path); ok {
+				return found, true
+			}
+		}
+	}
+	return "", false
+}
+
 func decodeEntityBody(body string, ast *ScriptAST, pos Pos) (map[string]any, bool) {
 	data := map[string]any{}
 	if body == "" {

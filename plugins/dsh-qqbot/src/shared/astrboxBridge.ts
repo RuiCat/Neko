@@ -156,7 +156,7 @@ export function refreshBridge(ctx: Context): void {
 export async function ensureBridgeEntity(
   ctx: Context,
   entityId: string | undefined,
-  type = 'NPC',
+  type = '角色基础',
   logger?: { warn?: (message: string) => void },
 ): Promise<boolean> {
   const id = typeof entityId === 'string' ? entityId.trim() : '';

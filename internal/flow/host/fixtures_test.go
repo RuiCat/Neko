@@ -73,7 +73,7 @@ func newTestStore(t *testing.T, npc string) (*entity.Store, string) {
 	if err := os.MkdirAll(templates, 0o755); err != nil {
 		t.Fatalf("create templates dir: %v", err)
 	}
-	writeFixture(t, filepath.Join(templates, "NPC.json"), npc)
+	writeFixture(t, filepath.Join(templates, "角色基础.json"), npc)
 	writeFixture(t, filepath.Join(templates, "素材.json"), materialTemplate)
 	store := entity.NewStore(dir)
 	if err := store.Load(); err != nil {
@@ -93,7 +93,7 @@ func writeFixture(t *testing.T, path, content string) {
 // createActor creates the one entity every flow settles.
 func createActor(t *testing.T, store *entity.Store) *entity.Entity {
 	t.Helper()
-	actor, err := store.Create(testActorID, "NPC", nil, nil)
+	actor, err := store.Create(testActorID, "角色基础", nil, nil)
 	if err != nil {
 		t.Fatalf("create actor: %v", err)
 	}

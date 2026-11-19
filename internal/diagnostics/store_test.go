@@ -54,7 +54,7 @@ func TestForEntityScope(t *testing.T) {
 	store.Add(Record{Code: "tick.conflict.pending", Severity: SEVERITY_WARNING, Entity: "猫猫", Message: "conflict"})
 	store.Add(Record{Code: "script.apply.failed", Severity: SEVERITY_ERROR, Script: "a", Message: "global"})
 	store.Add(Record{Code: "script.apply.warning", Severity: SEVERITY_INFO, Script: "b", Message: "unrelated"})
-	scope := store.ForEntity("猫猫", "NPC:猫猫", 3)
+	scope := store.ForEntity("猫猫", "角色基础:猫猫", 3)
 	if scope.Summary.Error != 1 || scope.Summary.Warning != 1 || scope.Summary.Info != 0 {
 		t.Fatalf("summary = %+v", scope.Summary)
 	}

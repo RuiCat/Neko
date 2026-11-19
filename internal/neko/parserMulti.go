@@ -201,7 +201,7 @@ func parseRuleRange(body, header string, pos Pos) []RuleDef {
 	if idx := rfindRune(hdr, ':'); idx >= 0 {
 		field = strings.TrimSpace(strings.TrimRight(strings.TrimSpace(runeSliceFrom(hdr, idx+1)), "{"))
 	}
-	tname := "NPC"
+	tname := "角色基础"
 	if len(subjects) > 0 {
 		tname = subjects[0].TypeName
 	}

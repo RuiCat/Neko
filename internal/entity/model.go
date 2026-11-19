@@ -106,9 +106,25 @@ func (e *Entity) ValidateID() error {
 	return nil
 }
 
+// VirtualFieldType and VirtualFieldID are read-only metadata paths. Scripts
+// cannot otherwise observe their own type or id, which makes "type is
+// 角色基础:犬娘 but 基础.种族 says 人族" a silent data error; these paths give rules
+// a read-only channel to cross-check. They live outside Data, so they never
+// appear in snapshots and cannot be written.
+const (
+	VirtualFieldType = "__type__"
+	VirtualFieldID   = "__id__"
+)
+
 // Get reads a dotted path. Missing instance fields fall back to the template
 // chain, most derived template first.
 func (e *Entity) Get(path string) (any, error) {
+	switch path {
+	case VirtualFieldType:
+		return e.Type, nil
+	case VirtualFieldID:
+		return e.ID, nil
+	}
 	parts := splitPath(path)
 	if len(parts) == 0 {
 		return e.Snapshot(), nil

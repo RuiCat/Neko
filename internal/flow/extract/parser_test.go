@@ -24,7 +24,7 @@ func TestParseDocumentBehaviorShape(t *testing.T) {
   }
 }
 
-@规则[$[NPC:猫猫]] {
+@规则[$[角色基础:猫猫]] {
   优先级: 200
   $.任务.阶段 == "已激活" {
     $.测试.字段 <- "x"

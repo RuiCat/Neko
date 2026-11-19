@@ -7,11 +7,11 @@ import "testing"
 // marked readonly in the template chain fail, other fields keep working.
 func TestSetRejectsReadonlyField(t *testing.T) {
 	ent := &Entity{
-		ID:   "NPC:测试",
-		Type: "NPC",
+		ID:   "角色基础:测试",
+		Type: "角色基础",
 		Data: map[string]any{},
 		Templates: map[string]map[string]any{
-			"NPC": {"__annotations__": map[string]any{
+			"角色基础": {"__annotations__": map[string]any{
 				"状态.锁定": map[string]any{"readonly": true, "type": "int"},
 				"状态.正常": map[string]any{"type": "int"},
 			}},

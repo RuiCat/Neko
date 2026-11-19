@@ -22,7 +22,7 @@ func TestPregnancyLifecycleScripts(t *testing.T) {
 	machine.SetFuncCaller(funcs)
 	loadRepoScripts(t, store, machine, funcs, ev, dataDir)
 
-	if _, err := store.Create("猫猫", "NPC", map[string]any{"基础": map[string]any{"名字": "猫猫", "年龄": 20}}, nil); err != nil {
+	if _, err := store.Create("猫猫", "角色基础", map[string]any{"基础": map[string]any{"名字": "猫猫", "年龄": 20}}, nil); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	ent := store.Get("猫猫")

@@ -70,7 +70,7 @@ func TestMaxBytesDeterministic(t *testing.T) {
 	keys := map[string]string{"k": strings.Repeat("x", 1024)}
 	for index := 0; index < 100; index++ {
 		id := fmt.Sprintf("e%03d", index)
-		if _, err := env.runtime.Store.Create(id, "NPC", nil, keys); err != nil {
+		if _, err := env.runtime.Store.Create(id, "角色基础", nil, keys); err != nil {
 			t.Fatalf("create %s: %v", id, err)
 		}
 	}

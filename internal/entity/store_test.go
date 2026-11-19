@@ -21,7 +21,7 @@ func TestLoadRealData(t *testing.T) {
 	if cat == nil {
 		t.Skip("真实数据里缺少实体 猫猫（data/ 已清空），跳过")
 	}
-	if cat.Type != "NPC:猫猫" {
+	if cat.Type != "角色基础:猫猫" {
 		t.Fatalf("unexpected type: %s", cat.Type)
 	}
 	value, err := cat.Get("身体.体力")
@@ -38,7 +38,7 @@ func TestQueryAndTemplates(t *testing.T) {
 	if err := store.Load(); err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	entities, err := store.Query("NPC[*]")
+	entities, err := store.Query("角色基础[*]")
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestQueryAndTemplates(t *testing.T) {
 	if _, err := store.Query("猫猫"); err != nil {
 		t.Fatalf("query by id: %v", err)
 	}
-	if !store.HasTemplate("NPC") {
+	if !store.HasTemplate("角色基础") {
 		t.Fatal("template NPC missing")
 	}
 }
@@ -59,14 +59,14 @@ func TestCreateEntityWithInheritance(t *testing.T) {
 		t.Fatal(err)
 	}
 	template := `{"身体":{"体力":50},"状态":{"身体":"活跃"}}`
-	if err := os.WriteFile(filepath.Join(dir, "templates", "NPC.json"), []byte(template), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "templates", "角色基础.json"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	store := NewStore(dir)
 	if err := store.Load(); err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	ent, err := store.Create("小黑", "NPC", map[string]any{"身体": map[string]any{"体力": float64(80)}}, nil)
+	ent, err := store.Create("小黑", "角色基础", map[string]any{"身体": map[string]any{"体力": float64(80)}}, nil)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}

@@ -42,11 +42,11 @@ func newTestEnv(t *testing.T, options Options) *testEnv {
 		t.Fatalf("config: %v", err)
 	}
 	t.Cleanup(config.Reset)
-	runtime.Store.AddTemplate("NPC", map[string]any{
+	runtime.Store.AddTemplate("角色基础", map[string]any{
 		"状态": map[string]any{"情绪": "平静", "身体": "健康"},
 		"身体": map[string]any{"体力": 80},
 	})
-	if _, err := runtime.Store.Create("猫猫", "NPC", map[string]any{"备注": "测试实体"}, nil); err != nil {
+	if _, err := runtime.Store.Create("猫猫", "角色基础", map[string]any{"备注": "测试实体"}, nil); err != nil {
 		t.Fatalf("create entity: %v", err)
 	}
 	mcp := runtime.NewMCPServer()

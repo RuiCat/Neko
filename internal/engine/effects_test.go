@@ -26,7 +26,7 @@ func expectEffect(t *testing.T, effects []Effect, word string, delta float64) {
 
 func newEffectEntity(t *testing.T, data map[string]any) *entity.Entity {
 	t.Helper()
-	ent, err := entity.CreateEntity("猫猫", "NPC", nil, data, nil)
+	ent, err := entity.CreateEntity("猫猫", "角色基础", nil, data, nil)
 	if err != nil {
 		t.Fatalf("创建实体失败: %v", err)
 	}

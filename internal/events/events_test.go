@@ -46,7 +46,7 @@ func newStore(t *testing.T) *entity.Store {
 		t.Fatal(err)
 	}
 	template := `{"身体":{"体力":75},"状态":{"身体":"活跃"},"__annotations__":{"身体.体力":{"type":"int","event":"体力管理","min":0,"max":100}}}`
-	if err := os.WriteFile(filepath.Join(dir, "templates", "NPC.json"), []byte(template), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "templates", "角色基础.json"), []byte(template), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	store := entity.NewStore(dir)
@@ -64,7 +64,7 @@ func TestFieldChangeFiresBoundEvent(t *testing.T) {
 	system.RegisterEvents([]neko.EventDef{{
 		Name: "体力管理", Condition: "变化量 < -20", Handler: "体力管理",
 	}})
-	ent, err := store.Create("猫猫", "NPC", nil, nil)
+	ent, err := store.Create("猫猫", "角色基础", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestObserverReceivesDispatch(t *testing.T) {
 			t.Errorf("observer context = %+v", ctx)
 		}
 	})
-	ent, err := store.Create("猫猫", "NPC", nil, nil)
+	ent, err := store.Create("猫猫", "角色基础", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestUnboundFieldDoesNotFire(t *testing.T) {
 	caller := &fakeCaller{}
 	system := NewSystem(store, caller)
 	system.RegisterEvents([]neko.EventDef{{Name: "体力管理", Handler: "体力管理"}})
-	ent, err := store.Create("猫猫", "NPC", nil, nil)
+	ent, err := store.Create("猫猫", "角色基础", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestEventConditionArithmetic(t *testing.T) {
 	system.RegisterEvents([]neko.EventDef{{
 		Name: "体力管理", Condition: "变化量 + 1 > 0", Handler: "体力管理",
 	}})
-	ent, err := store.Create("猫猫", "NPC", nil, nil)
+	ent, err := store.Create("猫猫", "角色基础", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestValidationLog(t *testing.T) {
 	store := newStore(t)
 	caller := &fakeCaller{}
 	bridge := NewBridge(store, NewBus(store, caller))
-	ent, err := store.Create("猫猫", "NPC", nil, nil)
+	ent, err := store.Create("猫猫", "角色基础", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,7 +14,7 @@ func TestConfiguredStateSugar(t *testing.T) {
 	}
 	t.Cleanup(config.Reset)
 
-	text := `@规则[$[NPC]] {
+	text := `@规则[$[角色基础]] {
   条件: 体力 < 10
   分支: {
     体力 < 5 → 状况 = "昏厥"

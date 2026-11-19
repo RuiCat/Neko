@@ -136,7 +136,7 @@ export function createBotRuntime(
   }
   // K33：绑定的实体不存在时由控制面按模板创建（fire-and-forget；失败只记日志，不阻塞启动）。
   if (config.entity !== undefined && config.entity.trim() !== '') {
-    void ensureBridgeEntity(ctx, config.entity, 'NPC', logger);
+    void ensureBridgeEntity(ctx, config.entity, '角色基础', logger);
   }
   const manager = new SessionManager(ctx, agents, config, logger, legacy ? undefined : botId, workspaceTitle);
   // 主会话（Neko 主体）：每 bot 一个常驻父会话，QQ 私聊/群聊子会话挂到它下面。

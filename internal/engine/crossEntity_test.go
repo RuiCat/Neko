@@ -17,10 +17,10 @@ func TestBranchRaceAcrossEntities(t *testing.T) {
 		"状态":   map[string]any{"身体": "平静"},
 		"状态定义": map[string]any{"身体": []any{"平静", "活跃", "疲惫"}},
 	}
-	if _, err := store.Create("A", "NPC", state, nil); err != nil {
+	if _, err := store.Create("A", "角色基础", state, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Create("B", "NPC", map[string]any{"状态": map[string]any{"身体": "平静"}}, nil); err != nil {
+	if _, err := store.Create("B", "角色基础", map[string]any{"状态": map[string]any{"身体": "平静"}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	machine := New(store)
@@ -52,10 +52,10 @@ func TestBranchRaceFromFunctionWrite(t *testing.T) {
 		"状态":   map[string]any{"身体": "平静", "触发": ""},
 		"状态定义": map[string]any{"身体": []any{"平静", "活跃", "疲惫"}},
 	}
-	if _, err := store.Create("A", "NPC", state, nil); err != nil {
+	if _, err := store.Create("A", "角色基础", state, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Create("B", "NPC", map[string]any{"状态": map[string]any{"身体": "平静", "触发": ""}}, nil); err != nil {
+	if _, err := store.Create("B", "角色基础", map[string]any{"状态": map[string]any{"身体": "平静", "触发": ""}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	executor := nekoFunction.New(store)

@@ -94,7 +94,7 @@ func CompileScript(ast *neko.ScriptAST) *Result {
 		if !def.IsEntity {
 			continue
 		}
-		// Duplicate @Data types inside one script used to overwrite each other
+		// Duplicate template types inside one script used to overwrite each other
 		// silently. Report the conflict so the author fixes the source instead
 		// of losing fields at compile time.
 		if _, exists := result.Templates[def.TypeName]; exists {

@@ -1,4 +1,4 @@
-// apply：把内容蓝图目录（默认 <repo>/private）下的 @data 实例块物化成实体
+// apply：把内容蓝图目录（默认 <repo>/private）下的 @实例 块物化成实体
 // （幂等，默认不覆盖已有实体）。
 package main
 
@@ -14,7 +14,7 @@ import (
 	"github.com/RuiCat/Neko/internal/neko"
 )
 
-// contentInstance is one @data block resolved to a type and an entity id.
+// contentInstance is one @实例 block resolved to a type and an entity id.
 type contentInstance struct {
 	Source string
 	Type   string
@@ -23,11 +23,11 @@ type contentInstance struct {
 }
 
 // runApply reads every .neko under the content directory and materializes its
-// @data (non-template) blocks as entities. Existing entities are left alone
+// @实例 (non-template) blocks as entities. Existing entities are left alone
 // unless -overwrite is given, so re-running never resets runtime state.
 func runApply(runtime *bootstrap.Runtime, args []string) error {
 	fs := flag.NewFlagSet("apply", flag.ExitOnError)
-	contentDir := fs.String("content", "", "内容目录（留空 = scripts/entities + scripts/scenes）")
+	contentDir := fs.String("content", "", "内容目录（留空 = 仓库根的 private/）")
 	dryRun := fs.Bool("dry-run", false, "只校验，不写盘")
 	overwrite := fs.Bool("overwrite", false, "已有实体也写入内容块里的字段（其余状态保留）")
 	_ = fs.Parse(args)
@@ -136,12 +136,13 @@ func collectContent(dir string) ([]contentInstance, error) {
 			}
 			typeName, id := splitInstanceName(def.TypeName)
 			if typeName == "" || id == "" {
-				return nil, fmt.Errorf("%s: @data %q 需要写成 `类型:实体ID`", file, def.TypeName)
+				return nil, fmt.Errorf("%s: @实例 %q 需要写成 `类型:实体ID`", file, def.TypeName)
 			}
 			if previous, exists := seen[id]; exists {
 				return nil, fmt.Errorf("%s: 实体 ID %q 与 %s 重复", file, id, previous)
 			}
 			seen[id] = file
+			markExplicitAgeKnown(def.Data)
 			instances = append(instances, contentInstance{Source: file, Type: typeName, ID: id, Data: def.Data})
 		}
 	}
@@ -149,7 +150,7 @@ func collectContent(dir string) ([]contentInstance, error) {
 }
 
 // splitInstanceName splits `类型:实体ID` at the last colon so template names
-// that already contain a colon (for example NPC:猫娘) keep working.
+// that already contain a colon (for example 角色基础:猫娘) keep working.
 func splitInstanceName(raw string) (string, string) {
 	trimmed := strings.TrimSpace(raw)
 	index := strings.LastIndex(trimmed, ":")
@@ -157,6 +158,19 @@ func splitInstanceName(raw string) (string, string) {
 		return "", ""
 	}
 	return strings.TrimSpace(trimmed[:index]), strings.TrimSpace(trimmed[index+1:])
+}
+
+// markExplicitAgeKnown flags a content block that sets 基础.年龄已知 itself, so the
+// bInitAgeKnown derivation (which defaults 年龄已知 from 年龄 > 0) leaves it alone.
+// Written as a sibling leaf under 基础 so the value survives ticks.
+func markExplicitAgeKnown(data map[string]any) {
+	base, ok := data["基础"].(map[string]any)
+	if !ok {
+		return
+	}
+	if _, explicit := base["年龄已知"]; explicit {
+		base["年龄已知显式"] = true
+	}
 }
 
 // applyFields writes every leaf of one content block onto an existing entity.

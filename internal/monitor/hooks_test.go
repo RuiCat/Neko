@@ -19,7 +19,7 @@ func TestOnCreateCallbackNoStoreCall(t *testing.T) {
 	env := newTestEnv(t, Options{})
 	done := make(chan error, 1)
 	go func() {
-		_, err := env.runtime.Store.Create("新猫", "NPC", map[string]any{"备注": "x"}, nil)
+		_, err := env.runtime.Store.Create("新猫", "角色基础", map[string]any{"备注": "x"}, nil)
 		done <- err
 	}()
 	select {

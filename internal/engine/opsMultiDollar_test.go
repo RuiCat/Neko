@@ -10,8 +10,8 @@ func TestActionValueMultiSubjectRefsResolve(t *testing.T) {
 	setPath(t, store, "梦梦", "身体.体力", 60.0)
 	machine := New(store)
 	machine.AddRule(Rule{
-		ID: "r_multi_value", Match: "NPC[*]", Enabled: true,
-		Subjects: []string{"NPC[*]", "NPC[*]"},
+		ID: "r_multi_value", Match: "角色基础[*]", Enabled: true,
+		Subjects: []string{"角色基础[*]", "角色基础[*]"},
 		Branches: []Branch{{
 			If: stringPtr("$1.身体.体力 < 20 ∧ $2.身体.体力 > 50"),
 			Then: []Op{
@@ -34,8 +34,8 @@ func TestActionValueMultiSubjectRefMissingKeepsLiteral(t *testing.T) {
 	setPath(t, store, "梦梦", "身体.体力", 60.0)
 	machine := New(store)
 	machine.AddRule(Rule{
-		ID: "r_multi_missing", Match: "NPC[*]", Enabled: true,
-		Subjects: []string{"NPC[*]", "NPC[*]"},
+		ID: "r_multi_missing", Match: "角色基础[*]", Enabled: true,
+		Subjects: []string{"角色基础[*]", "角色基础[*]"},
 		Branches: []Branch{{
 			If: stringPtr("$1.身体.体力 < 20 ∧ $2.身体.体力 > 50"),
 			Then: []Op{

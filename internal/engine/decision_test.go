@@ -16,7 +16,7 @@ func TestResolveConflictLogsAndBackfills(t *testing.T) {
 	if err := store.Load(); err != nil {
 		t.Fatal(err)
 	}
-	ent, err := store.Create("猫猫", "NPC", map[string]any{
+	ent, err := store.Create("猫猫", "角色基础", map[string]any{
 		"状态":   map[string]any{"身体": "活跃"},
 		"状态定义": map[string]any{"身体": []any{"活跃", "疲惫", "昏厥"}},
 	}, nil)

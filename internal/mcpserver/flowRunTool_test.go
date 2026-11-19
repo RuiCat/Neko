@@ -94,7 +94,7 @@ func newFlowFixture(t *testing.T) *flowFixture {
 	if err := store.Load(); err != nil {
 		t.Fatalf("load store: %v", err)
 	}
-	if _, err := store.Create("猫猫", "NPC", map[string]any{
+	if _, err := store.Create("猫猫", "角色基础", map[string]any{
 		"位置": map[string]any{"场景": "S001-KT"},
 		"交易": map[string]any{"货币": 100},
 		"代谢": map[string]any{"胃内容": 300},
@@ -489,7 +489,7 @@ func TestFlowRunThenTick(t *testing.T) {
 	if err := store.Load(); err != nil {
 		t.Fatalf("load store: %v", err)
 	}
-	if _, err := store.Create("猫猫", "NPC", map[string]any{
+	if _, err := store.Create("猫猫", "角色基础", map[string]any{
 		"基础": map[string]any{"名字": "猫猫", "代谢修正": 1000},
 		"位置": map[string]any{"场景": "S001-KT"},
 		"代谢": map[string]any{"胃内容": 999, "流逝分钟": 1, "基础代谢": 1200},

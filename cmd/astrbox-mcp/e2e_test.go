@@ -178,7 +178,7 @@ func TestMCPStdioEndToEnd(t *testing.T) {
 		t.Fatalf("event_log = %+v", eventLog)
 	}
 
-	script := `@Data 测试实体 {
+	script := `@定义 测试实体 {
   "值": 1
 }
 @规则[$[测试实体]] {

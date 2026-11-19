@@ -274,10 +274,10 @@ func prepareMinimalData(t *testing.T, dataDir string) {
 		t.Fatalf("mkdir templates: %v", err)
 	}
 	template := `{"状态":{"情绪":"平静","身体":"健康"},"身体":{"体力":80}}`
-	if err := os.WriteFile(filepath.Join(templateDir, "NPC.json"), []byte(template), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(templateDir, "角色基础.json"), []byte(template), 0o644); err != nil {
 		t.Fatalf("write template: %v", err)
 	}
-	entities := `{"version":1,"entities":{"猫猫":{"id":"猫猫","type":"NPC","data":{"状态":{"情绪":"平静","身体":"健康"},"身体":{"体力":80},"备注":"e2e"},"keys":{}}}}`
+	entities := `{"version":1,"entities":{"猫猫":{"id":"猫猫","type":"角色基础","data":{"状态":{"情绪":"平静","身体":"健康"},"身体":{"体力":80},"备注":"e2e"},"keys":{}}}}`
 	if err := os.WriteFile(filepath.Join(dataDir, "entities.json"), []byte(entities), 0o644); err != nil {
 		t.Fatalf("write entities: %v", err)
 	}

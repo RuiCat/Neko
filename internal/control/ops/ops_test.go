@@ -23,7 +23,7 @@ func newDeps(t *testing.T) ops.Deps {
 	if err := store.Load(); err != nil {
 		t.Fatalf("load store: %v", err)
 	}
-	if _, err := store.Create("猫猫", "NPC", map[string]any{"状态": map[string]any{"情绪": "平静"}}, nil); err != nil {
+	if _, err := store.Create("猫猫", "角色基础", map[string]any{"状态": map[string]any{"情绪": "平静"}}, nil); err != nil {
 		t.Fatalf("create entity: %v", err)
 	}
 	return ops.Deps{Store: store, Machine: engine.New(store), DataDir: dataDir}

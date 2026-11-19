@@ -20,7 +20,7 @@ func TestConfiguredClassificationField(t *testing.T) {
 	if err := store.Load(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Create("猫猫", "NPC:猫猫", map[string]any{"标签": []any{"成年"}}, nil); err != nil {
+	if _, err := store.Create("猫猫", "角色基础:猫猫", map[string]any{"标签": []any{"成年"}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	entities, err := store.Query("成年[*]")

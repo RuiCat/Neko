@@ -18,7 +18,7 @@ import (
 func TestConcurrentTickStateSetAndStateRead(t *testing.T) {
 	env := newTestEnv(t, Options{})
 	env.runtime.Machine.AddRule(engine.Rule{
-		ID: "r_concurrency", Match: "NPC[*]", Priority: 1, Enabled: true,
+		ID: "r_concurrency", Match: "角色基础[*]", Priority: 1, Enabled: true,
 		Branches: []engine.Branch{{Then: []engine.Op{{
 			Op: "set", Path: "{e}.状态.并发计数", Value: "运行中",
 		}}}},

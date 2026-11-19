@@ -78,14 +78,14 @@ func newExecutorFrom(t *testing.T, store *entity.Store, script string) *Executor
 func newCorpusNPC(t *testing.T) (*entity.Store, *entity.Entity) {
 	t.Helper()
 	store := entity.NewStore(t.TempDir())
-	store.AddTemplate("NPC", map[string]any{
+	store.AddTemplate("角色基础", map[string]any{
 		"身体": map[string]any{"体力": 75},
 		"状态": map[string]any{"身体": "活跃", "触发": ""},
 		"标记": map[string]any{},
 		"位置": map[string]any{"场景": "", "可达": []any{}, "上次场景": ""},
 		"携带": []any{},
 	})
-	cat, err := store.Create("猫猫", "NPC", nil, nil)
+	cat, err := store.Create("猫猫", "角色基础", nil, nil)
 	if err != nil {
 		t.Fatalf("创建 猫猫 失败: %v", err)
 	}
@@ -254,7 +254,7 @@ type sceneFixture struct {
 func newSceneFixture(t *testing.T) sceneFixture {
 	t.Helper()
 	store := entity.NewStore(t.TempDir())
-	store.AddTemplate("NPC", map[string]any{
+	store.AddTemplate("角色基础", map[string]any{
 		"位置": map[string]any{"场景": "", "可达": []any{}, "上次场景": ""},
 		"携带": []any{},
 		"状态": map[string]any{"触发": ""},
@@ -263,7 +263,7 @@ func newSceneFixture(t *testing.T) sceneFixture {
 		"类型": "物品", "名称": "", "所属场景": "", "持有人": "",
 		"状态": map[string]any{"可用": true, "描述": ""},
 	})
-	cat, err := store.Create("猫猫", "NPC", map[string]any{"位置": map[string]any{"场景": "花园"}}, nil)
+	cat, err := store.Create("猫猫", "角色基础", map[string]any{"位置": map[string]any{"场景": "花园"}}, nil)
 	if err != nil {
 		t.Fatalf("创建 猫猫 失败: %v", err)
 	}

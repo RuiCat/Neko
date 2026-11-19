@@ -107,7 +107,7 @@ func TestLogsGuards(t *testing.T) {
 // which refuses symlinks (no target content) and oversized sources (413).
 func TestScriptSourceGuards(t *testing.T) {
 	env := newTestEnv(t, Options{})
-	const source = "@定义 NPC {\n  \"身体\": {\"体力\": 75}\n}\n"
+	const source = "@定义 角色基础 {\n  \"身体\": {\"体力\": 75}\n}\n"
 	if result := env.runtime.Registry.Apply("base", source, false); !result.OK {
 		t.Fatalf("apply script: %+v", result.Errors)
 	}

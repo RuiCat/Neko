@@ -42,7 +42,7 @@ func TestIntegrationRealEntities(t *testing.T) {
 	machine.AddRule(Rule{
 		ID:       "r_real_fatigue",
 		Desc:     "体力<20 → 状态.身体=疲惫",
-		Match:    "NPC[*]",
+		Match:    "角色基础[*]",
 		Priority: 10,
 		Enabled:  true,
 		Branches: []Branch{
@@ -54,7 +54,7 @@ func TestIntegrationRealEntities(t *testing.T) {
 		},
 	})
 
-	result := machine.Tick("NPC[*]")
+	result := machine.Tick("角色基础[*]")
 	if result.Status != "ok" {
 		t.Errorf("status = %s, 期望 ok (errors=%v)", result.Status, result.Errors)
 	}

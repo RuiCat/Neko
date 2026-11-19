@@ -91,6 +91,9 @@ func (r *Registry) commitLocked(result *ApplyResult, name, text, newHash string,
 		}
 		newEntry.Templates[typeName] = 1
 		result.Applied.Templates = append(result.Applied.Templates, typeName)
+		// clampValue caches per (type, path) min/max from template annotations;
+		// any template write invalidates it.
+		r.engine.InvalidateBounds()
 	}
 	for _, rule := range prepared.Compiled.Rules {
 		r.engine.AddRule(rule)

@@ -12,7 +12,7 @@ func TestBusHistoryRecordsDispatchOutcomes(t *testing.T) {
 	system := NewSystem(store, caller)
 	system.RegisterFuncs([]neko.FuncDef{{Name: "体力管理"}})
 	system.RegisterEvents([]neko.EventDef{{Name: "体力管理", Handler: "体力管理"}})
-	ent, err := store.Create("猫猫", "NPC", nil, nil)
+	ent, err := store.Create("猫猫", "角色基础", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

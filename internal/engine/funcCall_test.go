@@ -50,13 +50,13 @@ func newFuncCallFixture(t *testing.T, withCaller bool) (*StateMachine, *entity.S
 	store.AddTemplate("世界", map[string]any{
 		"环境": map[string]any{"当前时间": "2026-08-05T15:00:00+08:00"},
 	})
-	store.AddTemplate("NPC", map[string]any{
+	store.AddTemplate("角色基础", map[string]any{
 		"状态": map[string]any{"触发": "", "时段": ""},
 	})
 	if _, err := store.Create("世界", "世界", nil, nil); err != nil {
 		t.Fatalf("创建 世界 失败: %v", err)
 	}
-	if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {
+	if _, err := store.Create("猫猫", "角色基础", nil, nil); err != nil {
 		t.Fatalf("创建 猫猫 失败: %v", err)
 	}
 	executor := nekoFunction.New(store)
@@ -79,14 +79,14 @@ func TestFuncCallerInCondition(t *testing.T) {
 		machine, store := newFuncCallFixture(t, true)
 		machine.AddRule(Rule{
 			ID:      "r_func_when",
-			Match:   "NPC[*]",
+			Match:   "角色基础[*]",
 			When:    stringPtr(afternoonWhen),
 			Enabled: true,
 			Branches: []Branch{
 				{Then: []Op{{Op: "set", Path: "状态.触发", Value: "午后犯困"}}},
 			},
 		})
-		result := machine.Tick("NPC[*]")
+		result := machine.Tick("角色基础[*]")
 		if len(result.Transitions) != 1 {
 			t.Fatalf("应命中 1 条规则, 实际 %d (errors=%v)", len(result.Transitions), result.Errors)
 		}
@@ -100,15 +100,15 @@ func TestFuncCallerInCondition(t *testing.T) {
 		machine, store := newFuncCallFixture(t, true)
 		machine.AddRule(Rule{
 			ID:       "r_func_multi",
-			Match:    "NPC[*]",
-			Subjects: []string{"NPC[猫猫]", "世界"},
+			Match:    "角色基础[*]",
+			Subjects: []string{"角色基础[猫猫]", "世界"},
 			When:     stringPtr(afternoonWhen),
 			Enabled:  true,
 			Branches: []Branch{
 				{Then: []Op{{Op: "set", Path: "状态.触发", Value: "下午茶"}}},
 			},
 		})
-		result := machine.Tick("NPC[*]")
+		result := machine.Tick("角色基础[*]")
 		if len(result.Transitions) != 1 {
 			t.Fatalf("多主体规则应命中 1 次, 实际 %d (errors=%v)", len(result.Transitions), result.Errors)
 		}
@@ -122,14 +122,14 @@ func TestFuncCallerInCondition(t *testing.T) {
 		machine, store := newFuncCallFixture(t, false)
 		machine.AddRule(Rule{
 			ID:      "r_func_when",
-			Match:   "NPC[*]",
+			Match:   "角色基础[*]",
 			When:    stringPtr(afternoonWhen),
 			Enabled: true,
 			Branches: []Branch{
 				{Then: []Op{{Op: "set", Path: "状态.触发", Value: "午后犯困"}}},
 			},
 		})
-		result := machine.Tick("NPC[*]")
+		result := machine.Tick("角色基础[*]")
 		if len(result.Transitions) != 0 {
 			t.Fatalf("未设置 caller 不应命中, 实际 %+v", result.Transitions)
 		}
@@ -148,13 +148,13 @@ func TestFuncCallerInActionValue(t *testing.T) {
 	machine, store := newFuncCallFixture(t, true)
 	machine.AddRule(Rule{
 		ID:      "r_func_action",
-		Match:   "NPC[*]",
+		Match:   "角色基础[*]",
 		Enabled: true,
 		Branches: []Branch{
 			{Then: []Op{{Op: "set", Path: "状态.时段", Value: `时段判断("2026-08-05T15:00:00+08:00")`}}},
 		},
 	})
-	result := machine.Tick("NPC[*]")
+	result := machine.Tick("角色基础[*]")
 	if len(result.Transitions) != 1 {
 		t.Fatalf("动作值函数调用应产生 1 条转移, 实际 %d (errors=%v)", len(result.Transitions), result.Errors)
 	}
@@ -165,14 +165,14 @@ func TestFuncCallerInActionValue(t *testing.T) {
 }
 
 // TestFuncCallerWithCurrentEntityArg covers compiler-rewritten "{e}." arguments
-// such as 危险度($[NPC].身体.体力) -> 危险度({e}.身体.体力).
+// such as 危险度($[角色基础].身体.体力) -> 危险度({e}.身体.体力).
 func TestFuncCallerWithCurrentEntityArg(t *testing.T) {
 	store := entity.NewStore(t.TempDir())
-	store.AddTemplate("NPC", map[string]any{
+	store.AddTemplate("角色基础", map[string]any{
 		"身体": map[string]any{"体力": 10},
 		"状态": map[string]any{"触发": ""},
 	})
-	if _, err := store.Create("猫猫", "NPC", nil, nil); err != nil {
+	if _, err := store.Create("猫猫", "角色基础", nil, nil); err != nil {
 		t.Fatalf("创建 猫猫 失败: %v", err)
 	}
 	executor := nekoFunction.New(store)
@@ -182,11 +182,11 @@ func TestFuncCallerWithCurrentEntityArg(t *testing.T) {
 	machine := New(store)
 	machine.SetFuncCaller(executor)
 	machine.AddRule(Rule{
-		ID: "r_func_current", Match: "NPC[*]", Enabled: true,
+		ID: "r_func_current", Match: "角色基础[*]", Enabled: true,
 		When:     stringPtr(`危险度({e}.身体.体力) > 50`),
 		Branches: []Branch{{Then: []Op{{Op: "set", Path: "状态.触发", Value: "危险"}}}},
 	})
-	result := machine.Tick("NPC[*]")
+	result := machine.Tick("角色基础[*]")
 	if len(result.Transitions) != 1 {
 		t.Fatalf("应命中 1 条规则, 实际 %d (errors=%v)", len(result.Transitions), result.Errors)
 	}

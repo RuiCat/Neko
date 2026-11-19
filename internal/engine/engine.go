@@ -60,11 +60,52 @@ type StateMachine struct {
 	currentRule      string
 	funcCaller       FuncCaller
 	callMu           sync.RWMutex
+	// bounds caches the min/max annotation lookup for (type, path) used by
+	// clampValue, which runs on every numeric write. Cleared by InvalidateBounds
+	// whenever templates or rules change (registry apply/remove).
+	boundsMu sync.RWMutex
+	bounds   map[string]fieldBounds
 }
 
 // New creates a state machine bound to a store.
 func New(store *entity.Store) *StateMachine {
-	return &StateMachine{store: store, pendingConflicts: map[string]Conflict{}}
+	return &StateMachine{store: store, pendingConflicts: map[string]Conflict{}, bounds: map[string]fieldBounds{}}
+}
+
+// fieldBounds is the resolved numeric range for one (type, path) pair.
+// nil means "no constraint on that side".
+type fieldBounds struct {
+	low  *float64
+	high *float64
+}
+
+// cachedBounds returns the cached range for (typeName, path).
+func (m *StateMachine) cachedBounds(typeName, path string) (*float64, *float64, bool) {
+	m.boundsMu.RLock()
+	cached, ok := m.bounds[typeName+"\x00"+path]
+	m.boundsMu.RUnlock()
+	if !ok {
+		return nil, nil, false
+	}
+	return cached.low, cached.high, true
+}
+
+// storeBounds records the resolved range for (typeName, path).
+func (m *StateMachine) storeBounds(typeName, path string, low, high *float64) {
+	m.boundsMu.Lock()
+	defer m.boundsMu.Unlock()
+	if m.bounds == nil {
+		m.bounds = map[string]fieldBounds{}
+	}
+	m.bounds[typeName+"\x00"+path] = fieldBounds{low: low, high: high}
+}
+
+// InvalidateBounds drops the clamp cache. Registry apply/remove and any direct
+// template mutation must call this; templates are otherwise immutable at runtime.
+func (m *StateMachine) InvalidateBounds() {
+	m.boundsMu.Lock()
+	m.bounds = map[string]fieldBounds{}
+	m.boundsMu.Unlock()
 }
 
 // AddRule registers a rule. Same-id rules are replaced; fully identical enabled

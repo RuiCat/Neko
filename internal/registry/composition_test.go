@@ -31,22 +31,22 @@ func applyText(t *testing.T, reg *Registry, name, text string) *ApplyResult {
 
 func TestApplyComposedTemplate(t *testing.T) {
 	reg, store := newCompositionRegistry(t)
-	parent := applyText(t, reg, "cat_family", `@定义 NPC:猫科 {
+	parent := applyText(t, reg, "cat_family", `@定义 角色基础:猫科 {
   "毛色": "未知"
 }`)
 	if !parent.OK {
 		t.Fatalf("parent apply: %+v", parent.Errors)
 	}
-	child := applyText(t, reg, "cat_maomao", `@实体 NPC:猫猫 [NPC:猫科] {
+	child := applyText(t, reg, "cat_maomao", `@实体 角色基础:猫猫 [角色基础:猫科] {
   "体型": "幼"
 }`)
 	if !child.OK {
 		t.Fatalf("child apply: %+v", child.Errors)
 	}
-	if got := store.GetTemplateParents("NPC:猫猫"); len(got) != 1 || got[0] != "NPC:猫科" {
+	if got := store.GetTemplateParents("角色基础:猫猫"); len(got) != 1 || got[0] != "角色基础:猫科" {
 		t.Fatalf("parents = %v", got)
 	}
-	ent, err := store.Create("猫猫", "NPC:猫猫", nil, nil)
+	ent, err := store.Create("猫猫", "角色基础:猫猫", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,10 +173,10 @@ func TestRemoveRefusesDependentTemplate(t *testing.T) {
 
 func TestRemoveRefusesImplicitChainDependency(t *testing.T) {
 	reg, _ := newCompositionRegistry(t)
-	if result := applyText(t, reg, "base", `@定义 NPC { "值": 1 }`); !result.OK {
-		t.Fatalf("NPC: %+v", result.Errors)
+	if result := applyText(t, reg, "base", `@定义 角色基础 { "值": 1 }`); !result.OK {
+		t.Fatalf("角色基础: %+v", result.Errors)
 	}
-	if result := applyText(t, reg, "child", `@定义 NPC:猫猫 { "额外": true }`); !result.OK {
+	if result := applyText(t, reg, "child", `@定义 角色基础:猫猫 { "额外": true }`); !result.OK {
 		t.Fatalf("child: %+v", result.Errors)
 	}
 	if result := reg.Remove("base"); result.OK {

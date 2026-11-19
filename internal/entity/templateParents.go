@@ -13,6 +13,7 @@ import (
 func (s *Store) SetTemplateParents(typeName string, parents []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.order = map[string][]string{}
 	if len(parents) == 0 {
 		delete(s.parents, typeName)
 		return
@@ -42,8 +43,22 @@ func (s *Store) TemplateParentsSnapshot() map[string][]string {
 // typeName last).
 func (s *Store) ResolveOrder(typeName string) []string {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return TemplateOrder(typeName, s.templates, s.parents)
+	cached, ok := s.order[typeName]
+	s.mu.RUnlock()
+	if ok {
+		return cached
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cached, ok := s.order[typeName]; ok {
+		return cached
+	}
+	order := TemplateOrder(typeName, s.templates, s.parents)
+	if s.order == nil {
+		s.order = map[string][]string{}
+	}
+	s.order[typeName] = order
+	return order
 }
 
 // Ancestors returns every template merged into typeName, excluding typeName.

@@ -77,7 +77,7 @@ func TestStateWholeSnapshot(t *testing.T) {
 	}
 
 	bigData := map[string]any{"大字段": strings.Repeat("x", 4096)}
-	if _, err := env.runtime.Store.Create("大猫", "NPC", bigData, nil); err != nil {
+	if _, err := env.runtime.Store.Create("大猫", "角色基础", bigData, nil); err != nil {
 		t.Fatalf("create big entity: %v", err)
 	}
 	truncated := decodeBody(t, env.call(t, http.MethodGet, "/state?entity=大猫&maxBytes=1024", nil))
@@ -154,7 +154,7 @@ func TestStateReadsSnapshotOnly(t *testing.T) {
 // being reported missing, matching the MCP entity_state_get tool.
 func TestStateTemplateFallback(t *testing.T) {
 	env := newTestEnv(t, Options{})
-	env.runtime.Store.AddTemplate("NPC", map[string]any{
+	env.runtime.Store.AddTemplate("角色基础", map[string]any{
 		"状态": map[string]any{"情绪": "平静", "身体": "健康"},
 		"身体": map[string]any{"体力": 80, "模板专有": "模板值"},
 	})

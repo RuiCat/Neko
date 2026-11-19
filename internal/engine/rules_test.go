@@ -8,9 +8,9 @@ func TestParseRulesPythonShape(t *testing.T) {
 	rules, err := ParseRules([]byte(`{
 		"version": 1,
 		"rules": [
-			{"id": "a", "match": "NPC[*]", "enabled": true,
+			{"id": "a", "match": "角色基础[*]", "enabled": true,
 			 "branches": [{"if": "体力<20", "then": []}]},
-			{"id": "b", "match": "NPC[*]", "enabled": true,
+			{"id": "b", "match": "角色基础[*]", "enabled": true,
 			 "branches": [{"else": true, "then": []}]}
 		]
 	}`))

@@ -11,7 +11,7 @@ import (
 )
 
 type tickArgs struct {
-	Scope string `json:"scope,omitempty" jsonschema:"作用范围：* 全部 / NPC[*] 只处理 NPC"`
+	Scope string `json:"scope,omitempty" jsonschema:"作用范围：* 全部 / 角色基础[*] 只处理 NPC"`
 }
 
 type resolveArgs struct {

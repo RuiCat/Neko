@@ -22,7 +22,7 @@ func TestConfiguredStateVocabulary(t *testing.T) {
 		t.Fatalf("state when = %v", rewritten)
 	}
 
-	primary := []neko.Subject{{Kind: "primary", TypeName: "NPC"}}
+	primary := []neko.Subject{{Kind: "primary", TypeName: "角色基础"}}
 	condition, _ := RewriteCondition("疼痛 > 95", primary)
 	if condition != "{e}.状况.疼痛 > 95" {
 		t.Fatalf("mapped state field = %q", condition)
@@ -43,7 +43,7 @@ func TestConfiguredGlobalVocabulary(t *testing.T) {
 	}
 	t.Cleanup(config.Reset)
 
-	primary := []neko.Subject{{Kind: "primary", TypeName: "NPC"}}
+	primary := []neko.Subject{{Kind: "primary", TypeName: "角色基础"}}
 	global, _ := RewriteCondition("宇宙.天气 > 1", primary)
 	if global != "宇宙.天气 > 1" {
 		t.Fatalf("configured global = %q", global)
@@ -54,7 +54,7 @@ func TestConfiguredGlobalVocabulary(t *testing.T) {
 	}
 
 	rule, err := CompileRule(neko.RuleDef{
-		Subjects: []neko.Subject{{Kind: "primary", TypeName: "NPC"}},
+		Subjects: []neko.Subject{{Kind: "primary", TypeName: "角色基础"}},
 		Actions: []neko.ActionOp{
 			{Op: "emit", Value: "信号"},
 			{Op: "append", Entity: "基地", Value: "雨"},

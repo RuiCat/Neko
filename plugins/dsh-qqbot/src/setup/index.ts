@@ -282,7 +282,7 @@ export function registerBotCredentialRoutes(
         if (ok) {
           const entity = typeof config.entity === 'string' ? config.entity : undefined;
           if (entity !== undefined && entity.trim() !== '') {
-            void ensureBridgeEntity(ctx, entity, 'NPC', logger);
+            void ensureBridgeEntity(ctx, entity, '角色基础', logger);
           }
         }
         return ok;

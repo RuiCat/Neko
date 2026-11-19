@@ -50,15 +50,15 @@ func summarize(ast *ScriptAST) astSummary {
 // TestScanBlocksKinds checks every block kind, its name and its start line.
 func TestScanBlocksKinds(t *testing.T) {
 	text := strings.Join([]string{
-		`@Data NPC:猫猫 {`,
+		`@定义 角色基础:猫猫 {`,
 		`  "名字": "猫",`,
 		`  "链接": "http://example.com//x"`,
 		`}`,
-		`#规则: $[NPC].a < 1 → $.b = 2`,
+		`#规则: $[角色基础].a < 1 → $.b = 2`,
 		`@事件:变化 { 条件: 变化量 > 0 }`,
 		`@func 加(a: int) -> int { 返回值 }`,
 		`#世界观: 猫猫世界`,
-		`@规则[$[NPC]] { 条件: true`,
+		`@规则[$[角色基础]] { 条件: true`,
 		`动作: $.a = 1`,
 		`}`,
 	}, "\n")
@@ -68,12 +68,12 @@ func TestScanBlocksKinds(t *testing.T) {
 		name string
 		line int
 	}{
-		{"at_data", "NPC:猫猫", 1},
-		{"hash_rule", "#规则: $[NPC].a < 1 → $.b = 2", 5},
+		{"at_data", "角色基础:猫猫", 1},
+		{"hash_rule", "#规则: $[角色基础].a < 1 → $.b = 2", 5},
 		{"at_event", "变化", 6},
 		{"at_func", "加(a: int) -> int", 7},
 		{"meta", "#世界观: 猫猫世界", 8},
-		{"at_rule", "[$[NPC]]", 9},
+		{"at_rule", "[$[角色基础]]", 9},
 	}
 	if len(blocks) != len(want) {
 		t.Fatalf("got %d blocks, want %d: %+v", len(blocks), len(want), blocks)
@@ -91,7 +91,7 @@ func TestScanBlocksKinds(t *testing.T) {
 
 // TestParseDataDef checks JSON data blocks, number typing and comment stripping.
 func TestParseDataDef(t *testing.T) {
-	ast := Parse("@Data 猫猫 {\n  \"名字\": \"猫\", // 名字\n  \"数\": 3\n}")
+	ast := Parse("@定义 猫猫 {\n  \"名字\": \"猫\", // 名字\n  \"数\": 3\n}")
 	if len(ast.Errors) != 0 {
 		t.Fatalf("unexpected errors: %v", ast.Errors)
 	}
@@ -112,7 +112,7 @@ func TestParseDataDef(t *testing.T) {
 
 // TestParseHashRule checks the one-line rule form.
 func TestParseHashRule(t *testing.T) {
-	ast := Parse("#规则: $[NPC].身体.体力 < 20 → $.状态.疲劳 = true")
+	ast := Parse("#规则: $[角色基础].身体.体力 < 20 → $.状态.疲劳 = true")
 	if len(ast.Errors) != 0 {
 		t.Fatalf("unexpected errors: %v", ast.Errors)
 	}
@@ -120,7 +120,7 @@ func TestParseHashRule(t *testing.T) {
 		t.Fatalf("got %d rules, want 1", len(ast.RuleDefs))
 	}
 	rule := ast.RuleDefs[0]
-	if len(rule.Conditions) != 1 || rule.Conditions[0] != "$[NPC].身体.体力 < 20" {
+	if len(rule.Conditions) != 1 || rule.Conditions[0] != "$[角色基础].身体.体力 < 20" {
 		t.Errorf("conditions = %#v", rule.Conditions)
 	}
 	if len(rule.Actions) != 1 {
@@ -130,7 +130,7 @@ func TestParseHashRule(t *testing.T) {
 	if action.Op != "set" || action.Target != "状态.疲劳" || action.Value != true {
 		t.Errorf("action = %+v", action)
 	}
-	if rule.LineForm == nil || *rule.LineForm != "#规则: $[NPC].身体.体力 < 20 → $.状态.疲劳 = true" {
+	if rule.LineForm == nil || *rule.LineForm != "#规则: $[角色基础].身体.体力 < 20 → $.状态.疲劳 = true" {
 		t.Errorf("line form = %v", rule.LineForm)
 	}
 }
@@ -138,13 +138,13 @@ func TestParseHashRule(t *testing.T) {
 // TestParseRuleLegacyBody checks the key:value rule body form, including branches.
 func TestParseRuleLegacyBody(t *testing.T) {
 	text := strings.Join([]string{
-		`@规则[$[NPC]] {`,
+		`@规则[$[角色基础]] {`,
 		`  优先级: 100`,
 		`  状态: 身体.体力 < 10`,
-		`  条件: $[NPC].身体.体力 < 20`,
+		`  条件: $[角色基础].身体.体力 < 20`,
 		`  动作: $.状态.疲劳 = true`,
 		`  分支: {`,
-		`    $[NPC].身体.体力 < 5 → 状态 = 昏厥`,
+		`    $[角色基础].身体.体力 < 5 → 状态 = 昏厥`,
 		`    默认 → 状态 = 清醒`,
 		`  }`,
 		`}`,
@@ -163,7 +163,7 @@ func TestParseRuleLegacyBody(t *testing.T) {
 	if rule.StateWhen == nil || *rule.StateWhen != "身体.体力 < 10" {
 		t.Errorf("state_when = %v", rule.StateWhen)
 	}
-	if len(rule.Conditions) != 1 || rule.Conditions[0] != "$[NPC].身体.体力 < 20" {
+	if len(rule.Conditions) != 1 || rule.Conditions[0] != "$[角色基础].身体.体力 < 20" {
 		t.Errorf("conditions = %#v", rule.Conditions)
 	}
 	if len(rule.Actions) != 1 || rule.Actions[0].Target != "状态.疲劳" {
@@ -172,7 +172,7 @@ func TestParseRuleLegacyBody(t *testing.T) {
 	if len(rule.Branches) != 2 {
 		t.Fatalf("branches = %+v", rule.Branches)
 	}
-	if rule.Branches[0].Condition == nil || *rule.Branches[0].Condition != "$[NPC].身体.体力 < 5" {
+	if rule.Branches[0].Condition == nil || *rule.Branches[0].Condition != "$[角色基础].身体.体力 < 5" {
 		t.Errorf("branch 0 condition = %v", rule.Branches[0].Condition)
 	}
 	if got := rule.Branches[0].State["身体"]; got != "昏厥" {
@@ -186,8 +186,8 @@ func TestParseRuleLegacyBody(t *testing.T) {
 // TestParseRuleConditionForm checks `条件 { 动作 }` including in-sets and {e}.
 func TestParseRuleConditionForm(t *testing.T) {
 	text := strings.Join([]string{
-		`@规则[$[NPC]] {`,
-		`  $[NPC].行为.主人行为 in {无} ∨ $[NPC].标记.停止 == "停止触摸" {`,
+		`@规则[$[角色基础]] {`,
+		`  $[角色基础].行为.主人行为 in {无} ∨ $[角色基础].标记.停止 == "停止触摸" {`,
 		`    动作: $.状态.触发 = true`,
 		`  }`,
 		`}`,
@@ -200,7 +200,7 @@ func TestParseRuleConditionForm(t *testing.T) {
 		t.Fatalf("got %d rules, want 1", len(ast.RuleDefs))
 	}
 	rule := ast.RuleDefs[0]
-	wantCond := `$[NPC].行为.主人行为 in {无} ∨ $[NPC].标记.停止 == "停止触摸"`
+	wantCond := `$[角色基础].行为.主人行为 in {无} ∨ $[角色基础].标记.停止 == "停止触摸"`
 	if len(rule.Conditions) != 1 || rule.Conditions[0] != wantCond {
 		t.Errorf("conditions = %#v, want %q", rule.Conditions, wantCond)
 	}
@@ -212,9 +212,9 @@ func TestParseRuleConditionForm(t *testing.T) {
 // TestParseMultiIf checks a block holding several comma-separated if branches.
 func TestParseMultiIf(t *testing.T) {
 	text := strings.Join([]string{
-		`@规则[$[NPC]] {`,
-		`  $[NPC].身体.体力 < 20 { $.状态.触发 = "低" },`,
-		`  $[NPC].身体.体力 >= 80 { $.状态.触发 = "高" }`,
+		`@规则[$[角色基础]] {`,
+		`  $[角色基础].身体.体力 < 20 { $.状态.触发 = "低" },`,
+		`  $[角色基础].身体.体力 >= 80 { $.状态.触发 = "高" }`,
 		`}`,
 	}, "\n")
 	ast := Parse(text)
@@ -224,10 +224,10 @@ func TestParseMultiIf(t *testing.T) {
 	if len(ast.RuleDefs) != 2 {
 		t.Fatalf("got %d rules, want 2", len(ast.RuleDefs))
 	}
-	if got := ast.RuleDefs[0].Conditions[0]; got != "$[NPC].身体.体力 < 20" {
+	if got := ast.RuleDefs[0].Conditions[0]; got != "$[角色基础].身体.体力 < 20" {
 		t.Errorf("rule 0 condition = %q", got)
 	}
-	if got := ast.RuleDefs[1].Conditions[0]; got != "$[NPC].身体.体力 >= 80" {
+	if got := ast.RuleDefs[1].Conditions[0]; got != "$[角色基础].身体.体力 >= 80" {
 		t.Errorf("rule 1 condition = %q", got)
 	}
 	if got := ast.RuleDefs[0].Actions[0].Value; got != "低" {
@@ -238,9 +238,9 @@ func TestParseMultiIf(t *testing.T) {
 // TestParseMulticond checks @多规则 child-rule blocks.
 func TestParseMulticond(t *testing.T) {
 	text := strings.Join([]string{
-		`@多规则[$[NPC]] {`,
+		`@多规则[$[角色基础]] {`,
 		`  规则1: {`,
-		`    条件: $[NPC].a > 1`,
+		`    条件: $[角色基础].a > 1`,
 		`    动作: $.b = 1`,
 		`  },`,
 		`  规则2: { 动作: $.c = 2 }`,
@@ -253,10 +253,10 @@ func TestParseMulticond(t *testing.T) {
 	if len(ast.RuleDefs) != 2 {
 		t.Fatalf("got %d rules, want 2: %+v", len(ast.RuleDefs), ast.RuleDefs)
 	}
-	if len(ast.RuleDefs[0].Subjects) != 1 || ast.RuleDefs[0].Subjects[0].TypeName != "NPC" {
+	if len(ast.RuleDefs[0].Subjects) != 1 || ast.RuleDefs[0].Subjects[0].TypeName != "角色基础" {
 		t.Errorf("subjects = %+v", ast.RuleDefs[0].Subjects)
 	}
-	if len(ast.RuleDefs[0].Conditions) != 1 || ast.RuleDefs[0].Conditions[0] != "$[NPC].a > 1" {
+	if len(ast.RuleDefs[0].Conditions) != 1 || ast.RuleDefs[0].Conditions[0] != "$[角色基础].a > 1" {
 		t.Errorf("rule 0 conditions = %#v", ast.RuleDefs[0].Conditions)
 	}
 	if len(ast.RuleDefs[1].Actions) != 1 || ast.RuleDefs[1].Actions[0].Target != "c" {
@@ -267,7 +267,7 @@ func TestParseMulticond(t *testing.T) {
 // TestParseRuleRange checks threshold-bucket @规则 blocks.
 func TestParseRuleRange(t *testing.T) {
 	text := strings.Join([]string{
-		`@规则[$[NPC]]:$.身体.体温 {`,
+		`@规则[$[角色基础]]:$.身体.体温 {`,
 		`  36: { 动作: $.状态.正常 = true },`,
 		`  38.5: { 动作: $.状态.发烧 = true },`,
 		`  =40: { 动作: $.状态.高烧 = true }`,
@@ -285,9 +285,9 @@ func TestParseRuleRange(t *testing.T) {
 		t.Fatalf("got %d rules, want 3: %+v", len(ast.RuleDefs), ast.RuleDefs)
 	}
 	want := []string{
-		"$[NPC].身体.体温 <= 36",
-		"$[NPC].身体.体温 > 36 ∧ $[NPC].身体.体温 <= 38.5",
-		"$[NPC].身体.体温 == 40",
+		"$[角色基础].身体.体温 <= 36",
+		"$[角色基础].身体.体温 > 36 ∧ $[角色基础].身体.体温 <= 38.5",
+		"$[角色基础].身体.体温 == 40",
 	}
 	for i, cond := range want {
 		if got := ast.RuleDefs[i].Conditions[0]; got != cond {
@@ -341,7 +341,7 @@ func TestParseEventFuncMeta(t *testing.T) {
 // TestFailSoft checks that one broken block leaves the following blocks parsed.
 func TestFailSoft(t *testing.T) {
 	text := strings.Join([]string{
-		`@Data 坏 { 不是 JSON }`,
+		`@定义 坏 { 不是 JSON }`,
 		`#规则: a → $.b = 1`,
 		`@func 坏头 { x }`,
 		`#规则: c → $.d = 2`,
@@ -407,8 +407,8 @@ var expectedVectors = map[string][5]int{
 // knownErrorFiles are corpus scripts the Python parser also rejects (invalid
 // JSON bodies); every other script must parse with an empty AST.Errors.
 var knownErrorFiles = map[string]string{
-	"behavior/cat-repro-cycle-advance.neko": "unquoted keys in the @Data JSON object",
-	"core/cat_anatomy_eversion.neko":        "YAML-like @Data body instead of JSON",
+	"behavior/cat-repro-cycle-advance.neko": "unquoted keys in the @定义 JSON object",
+	"core/cat_anatomy_eversion.neko":        "YAML-like @定义 body instead of JSON",
 }
 
 // collectCorpus returns every .neko path under corpusDir, sorted.

@@ -10,7 +10,7 @@ import (
 	"github.com/RuiCat/Neko/internal/entity"
 )
 
-const baseScript = `@定义 NPC {
+const baseScript = `@定义 角色基础 {
   "身体": {"体力": 75}
 }
 `

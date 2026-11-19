@@ -10,7 +10,7 @@ type Pos struct {
 
 // Block is one top-level block produced by the lexer.
 type Block struct {
-	Kind string `json:"kind"` // at_data | at_data_legacy | at_rule | at_event | at_func | hash_rule | meta
+	Kind string `json:"kind"` // at_data | at_instance | at_desc | at_unknown | at_rule | at_event | at_func | hash_rule | meta
 	Name string `json:"name"`
 	Body string `json:"body"`
 	Line int    `json:"line"`
@@ -19,7 +19,7 @@ type Block struct {
 // Pos returns the block position.
 func (b Block) Pos() Pos { return Pos{Line: b.Line} }
 
-// DataDef is an @Data entity template definition (or an @data non-entity block).
+// DataDef is one @定义/@实体 template definition (IsEntity) or one @实例 data block.
 // Parents is non-empty only for @实体 blocks: the templates merged before this
 // one, in declaration order.
 type DataDef struct {

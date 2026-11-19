@@ -13,7 +13,7 @@ import (
 func TestRecordTurnCapturesSnapshot(t *testing.T) {
 	cat := &entity.Entity{
 		ID:   "猫猫",
-		Type: "NPC",
+		Type: "角色基础",
 		Data: map[string]any{"状态": map[string]any{"情绪": "平静"}},
 	}
 	now := time.Date(2026, 11, 1, 21, 0, 0, 0, time.Local)

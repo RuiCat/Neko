@@ -12,7 +12,7 @@ import (
 func judgeFixture(t *testing.T) (*StateMachine, *entity.Entity) {
 	t.Helper()
 	store := entity.NewStore(t.TempDir())
-	ent, err := store.Create("猫猫", "NPC", map[string]any{"状态": map[string]any{"情绪": "平静"}}, nil)
+	ent, err := store.Create("猫猫", "角色基础", map[string]any{"状态": map[string]any{"情绪": "平静"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

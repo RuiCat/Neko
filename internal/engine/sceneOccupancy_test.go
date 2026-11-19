@@ -24,7 +24,7 @@ func newOccupancyStore(t *testing.T) *entity.Store {
 		}
 	}
 	for _, npcID := range []string{"猫猫", "梦梦"} {
-		if _, err := store.Create(npcID, "NPC", map[string]any{
+		if _, err := store.Create(npcID, "角色基础", map[string]any{
 			"位置": map[string]any{"场景": "S001-LR"},
 		}, nil); err != nil {
 			t.Fatal(err)

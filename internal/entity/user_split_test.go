@@ -13,7 +13,7 @@ func TestUserEntitiesSplit(t *testing.T) {
 	if err := store.Load(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Create("猫猫", "NPC:猫猫", nil, nil); err != nil {
+	if _, err := store.Create("猫猫", "角色基础:猫猫", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Create("场景", "场景", nil, nil); err != nil {
@@ -46,7 +46,7 @@ func TestUserEntitiesSplit(t *testing.T) {
 
 func TestMigrateUserEntitiesFromLegacy(t *testing.T) {
 	dir := t.TempDir()
-	legacy := `{"version":1,"entities":{"猫猫":{"id":"猫猫","type":"NPC:猫猫","keys":{},"data":{}}}}`
+	legacy := `{"version":1,"entities":{"猫猫":{"id":"猫猫","type":"角色基础:猫猫","keys":{},"data":{}}}}`
 	if err := os.WriteFile(filepath.Join(dir, "entities.json"), []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
 	}

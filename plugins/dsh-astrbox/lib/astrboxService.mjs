@@ -37,10 +37,10 @@ function isPlainObject(value) {
 
 /**
  * @param {unknown} type 实体类型
- * @returns {boolean} 是否是 NPC 实体（K8：只暴露 `type.startsWith('NPC')`）
+ * @returns {boolean} 是否是角色实体（K8：只暴露 `type.startsWith('角色基础')`）
  */
 function isNpcType(type) {
-  return typeof type === 'string' && type.startsWith('NPC')
+  return typeof type === 'string' && type.startsWith('角色基础')
 }
 
 /**

@@ -24,7 +24,7 @@ func TestPathSepsisAndShockDeathScripts(t *testing.T) {
 
 	create := func(id string) *entity.Entity {
 		t.Helper()
-		if _, err := store.Create(id, "NPC", map[string]any{"基础": map[string]any{"名字": id, "年龄": 20}}, nil); err != nil {
+		if _, err := store.Create(id, "角色基础", map[string]any{"基础": map[string]any{"名字": id, "年龄": 20}}, nil); err != nil {
 			t.Fatalf("create %s: %v", id, err)
 		}
 		return store.Get(id)

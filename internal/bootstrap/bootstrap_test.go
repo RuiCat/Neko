@@ -9,7 +9,7 @@ import (
 func TestNewAssemblesRuntime(t *testing.T) {
 	dataDir := t.TempDir()
 	scriptsDir := t.TempDir()
-	entities := `{"version":1,"entities":{"猫猫":{"type":"NPC","data":{"身体":{"体力":50}}}}}`
+	entities := `{"version":1,"entities":{"猫猫":{"type":"角色基础","data":{"身体":{"体力":50}}}}}`
 	if err := os.WriteFile(filepath.Join(dataDir, "entities.json"), []byte(entities), 0o644); err != nil {
 		t.Fatalf("write entities: %v", err)
 	}

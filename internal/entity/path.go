@@ -58,7 +58,7 @@ func ParseEntityRef(ref string) (Selector, error) {
 	return Selector{}, &PathNotFoundError{Message: fmt.Sprintf("无法解析实体引用: '%s'", ref)}
 }
 
-// ParseEntityPath splits "NPC[*].身体.体力" into selector and field parts.
+// ParseEntityPath splits "角色基础[*].身体.体力" into selector and field parts.
 func ParseEntityPath(path string) (Selector, []string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {

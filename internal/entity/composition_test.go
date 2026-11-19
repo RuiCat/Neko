@@ -14,16 +14,16 @@ func TestCompositionCreateAndPersist(t *testing.T) {
 	if err := store.Load(); err != nil {
 		t.Fatal(err)
 	}
-	store.AddTemplate("NPC:猫科", map[string]any{"毛色": "未知"})
-	store.AddTemplate("NPC:成年", map[string]any{"年龄": float64(18)})
-	store.SetTemplateParents("NPC:猫猫", []string{"NPC:猫科", "NPC:成年"})
-	store.AddTemplate("NPC:猫猫", map[string]any{"体型": "幼"})
-	for _, typeName := range []string{"NPC:猫科", "NPC:成年", "NPC:猫猫"} {
+	store.AddTemplate("角色基础:猫科", map[string]any{"毛色": "未知"})
+	store.AddTemplate("角色基础:成年", map[string]any{"年龄": float64(18)})
+	store.SetTemplateParents("角色基础:猫猫", []string{"角色基础:猫科", "角色基础:成年"})
+	store.AddTemplate("角色基础:猫猫", map[string]any{"体型": "幼"})
+	for _, typeName := range []string{"角色基础:猫科", "角色基础:成年", "角色基础:猫猫"} {
 		if err := store.SaveTemplateFile(typeName); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, "templates", "NPC_猫猫.parents.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "templates", "角色基础_猫猫.parents.json")); err != nil {
 		t.Fatalf("parents sidecar missing: %v", err)
 	}
 
@@ -31,15 +31,15 @@ func TestCompositionCreateAndPersist(t *testing.T) {
 	if err := reloaded.Load(); err != nil {
 		t.Fatal(err)
 	}
-	if got := reloaded.GetTemplateParents("NPC:猫猫"); len(got) != 2 || got[0] != "NPC:猫科" {
+	if got := reloaded.GetTemplateParents("角色基础:猫猫"); len(got) != 2 || got[0] != "角色基础:猫科" {
 		t.Fatalf("reloaded parents = %v", got)
 	}
-	order := reloaded.ResolveOrder("NPC:猫猫")
-	if len(order) != 3 || order[len(order)-1] != "NPC:猫猫" {
+	order := reloaded.ResolveOrder("角色基础:猫猫")
+	if len(order) != 3 || order[len(order)-1] != "角色基础:猫猫" {
 		t.Fatalf("order = %v", order)
 	}
 
-	ent, err := reloaded.Create("猫猫", "NPC:猫猫", nil, nil)
+	ent, err := reloaded.Create("猫猫", "角色基础:猫猫", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

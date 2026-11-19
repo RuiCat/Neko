@@ -56,80 +56,16 @@ func ScanBlocks(text string) []Block {
 			if strings.HasPrefix(line, "@定义") {
 				kind = "at_data"
 			}
-			rest := strings.TrimSpace(runeSliceFrom(line, 3))
-			collected := rest
-			if findRune(rest, '{') < 0 {
-				j := i + 1
-				for j < n && !strings.ContainsRune(lines[j], '{') {
-					collected += " " + strings.TrimSpace(stripComment(lines[j]))
-					j++
-				}
-				if j >= n {
-					blocks = append(blocks, Block{Kind: kind, Name: strings.TrimSpace(collected), Line: lineNo})
-					i = n
-					break
-				}
-				collected += " " + strings.TrimSpace(strings.SplitN(strings.TrimSpace(stripComment(lines[j])), "{", 2)[0])
-				i = j
-			}
-			name := strings.TrimSpace(strings.SplitN(collected, "{", 2)[0])
-			fullText := joinFrom(lines, i)
-			open := findRune(fullText, '{')
-			if open < 0 {
-				blocks = append(blocks, Block{Kind: kind, Name: name, Line: lineNo})
-				i++
-				continue
-			}
-			closeIdx := findBalanced(fullText, open, '{', '}')
-			if closeIdx < 0 {
-				blocks = append(blocks, Block{Kind: kind, Name: name, Body: runeSliceFrom(fullText, open), Line: lineNo})
-				i = n
-				break
-			}
-			body := stripCommentsPerLine(runeSlice(fullText, open, closeIdx+1))
-			blocks = append(blocks, Block{Kind: kind, Name: name, Body: body, Line: lineNo})
-			i += blockAdvance(fullText, open, closeIdx)
+			block, next := scanJsonBlock(lines, i, 3, kind)
+			blocks = append(blocks, block)
+			i = next
 			continue
 		}
 
-		if strings.HasPrefix(line, "@Data") || strings.HasPrefix(line, "@data") {
-			kind := "at_data_legacy"
-			if strings.HasPrefix(line, "@Data") {
-				kind = "at_data"
-			}
-			rest := strings.TrimSpace(runeSliceFrom(line, 5))
-			collected := rest
-			if findRune(rest, '{') < 0 {
-				j := i + 1
-				for j < n && !strings.ContainsRune(lines[j], '{') {
-					collected += " " + strings.TrimSpace(stripComment(lines[j]))
-					j++
-				}
-				if j >= n {
-					blocks = append(blocks, Block{Kind: kind, Name: strings.TrimSpace(collected), Line: lineNo})
-					i = n
-					break
-				}
-				collected += " " + strings.TrimSpace(strings.SplitN(strings.TrimSpace(stripComment(lines[j])), "{", 2)[0])
-				i = j
-			}
-			name := strings.TrimSpace(strings.SplitN(collected, "{", 2)[0])
-			fullText := joinFrom(lines, i)
-			open := findRune(fullText, '{')
-			if open < 0 {
-				blocks = append(blocks, Block{Kind: kind, Name: name, Line: lineNo})
-				i++
-				continue
-			}
-			closeIdx := findBalanced(fullText, open, '{', '}')
-			if closeIdx < 0 {
-				blocks = append(blocks, Block{Kind: kind, Name: name, Body: runeSliceFrom(fullText, open), Line: lineNo})
-				i = n
-				break
-			}
-			body := stripCommentsPerLine(runeSlice(fullText, open, closeIdx+1))
-			blocks = append(blocks, Block{Kind: kind, Name: name, Body: body, Line: lineNo})
-			i += blockAdvance(fullText, open, closeIdx)
+		if strings.HasPrefix(line, "@实例") {
+			block, next := scanJsonBlock(lines, i, 3, "at_instance")
+			blocks = append(blocks, block)
+			i = next
 			continue
 		}
 
@@ -260,6 +196,18 @@ func ScanBlocks(text string) []Block {
 			continue
 		}
 
+		// 任何未被上面认领的 `@关键字` 都是错误：静默跳过会让拼错或已移除的
+		// 关键字（@Data / @data / @dta …）完全无声地丢掉整块内容。
+		if strings.HasPrefix(line, "@") {
+			block, next := scanJsonBlock(lines, i, 1, "at_unknown")
+			blocks = append(blocks, block)
+			if next <= i {
+				next = i + 1
+			}
+			i = next
+			continue
+		}
+
 		if strings.HasPrefix(line, "#规则") {
 			blocks = append(blocks, Block{Kind: "hash_rule", Name: line, Line: lineNo})
 			i++
@@ -275,6 +223,43 @@ func ScanBlocks(text string) []Block {
 		i++
 	}
 	return blocks
+}
+
+// scanJsonBlock collects one `@关键字 名称 { ... }` block whose header may span
+// lines and whose body is one balanced { ... } JSON object. headerRunes is how
+// many runes the `@关键字` prefix occupies. @定义 / @描述 / @实例 and unknown
+// keywords all share this shape, so they share one scanner.
+func scanJsonBlock(lines []string, start, headerRunes int, kind string) (Block, int) {
+	n := len(lines)
+	lineNo := start + 1
+	line := strings.TrimSpace(stripComment(lines[start]))
+	rest := strings.TrimSpace(runeSliceFrom(line, headerRunes))
+	collected := rest
+	anchor := start
+	if findRune(rest, '{') < 0 {
+		j := start + 1
+		for j < n && !strings.ContainsRune(lines[j], '{') {
+			collected += " " + strings.TrimSpace(stripComment(lines[j]))
+			j++
+		}
+		if j >= n {
+			return Block{Kind: kind, Name: strings.TrimSpace(collected), Line: lineNo}, n
+		}
+		collected += " " + strings.TrimSpace(strings.SplitN(strings.TrimSpace(stripComment(lines[j])), "{", 2)[0])
+		anchor = j
+	}
+	name := strings.TrimSpace(strings.SplitN(collected, "{", 2)[0])
+	fullText := joinFrom(lines, anchor)
+	open := findRune(fullText, '{')
+	if open < 0 {
+		return Block{Kind: kind, Name: name, Line: lineNo}, anchor + 1
+	}
+	closeIdx := findBalanced(fullText, open, '{', '}')
+	if closeIdx < 0 {
+		return Block{Kind: kind, Name: name, Body: runeSliceFrom(fullText, open), Line: lineNo}, n
+	}
+	body := stripCommentsPerLine(runeSlice(fullText, open, closeIdx+1))
+	return Block{Kind: kind, Name: name, Body: body, Line: lineNo}, anchor + blockAdvance(fullText, open, closeIdx)
 }
 
 // blockAdvance returns how many source lines a balanced { ... } block spans,
