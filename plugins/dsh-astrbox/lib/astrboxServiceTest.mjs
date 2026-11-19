@@ -1,5 +1,5 @@
 /**
- * K2 `astrboxBridge` 服务：NPC 实体目录过滤、人设文本冻结格式与截断、同步 getter 永不抛错、
+ * K2 `astrboxBridge` 服务：角色实体目录过滤、人设文本冻结格式与截断、同步 getter 永不抛错、
  * TTL 缓存与 single-flight、refresh() 重拉目录并预取绑定实体人设；另覆盖 K5 新配置键校验。
  */
 import assert from 'node:assert/strict'
@@ -59,15 +59,15 @@ function personaValues() {
   }
 }
 
-test('entities()：只暴露 type.startsWith(NPC) 的实体，保序去重且返回副本', async () => {
+test('entities()：只暴露 type.startsWith(角色基础) 的实体，保序去重且返回副本', async () => {
   const client = fakeClient({
     entitiesBody: {
       entities: [
-        { id: '猫猫', type: 'NPC猫' },
+        { id: '猫猫', type: '角色基础:猫' },
         { id: '场景', type: '场景' },
-        { id: 'helper', type: 'NPC' },
-        { id: '猫猫', type: 'NPC' },
-        { id: '', type: 'NPC' },
+        { id: 'helper', type: '角色基础' },
+        { id: '猫猫', type: '角色基础' },
+        { id: '', type: '角色基础' },
         { id: 'bad' },
         null,
       ],
@@ -86,7 +86,7 @@ test('entities()：只暴露 type.startsWith(NPC) 的实体，保序去重且返
 
 test('entities()：/entities 失败不抛错、保留上一版目录并限频告警', async () => {
   const logger = fakeLogger()
-  const client = fakeClient({ entitiesBody: { entities: [{ id: '猫猫', type: 'NPC' }] } })
+  const client = fakeClient({ entitiesBody: { entities: [{ id: '猫猫', type: '角色基础' }] } })
   const host = createHostBridge({ client, config: { ...CONFIG, promptRefreshMs: 0 }, logger })
   host.entities()
   await nextMacroTask()
@@ -109,7 +109,7 @@ test('entities()：客户端没有 getEntities 时返回 [] 且不抛错', async
 
 test('persona() 同步返回 string：未就绪为 ""，refresh() 预取绑定实体后非空', async () => {
   const client = fakeClient({
-    entitiesBody: { entities: [{ id: '猫猫', type: 'NPC' }] },
+    entitiesBody: { entities: [{ id: '猫猫', type: '角色基础' }] },
     stateValues: { 猫猫: personaValues() },
   })
   const host = createHostBridge({
@@ -210,7 +210,7 @@ test('persona 拉取失败：返回 "" 不抛错，限频告警；refresh 不拒
 
 test('refresh()：重拉实体目录并预取绑定实体人设；绑定读取抛错不影响刷新', async () => {
   const client = fakeClient({
-    entitiesBody: { entities: [{ id: '猫猫', type: 'NPC' }] },
+    entitiesBody: { entities: [{ id: '猫猫', type: '角色基础' }] },
     stateValues: { 猫猫: personaValues(), 梦梦: { 种族: '猫' } },
   })
   let bindings = [{ botId: 'cat', cwd: '/srv/bots/cat', entity: '猫猫' }]
@@ -223,7 +223,7 @@ test('refresh()：重拉实体目录并预取绑定实体人设；绑定读取�
     ['猫猫'],
   )
 
-  client.entitiesBody = { entities: [{ id: '猫猫', type: 'NPC' }, { id: '梦梦', type: 'NPC' }] }
+  client.entitiesBody = { entities: [{ id: '猫猫', type: '角色基础' }, { id: '梦梦', type: '角色基础' }] }
   await host.refresh()
   assert.deepEqual(host.entities(), ['猫猫', '梦梦'])
 
@@ -268,7 +268,7 @@ test('K5 配置：人设路径是固定常量，personaMaxChars 仍可配置', (
 
 test('ensureEntity：不存在时按模板创建，并强制刷新实体目录', async () => {
   const calls = { created: [], entities: 0 }
-  let entitiesBody = { entities: [{ id: '猫猫', type: 'NPC' }] }
+  let entitiesBody = { entities: [{ id: '猫猫', type: '角色基础' }] }
   const client = {
     async getEntities() {
       calls.entities += 1
@@ -284,9 +284,9 @@ test('ensureEntity：不存在时按模板创建，并强制刷新实体目录',
     },
   }
   const bridge = createHostBridge({ client, config: CONFIG })
-  const result = await bridge.ensureEntity('梦梦', 'NPC')
+  const result = await bridge.ensureEntity('梦梦', '角色基础')
   assert.equal(result.created, true)
-  assert.deepEqual(calls.created, [['梦梦', 'NPC']])
+  assert.deepEqual(calls.created, [['梦梦', '角色基础']])
   assert.ok(bridge.entities().includes('梦梦'), '刷新后目录应包含新实体')
   bridge.dispose()
 })
@@ -295,7 +295,7 @@ test('ensureEntity：已存在时不重复创建（created=false）', async () =
   const calls = { created: 0 }
   const client = {
     async getEntities() {
-      return { entities: [{ id: '猫猫', type: 'NPC' }] }
+      return { entities: [{ id: '猫猫', type: '角色基础' }] }
     },
     async getState() {
       return { ok: true, values: {} }

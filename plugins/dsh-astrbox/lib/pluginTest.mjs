@@ -588,7 +588,7 @@ test('绑定 cwd 的会话事件带 entity 且不被 workspacePrefix 丢弃（K6
 test('astrboxBridge 服务：entities/persona/refresh 可读，refresh 后 persona 非空（K2/C3）', async (t) => {
   const { server, control } = await startBridgeServer()
   t.after(() => server.close())
-  control.entitiesBody = { entities: [{ id: '猫猫', type: 'NPC' }, { id: '梦梦', type: 'NPC' }] }
+  control.entitiesBody = { entities: [{ id: '猫猫', type: '角色基础' }, { id: '梦梦', type: '角色基础' }] }
   const values = {}
   for (const path of PERSONA_PATHS) values[path] = `值-${path}`
   values['种族'] = '猫'
