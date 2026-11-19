@@ -65,7 +65,7 @@ dsh-astrbox 插件 renderDelta：`- 交互.推送.消息:  → 猫猫想主人�
 | 前提 | 说明 |
 |---|---|
 | 插件订阅开启 | `subscriptionEnabled`（默认 `true`） |
-| 实体已绑定主会话 | `qqbotBots.bindings()` 条目需带 `entity` + `mainSessionId`；没有绑定不推（见 `docs/dsh-plugin.md`「NPC 实体绑定」） |
+| 实体已绑定主会话 | `qqbotBots.bindings()` 条目需带 `entity` + `mainSessionId`；没有绑定不推（见 `docs/dsh-plugin.md`「角色实体绑定」） |
 | 路径不是 noise | Observation 策略 `defaultTier=normal`，新路径默认 normal；若 `observation.json` 把 `交互.*` 设为 `noise` 则不会推送 |
 | 主会话在线 | 插件在 agent 离线时跳过该次推送（下个 tick 不补内容，按游标） |
 | 黑板通道需显式订阅 | 观测通道按绑定自动推；会话黑板必须 `astrbox_board op=subscribe scope=global` 才注入 |

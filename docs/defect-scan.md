@@ -168,7 +168,7 @@
 - 推理：`parseMulticond`/`parseRuleRange`/`parseMultiIf` 用裸花括号深度计数定位子块闭合，不像 `findBalanced`/`findActionBrace` 那样跳过字符串。动作值含字符串内不成对花括号（`x = "a}b"`）时边界错位，后续规则被吞或错切分。
 - 建议：统一封装 `scanBalanced(rs, start)` 复用字符串跳过逻辑。
 
-### M16. CompileScript 同名 @Data 类型直接覆盖丢字段（疑似）
+### M16. CompileScript 同名 @定义 类型直接覆盖丢字段（疑似）
 - 位置：`internal/compiler/compiler.go:78-84`
 - 推理：`result.Templates[def.TypeName] = expanded` 直接覆盖；而 `Store.AddTemplate` 对同名模板是 `DeepMerge`。若同一脚本重复定义同名类型，编译阶段覆盖丢字段，与存储阶段合并预期相悖。是否构成缺陷取决于「编译产物是否还会经 AddTemplate 再合并」及「是否允许重复定义」——标疑似。
 - 建议：确认重复定义契约；若允许，编译阶段同样按 DeepMerge 累积。
@@ -194,7 +194,7 @@
 | L13 | `internal/monitor/api/health.go:16-21` | `/health` 无 token 形态泄露 dataDir/scriptsDir 绝对路径 + PID | 无鉴权形态脱敏或仅在有 token 时返回 |
 | L14 | `internal/neko/parserRule.go:218-229` | `findActionBrace` 不处理反斜杠转义引号（与 findBalanced 不一致） | 处理 `\` 转义 |
 | L15 | `internal/neko/lexer.go:54-66` | 多行名续行收集后 `name` 仍取首行，续行被丢弃 | 找到 `{` 时用 `collected` 作为 name |
-| L16 | `internal/entity/path.go:109-113` | `BindSelectorToID` 不剥离类型前缀，`"NPC[*].x"` 产出畸形路径（当前无调用，疑似） | 替换 `(TYPE)?[*].` 整体或明确契约 |
+| L16 | `internal/entity/path.go:109-113` | `BindSelectorToID` 不剥离类型前缀，`"(类型)[*].x"` 产出畸形路径（当前无调用，疑似） | 替换 `(TYPE)?[*].` 整体或明确契约 |
 | L17 | `internal/neko/parseScalar.go:62-72` | 超 int64 整数字面量退化 float64 丢精度（Python int 任意精度） | 超大整数保留字符串或 math/big |
 | L18 | `internal/chat/chat.go:187` | `summarize` 按字节 `trimmed[:120]` 截断，会劈开 UTF-8 多字节字符 | 用 `[]rune` 截断 |
 | L19 | `internal/chat/chat.go:154` | `json.Marshal` 错误被忽略，补偿包静默为空注入 prompt | 处理 Marshal 错误 |
@@ -254,7 +254,7 @@ go test -race ./internal/engine/... ./internal/control/... ./internal/monitor/..
 | L19 | 补偿包序列化失败改为 log + 明确占位 JSON | `go test ./internal/chat` |
 | M12 | Save 两个实体文件先各自 Marshal 成功再写 | `go test ./internal/entity` |
 | H2（模板分支） | 模板 / 父列表解析失败改为 log，不再静默跳过 | 全量实体测试 |
-| M16 | 同一脚本重复 `@Data` 改为编译错误（原静默覆盖） | `TestCompileDuplicateDataRejected` |
+| M16 | 同一脚本重复 `@定义` 改为编译错误（原静默覆盖） | `TestCompileDuplicateDataRejected` |
 
 ### 复核后确认无需修复
 

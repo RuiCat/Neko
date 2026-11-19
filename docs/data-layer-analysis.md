@@ -53,7 +53,7 @@
 |---|---|---|---|
 | G1 | **无迁移机制** | 旧实体拿不到 12 个内核字段（`基础/代谢/循环/器官/伤害/…`），首 tick 会把函数名写进字段（已在探针复现） | `docs/neko-semantics.md:53,190` |
 | G2 | 模板双源 | `data/templates/*.json` 与 `scripts/**/@定义` 可能漂移；重放不写模板文件 | `docs/ARCHITECTURE.md` 启动流程 |
-| G3 | 新旧字段并存 | `NPC.json` 有 40+ 旧组，新内核是另一套顶层组；无所有权表校验 | `data/templates/NPC.json` |
+| G3 | 新旧字段并存 | `角色基础.json` 有 40+ 旧组，新内核是另一套顶层组；无所有权表校验 | `data/templates/角色基础.json` |
 | G4 | 创建不初始化 | `entity_create` 只合并模板；B 层初始化要等第一次 tick | `baseInitTick.neko` |
 | G5 | 投影未覆盖新字段 | `paths` 白名单仍是旧字段（`状态.情绪` 等），`角色状态.*`/`伤害.*` 未投 | `prompt.mjs:4` |
 | G6 | 查询无能力筛选 | 只能按类型/字段，不能「所有组合了代谢内核的实体」 | `entity_query` 契约 |
@@ -82,7 +82,7 @@ data/
   "schemaVersion": 2,
   "entities": {
     "猫猫": {
-      "type": "NPC:猫猫",
+      "type": "角色基础:猫猫",
       "keys": {},
       "data": {},
       "_meta": { "createdAt": "...", "updatedAt": "...", "templateHash": "..." }

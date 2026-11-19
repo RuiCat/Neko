@@ -15,7 +15,7 @@
 | L11 记忆 | 8400–8499 | `scripts/kernel/memory/` | `记忆内核` | `记忆.*` |
 
 同优先级按注册顺序；每层只写自己内核的字段（交易层写素材归属是唯一例外，见 §5）。
-所有内核都会加入 `@实体 NPC` 组合（`scripts/kernel/metabolism/metabolismAttach.neko`），由 Lead 统一接线。
+所有内核都会加入 `@实体 角色基础` 组合（`scripts/kernel/metabolism/metabolismAttach.neko`），由 Lead 统一接线。
 
 ## 1. L7 行动（`scripts/kernel/action/`）
 
@@ -174,7 +174,7 @@
 
 ## 8. 验证
 
-每层自带一个临时探针（`.local/probe-<层>/main.go`，不进版本库）：扫描 `scripts/`、建一个 NPC
+每层自带一个临时探针（`.local/probe-<层>/main.go`，不进版本库）：扫描 `scripts/`、建一个角色基础
 与所需素材、连续 tick，打印字段并按 §1–§5 的期望断言。集成验证由 Lead 在
 `.local/probe/main.go` 的 `cognition phase` 里做，最终以 `go run ./.local/probe` 输出为准。
 

@@ -97,7 +97,7 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `query` | string | 是 | `NPC[*]`（类型通配）/ `猫猫`（ID）/ `key:场景=客厅`（Key）/ `状态.身体=疲惫`（字段值） |
+| `query` | string | 是 | `角色基础[*]`（类型通配）/ `猫猫`（ID）/ `key:场景=客厅`（Key）/ `状态.身体=疲惫`（字段值） |
 
 返回 `{"query","count","entities":[{"id","type","keys","状态","身体"}]}`。
 
@@ -117,7 +117,7 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `scope` | string | 否 | `*`（默认）/ `NPC[*]` 等选择器 |
+| `scope` | string | 否 | `*`（默认）/ `角色基础[*]` 等选择器 |
 
 返回 `TickResult`（snake_case）：`tick_id`、`status`、`transitions[]`（`entity`/`rule`/`from`/`to`）、`conflicts[]`、`hint`。Tick 成功后服务端自动保存实体，并把结果追加到 `data/logs/state_YYYY-MM-DD.log`（保留 7 天）；日志行带 `snapshots`（本 tick 涉及实体的体力/身体状态/情绪）。
 

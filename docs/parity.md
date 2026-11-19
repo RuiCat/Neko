@@ -20,7 +20,7 @@ Python 原实现（`legacy/python-astrbox/`）是行为基线。本文件记录 
 
 ## 已对齐
 
-- `.neko` 词法/语法：`@Data`/`@data`/`@规则`/`#规则`/`@事件`/`@func`/元数据、多主体、`@多规则`、阈值分档、块内多 `if`、legacy `key: value`。
+- `.neko` 词法/语法：`@定义`/`@实例`/`@规则`/`#规则`/`@事件`/`@func`/元数据、多主体、`@多规则`、阈值分档、块内多 `if`、legacy `key: value`。
 - 编译：条件重写、裸字段映射、动作降级（set/add/append/emit）、分支与状态糖、注解展开、规则 id 显式指定。
 - 规则 id：复刻 Python 的 canonical repr（`match|subjects|when|branches`，含自动兜底分支的 `then: []`），186 个注册脚本逐 id 与 Python 比对一致（夹具 `internal/compiler/testdata/python_rule_ids.json`）。
 - 实体：模板继承链、点分路径、模板回退、选择器与 `key:`/字段查询、`entities.json` 原子保存。
@@ -74,7 +74,7 @@ Python 原实现（`legacy/python-astrbox/`）是行为基线。本文件记录 
 
 ## 已知数据特例
 
-- `cat-repro-cycle-advance.neko`：`@Data` 体内 JSON 键未加引号，Python/Go 都报 JSON 错误；后者仍解析出 1 条规则。
-- `cat_anatomy_eversion.neko`：`@Data` 体是 YAML 式文本，Python/Go 都报错；后者仍解析出 7 条规则。
+- `cat-repro-cycle-advance.neko`：`@定义` 体内 JSON 键未加引号，Python/Go 都报 JSON 错误；后者仍解析出 1 条规则。
+- `cat_anatomy_eversion.neko`：`@定义` 体是 YAML 式文本，Python/Go 都报错；后者仍解析出 7 条规则。
 
 两例均按 Python 的 fail-soft 语义处理，注册表把错误降级为 warning。

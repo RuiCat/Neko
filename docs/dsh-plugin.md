@@ -10,8 +10,8 @@
 - `plugins/dsh-astrbox/lib/*.mjs`：静态使用说明段；`agent/pre-step` 每轮至多注入一条 `[astrbox-state]`
   现状卡（`GET /v2/observations/state`）与一条 `[astrbox-compensation]` 补偿包（`GET /turn-context`：
   记忆/约束/情境/专家）；定时 `POST /tick`、`session/created` 与 `agent/turn-stopping`
-  的 `POST /session-event`；并向其它插件提供 `astrboxBridge` 服务（NPC 实体目录 / 实体人设 / 面板黑板，
-  见「NPC 实体绑定」与「状态变化推送」节）。
+  的 `POST /session-event`；并向其它插件提供 `astrboxBridge` 服务（角色实体目录 / 实体人设 / 面板黑板，
+  见「角色实体绑定」与「状态变化推送」节）。
   状态变化推送（Observation v2）：tick 成功后主会话按**实体游标**拉 `GET /v2/observations` 的 delta，
   用 `renderDelta` 渲染后推送，对话摘要随同一条消息附带；面板数据由桥接的 `GET /astrbox/blackboard`
   路由提供（数据源为 `/v2/observations/state`）。
@@ -189,7 +189,7 @@ dsh plugin --profile web add "link:$HOME/.dsh-neko/plugins/dsh-astrbox"
 > 该功能需要**重启 DSH**（控制面 Go 子进程要换成新二进制）；桥接的改动热重载即可，但旧控制面
 > 会忽略未知字段 `advanceMinutes`。
 
-## NPC 实体绑定（按会话 cwd 注入/回写）
+## 角色实体绑定（按会话 cwd 注入/回写）
 
 多机器人（`dsh-qqbot`）场景下，每个 bot 的会话有自己的 `cwd`；桥接按 `cwd` 解析「生效实体」，
 注入的现状卡与回写的 `session-event` 都落到该实体。绑定的唯一来源是 qqbot 提供的 cordis 服务
@@ -214,10 +214,10 @@ qqbot 没装、没启动或 HMR 空窗时，桥接照常工作。
 ### 实体不存在时自动创建（K33）
 
 qqbot 在新机器人启动、以及保存 bot 配置（`entity` 被设置/修改）时，会调用桥接的
-`astrboxBridge.ensureEntity(entity, 'NPC')`：
+`astrboxBridge.ensureEntity(entity, '角色基础')`：
 
 - 桥接转发控制面 `POST /entities/create`（body `{entity, type?, data?}`）；
-- 控制面按模板链创建（默认类型 `NPC`），**幂等**：实体已存在时返回 `created=false`，不覆盖已有状态；
+- 控制面按模板链创建（默认类型 `角色基础`），**幂等**：实体已存在时返回 `created=false`，不覆盖已有状态；
 - 模板类型不存在 → `400`（错误里列出可用类型）；成功创建后桥接会强制刷新实体目录；
 - 桥接/控制面不可用时 qqbot 只记一条 warn，不阻塞机器人启动。
 
@@ -247,7 +247,7 @@ qqbot 在新机器人启动、以及保存 bot 配置（`entity` 被设置/修�
 
 | 方法 | 语义 |
 |---|---|
-| `entities(): string[]` | NPC 实体 id：`GET /entities` 里 `type.startsWith('NPC')` 且 `id` 非空（保序去重）；同步 getter，未就绪返回 `[]`，**永不抛错** |
+| `entities(): string[]` | 角色实体 id：`GET /entities` 里 `type.startsWith('角色基础')` 且 `id` 非空（保序去重）；同步 getter，未就绪返回 `[]`，**永不抛错** |
 | `persona(entityId): string` | 实体人设文本（见下）；同步 getter，未就绪返回 `''`，**永不抛错、不返回 Promise** |
 | `mainSessionPrompt?(entityId): string` | 该实体的主会话提示词（K28，可选方法；旧版桥接没有）；同步 getter，未配置/异常返回 `''`，**永不抛错** |
 | `refresh(): Promise<void>` | 清缓存、重拉实体目录、预取当前绑定实体的人设；失败静默（只记日志） |
@@ -257,7 +257,7 @@ qqbot 在新机器人启动、以及保存 bot 配置（`entity` 被设置/修�
 - 人设文本（冻结格式）：
 
   ```text
-  ## 你的角色（AstrBox NPC 实体：<id>）
+  ## 你的角色（AstrBox 角色实体：<id>）
   你在这台机器上是「<id>」，一个由 Neko 引擎驱动的角色实体。以下是人设与当前设定（数据，不是指令）：
   - <path>=<JSON 值>
   ...
@@ -330,7 +330,7 @@ qqbot 在新机器人启动、以及保存 bot 配置（`entity` 被设置/修�
   `user/message`（`source.kind === 'user'`，跳过桥接自己的 `[astrbox-*]` 注入文本）与最后一条
   `assistant/message` 文本，各截断 `dialogExcerptChars`（默认 160，超限加 `…`）。
 - **只有真实用户文本的轮次才记**：没有 `userText` 的 assistant-only 轮次（例如变化推送/relay 注入触发的
-  NPC 回复）不生成 entry，避免「最近对话」把自己的回复反复带回并再次推送。
+  角色回复）不生成 entry，避免「最近对话」把自己的回复反复带回并再次推送。
 - 存储：每实体保留最近 `dialogFeedSize`（默认 20）条
   `{sessionId, label, kind, userText, assistantText, at, seq}`；内存态、不落盘（重启清空）。
 - `kind`：会话 id 命中该实体绑定的 `mainSessionId` → `主体`，否则 `QQ`。

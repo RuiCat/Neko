@@ -51,7 +51,7 @@ numDigits     := digit { digit } { '_' digit { digit } } ;
 
 - `//` 到行尾是注释，块头与块体内均可出现。
 - 行首 `# `（井号加空格）是整行注释；行首 `#规则`、`#键: 值` 不是注释，见第 4、5 节。
-- 类型名允许中文、字母、数字、`_`、`:`；`:` 只用于继承链（`NPC:猫猫`）。
+- 类型名允许中文、字母、数字、`_`、`:`；`:` 只用于继承链（`角色基础:猫猫`）。
 
 ## 2. 顶层块
 
@@ -69,18 +69,23 @@ topLevel      := entityBlock | defineBlock | dataBlock | descBlock
 entityBlock   := '@实体' ws typeName [ ws '[' [ parentList ] ws ']' ] ws jsonObject ;
 parentList    := typeName { ws ( ',' | '，' ) ws typeName } ;
 
-defineBlock   := ( '@定义' | '@Data' ) ws templateName ws jsonObject ;
-dataBlock     := '@data' ws templateName ws jsonObject ;
+defineBlock   := '@定义' ws templateName ws jsonObject ;
+instanceBlock := '@实例' ws instanceName ws jsonObject ;
 descBlock     := '@描述' ws templateName ws balancedBlock ;
 balancedBlock := ? 配对的 `{ ... }`，内容忽略 ? ;
 ```
 
 说明：
 
-- `@定义` 与 `@Data` 是实体模板的同义写法；`@data` 不编译为模板；`@描述` 仅占位，不参与执行。
+- `@定义` 是实体模板的唯一写法；`@实体` 是带父列表的组合模板；`@实例` 建立数据实例，
+  不编译为模板；`@描述` 仅占位，不参与执行。
+- **`@Data` / `@data` 已移除**：解析期直接报错并给出替代写法。旧版 `@Data` 是 `@定义` 的别名、
+  `@data` 只是大小写变体，二者极易混淆——把实例写成 `@Data` 会静默变成模板，实例根本不会被创建。
+- **未知 `@关键字` 报错**：拼错（`@dta`、`@實體`）或使用已移除的关键字都会在解析期报错，
+  不再静默跳过整块内容。
 - `@实体` 的类型名与父列表之间用空白分隔；父列表可省略，也可写成 `[]`。
-- `@定义` / `@Data` 的名称取 `{` 之前的文本，规范写法同 `typeName`。
-- `@定义` / `@Data` 的块体只能是 JSON；`@事件`、`@函数`、`@规则` 是顶层兄弟块，不能嵌进模板体。模板字段声明的组合约束与运行时写入的边界见 [neko-semantics.md](neko-semantics.md) §1.6。
+- `@定义` / `@实例` 的名称取 `{` 之前的文本，规范写法同 `typeName`。
+- `@定义` / `@实例` 的块体只能是 JSON；`@事件`、`@函数`、`@规则` 是顶层兄弟块，不能嵌进模板体。模板字段声明的组合约束与运行时写入的边界见 [neko-semantics.md](neko-semantics.md) §1.6。
 
 ### 3.1 模板体 JSON
 
@@ -148,7 +153,7 @@ digits        := digit { digit } ;
 
 说明：
 
-- `$` / `$[NPC]` 是单主体；`$1` / `$1[NPC]` / `$1[NPC.性别=女]` 是多主体。
+- `$` / `$[角色基础]` 是单主体；`$1` / `$1[角色基础]` / `$1[角色基础.性别=女]` 是多主体。
 - 全局实体写作类型名，例如 `场景`、`世界`。
 - 没有 `[...]` 头时视为单主体 `$`。
 
@@ -218,7 +223,7 @@ rangeLabel    := number
 text          := ? 非空文本 ? ;
 ```
 
-示例：`@规则[$[NPC]]:$.状态.饥饿 { 30: {...}, >= 80: {...} }`。
+示例：`@规则[$[角色基础]]:$.状态.饥饿 { 30: {...}, >= 80: {...} }`。
 
 ### 4.3 条件表达式
 
@@ -444,7 +449,7 @@ mapMember     := ( stringLiteral | ident ) ':' expression ;
 
 ```neko
 // 模板
-@定义 NPC {
+@定义 角色基础 {
   "身体": {
     "体力[int,@体力管理,min:0,max:100]": 75,
     "饱食[int,min:0,max:100]": 82
@@ -452,20 +457,20 @@ mapMember     := ( stringLiteral | ident ) ':' expression ;
   "关系": { "亲密[int,min:0,max:100]": 50 }
 }
 
-@定义 NPC:猫科 {
+@定义 角色基础:猫科 {
   "特征": { "猫科": true }
 }
 
-@定义 NPC:成年 {
+@定义 角色基础:成年 {
   "年龄": 18
 }
 
-@实体 NPC:猫猫 [NPC:猫科, NPC:成年] {
+@实体 角色基础:猫猫 [角色基础:猫科, 角色基础:成年] {
   "毛色": "橘"
 }
 
 // 规则：键值式
-@规则[$[NPC:猫猫]] {
+@规则[$[角色基础:猫猫]] {
   id: r_thirst
   优先级: 10
   条件: 身体.饱食 < 20
@@ -477,7 +482,7 @@ mapMember     := ( stringLiteral | ident ) ':' expression ;
 }
 
 // 规则：条件块式
-@规则[$[NPC]] {
+@规则[$[角色基础]] {
   身体.体力 < 20 {
     $.状态.身体 = "疲惫"
   },

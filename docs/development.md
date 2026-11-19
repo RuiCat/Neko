@@ -72,9 +72,9 @@ bash ~/.dsh/skills/code-modularity/scripts/lintCodeModularity.sh internal cmd --
 ```text
 data/
 ├── entities.json       # 环境实体（场景/世界/素材…）
-├── user/entities.json  # 用户角色实体（NPC，本地不发布）
+├── user/entities.json  # 用户角色实体（角色基础:*，本地不发布）
 ├── scripts.json        # 脚本注册表（源文件在 scripts/）
-├── templates/*.json    # 模板（由 @Data 落盘）
+├── templates/*.json    # 模板（由 @定义 落盘）
 ├── archives/           # 快照
 ├── logs/               # tick 日志（运行时）
 └── llm_decisions.json  # 仲裁记录（运行时）

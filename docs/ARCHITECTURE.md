@@ -60,7 +60,7 @@ internal/mcpserver ──► internal/registry ──► internal/compiler ─�
 
 ## 数据格式
 
-`data/` 是本地运行状态，默认不进版本库；首次启动无注册表时从 `scripts/` 递归引导。环境实体写 `data/entities.json`，NPC 角色实体单独写 `data/user/entities.json`（仅本地，不发布）。
+`data/` 是本地运行状态，默认不进版本库；首次启动无注册表时从 `scripts/` 递归引导。环境实体写 `data/entities.json`，角色实体单独写 `data/user/entities.json`（仅本地，不发布）。
 
 ### `data/entities.json`
 
@@ -70,7 +70,7 @@ internal/mcpserver ──► internal/registry ──► internal/compiler ─�
   "entities": {
     "猫猫": {
       "id": "猫猫",
-      "type": "NPC:猫猫",
+      "type": "角色基础:猫猫",
       "keys": {},
       "data": { "身体": { "体力": 90 } },
       "_meta": {}
@@ -79,13 +79,13 @@ internal/mcpserver ──► internal/registry ──► internal/compiler ─�
 }
 ```
 
-`type` 用 `:` 表示继承链（`NPC:猫娘:猫猫` → 依次合并 `NPC`、`NPC:猫娘`、`NPC:猫娘:猫猫` 的模板）。
+`type` 用 `:` 表示继承链（`角色基础:猫娘:幼年` → 依次合并 `角色基础`、`角色基础:猫娘`、`角色基础:猫娘:幼年` 的模板）。
 
 ### `data/templates/<name>.json`
 
-文件名 `NPC_猫猫.json` 对应类型 `NPC:猫猫`。模板可含注解键（`"体力[int,@体力管理,min:0,max:100]"`），编译脚本的 `@Data` 块时展开为普通字段与 `__annotations__` 表。
+文件名 `角色基础_猫猫.json` 对应类型 `角色基础:猫猫`。模板可含注解键（`"体力[int,@体力管理,min:0,max:100]"`），编译脚本的 `@定义` 块时展开为普通字段与 `__annotations__` 表。
 
-`@实体` 组合模板额外写一份 `NPC_猫猫.parents.json`（字符串数组），记录显式父列表；加载模板时读取，实体创建、schema 构建与读取回退都按组合祖先顺序解析。没有 `parents` sidecar 的类型仍走冒号继承链。
+`@实体` 组合模板额外写一份 `角色基础_猫猫.parents.json`（字符串数组），记录显式父列表；加载模板时读取，实体创建、schema 构建与读取回退都按组合祖先顺序解析。没有 `parents` sidecar 的类型仍走冒号继承链。
 
 ### `data/scripts.json`
 
@@ -95,7 +95,7 @@ internal/mcpserver ──► internal/registry ──► internal/compiler ─�
   "scripts": {
     "cat_core": {
       "hash": "<sha1 of source>",
-      "templates": { "NPC": 1 },
+      "templates": { "角色基础": 1 },
       "rules": { "r_ab12cd34": 1 },
       "funcs": [], "events": [],
       "func_defs": [], "event_defs": []

@@ -11,8 +11,9 @@
 | 九型人格 | 8535–8536 | `scripts/kernel/personality/` | `九型人格内核` | `九型.*` |
 | 人设 | 8590–8592 | `scripts/kernel/personality/` | `人设内核` | `人设.*` + 顶层 `自称`/`对主人称呼`（同步） |
 
-三者都组合进 `@实体 NPC`（`scripts/kernel/metabolism/metabolismAttach.neko`），
-因此已有 `NPC` / `NPC:*` 实体无需迁移：新增字段通过模板回退可读。
+三者都组合进 `@实体 角色基础`（`scripts/kernel/metabolism/metabolismAttach.neko`），
+因此已有角色实体无需迁移：新增字段通过模板回退可读。
+新增字段的具体值由内核在首次 tick 写入。
 
 ## 1. 情感内核（`scripts/kernel/emotion/`）
 
