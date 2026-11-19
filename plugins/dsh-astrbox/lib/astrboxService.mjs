@@ -281,14 +281,15 @@ export function createHostBridge(options = {}) {
     /**
      * 确保实体存在：不存在则由控制面按模板创建；创建成功后强制刷新实体目录，
      * 新一轮 `entities()` 立即能看到它。失败上抛（调用方决定是否降级）。
-     * @param {string} entityId 实体 id
-     * @param {string} [type] 模板类型，缺省 角色基础
+     * @param {string} entityId 实体 id（名称全局唯一）
+     * @param {string} type 实体类型（必填，无缺省类型）
      * @returns {Promise<{entity: string, type: string, created: boolean}>} 结果
      */
-    async ensureEntity(entityId, type = '角色基础') {
+    async ensureEntity(entityId, type) {
       const id = typeof entityId === 'string' ? entityId.trim() : ''
       if (id === '') throw new Error('entity 不能为空')
-      const typeName = typeof type === 'string' && type.trim() !== '' ? type.trim() : '角色基础'
+      const typeName = typeof type === 'string' ? type.trim() : ''
+      if (typeName === '') throw new Error('type 不能为空（不设缺省类型）')
       const response = await client.createEntity(id, typeName)
       const created = response?.created === true
       if (created && !disposed) {

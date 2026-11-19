@@ -149,22 +149,24 @@ export function refreshBridge(ctx: Context): void {
  * 一律静默降级，返回是否本次创建。
  * @param ctx - 插件上下文
  * @param entityId - 绑定的实体 id（空串/未绑定直接跳过）
- * @param type - 模板类型（缺省 NPC）
+ * @param type - 实体类型（必填；实体名称全局唯一，但类型由内容层显式给出）
  * @param logger - 可选的告警出口（失败时记一条）
  * @returns 本次是否创建了新实体
  */
 export async function ensureBridgeEntity(
   ctx: Context,
   entityId: string | undefined,
-  type = '角色基础',
+  type: string,
   logger?: { warn?: (message: string) => void },
 ): Promise<boolean> {
   const id = typeof entityId === 'string' ? entityId.trim() : '';
-  if (id === '') return false;
+  const typeName = typeof type === 'string' ? type.trim() : '';
+  // 实体名称唯一，但类型不设缺省：没有显式类型就不创建，交给内容层。
+  if (id === '' || typeName === '') return false;
   const bridge = getAstrboxBridge(ctx);
   if (bridge === undefined || typeof bridge.ensureEntity !== 'function') return false;
   try {
-    const result = await bridge.ensureEntity(id, type);
+    const result = await bridge.ensureEntity(id, typeName);
     return result?.created === true;
   } catch (error) {
     logger?.warn?.(`im-qqbot: 实体 ${id} 自动创建失败（继续启动）: ${error instanceof Error ? error.message : String(error)}`);

@@ -306,7 +306,7 @@ test('ensureEntity：已存在时不重复创建（created=false）', async () =
     },
   }
   const bridge = createHostBridge({ client, config: CONFIG })
-  const result = await bridge.ensureEntity('猫猫')
+  const result = await bridge.ensureEntity('猫猫', '角色基础')
   assert.equal(result.created, false)
   assert.equal(calls.created, 1)
   bridge.dispose()

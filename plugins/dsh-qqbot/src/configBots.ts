@@ -74,6 +74,25 @@ export interface NormalizedBots {
   legacy: boolean;
 }
 
+
+/**
+ * 把 `分类:名称` 形式的绑定值拆成实体 id 与分类路径。
+ * 实体名称全局唯一，分类只在「实体不存在时按该类型创建」时使用；
+ * 纯名称（无冒号）只表示 id，不产生类型。
+ * @param raw - 配置里的 entity 原始值
+ * @returns entity=末段名称；entityType=前面的分类路径（无冒号时 undefined）
+ */
+export function splitEntityRef(raw: string | undefined): { entity?: string; entityType?: string } {
+  const text = raw?.trim();
+  if (text === undefined || text === '') return {};
+  const cut = text.lastIndexOf(':');
+  if (cut <= 0 || cut === text.length - 1) return { entity: text };
+  const entity = text.slice(cut + 1).trim();
+  const entityType = text.slice(0, cut).trim();
+  if (entity === '' || entityType === '') return {};
+  return { entity, entityType };
+}
+
 /**
  * 把 bots[] 的一项合并到顶层基础配置上。
  * 标量字段按需覆盖；access 是整体替换（提供时需写全，避免半份白名单）。
@@ -88,8 +107,12 @@ function mergeBotConfig(base: ImQQBotConfig, bot: BotEntryConfig): ImQQBotConfig
   if (bot.preset !== undefined) merged.preset = bot.preset;
   if (bot.cwd !== undefined) merged.cwd = bot.cwd;
   // BotEntrySchema 会把缺省 entity 填成空串，因此空白条目视为「未设置」并继承顶层；
-  // 实体 id 不套用 bot id 的 ASCII 规则（可以是中文）。
-  merged.entity = normalizeEntityId(bot.entity) ?? normalizeEntityId(base.entity);
+  // 绑定值可写成 `分类:名称`：id 取末段，分类留给「不存在时按该类型创建」。
+  const botRef = splitEntityRef(bot.entity);
+  const baseRef = splitEntityRef(base.entity);
+  const ref = botRef.entity !== undefined ? botRef : baseRef;
+  merged.entity = normalizeEntityId(ref.entity);
+  merged.entityType = normalizeEntityId(ref.entityType);
   if (bot.groupPrompt !== undefined) merged.groupPrompt = bot.groupPrompt;
   if (bot.directPrompt !== undefined) merged.directPrompt = bot.directPrompt;
   // K26：单会话提示词整体覆盖（条目提供时），缺省继承顶层已归一化列表。
@@ -119,7 +142,8 @@ function legacyBot(base: ImQQBotConfig, options: NormalizeBotsOptions): Effectiv
       appId: isEnvPlaceholder(base.appId) ? (options.envAppId ?? '') : base.appId,
       appSecret: isEnvPlaceholder(base.appSecret) ? (options.envAppSecret ?? '') : base.appSecret,
       // Schema 默认值把未配置的顶层 entity 填成空串：旧单 bot 同样归一为「未绑定」。
-      entity: normalizeEntityId(base.entity),
+      entity: normalizeEntityId(splitEntityRef(base.entity).entity),
+      entityType: normalizeEntityId(splitEntityRef(base.entity).entityType),
     },
   };
 }

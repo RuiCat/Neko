@@ -43,6 +43,7 @@ import {
   type CredentialsLike,
 } from './credentialStore.ts';
 import { getProfileDir } from '../shared/index.ts';
+import { splitEntityRef } from '../configBots'
 import { ensureBridgeEntity } from '../shared/astrboxBridge.ts';
 
 export type { SetupCredentials } from './persist.ts';
@@ -280,9 +281,10 @@ export function registerBotCredentialRoutes(
       onUpdateConfig: async (config) => {
         const ok = updateBotProfileConfig(bot.id, config, getProfileDir() ?? undefined, logger);
         if (ok) {
-          const entity = typeof config.entity === 'string' ? config.entity : undefined;
-          if (entity !== undefined && entity.trim() !== '') {
-            void ensureBridgeEntity(ctx, entity, '角色基础', logger);
+          // 绑定值 `分类:名称` 拆出 id 与类型；没有分类就不自动创建（无缺省类型）。
+          const entityRef = splitEntityRef(typeof config.entity === 'string' ? config.entity : undefined);
+          if (entityRef.entity !== undefined && entityRef.entityType !== undefined) {
+            void ensureBridgeEntity(ctx, entityRef.entity, entityRef.entityType, logger);
           }
         }
         return ok;

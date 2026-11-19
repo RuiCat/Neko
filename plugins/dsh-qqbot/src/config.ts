@@ -85,6 +85,11 @@ export interface ImQQBotConfig {
    * 空串 = 未绑定；可含中文（实体 id 不走 bot id 的 ASCII 规则）。
    */
   entity?: string;
+  /**
+   * 实体分类路径（从 `分类:名称` 绑定值里拆出来，仅用于「实体不存在时按该类型创建」；
+   * 不设缺省值：没有分类就不自动创建）。
+   */
+  entityType?: string;
   /** 是否启用群消息 @mention 门控 */
   requireMention: boolean;
   /** 群聊额外 system prompt */
@@ -165,8 +170,10 @@ export interface BotEntryConfig {
   preset?: string;
   /** 覆盖顶层工作目录 */
   cwd?: string;
-  /** 覆盖顶层的 NPC 实体绑定（空串 = 不绑定；缺省继承顶层 entity） */
+  /** 覆盖顶层的实体绑定（`分类:名称` 或纯名称；空串 = 不绑定；缺省继承顶层 entity） */
   entity?: string;
+  /** 实体分类路径（通常由 `分类:名称` 自动拆出，无需单独配置） */
+  entityType?: string;
   /** 覆盖顶层群聊额外 system prompt */
   groupPrompt?: string;
   /** 覆盖顶层私聊额外 system prompt */
