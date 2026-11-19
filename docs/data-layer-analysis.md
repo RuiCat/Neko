@@ -82,7 +82,8 @@ data/
   "schemaVersion": 2,
   "entities": {
     "猫猫": {
-      "type": "角色基础:猫猫",
+      "type": "角色",
+      "types": ["角色定义:猫娘"],
       "keys": {},
       "data": {},
       "_meta": { "createdAt": "...", "updatedAt": "...", "templateHash": "..." }

@@ -113,7 +113,7 @@ scripts/
 - P0 隐私分离：已完成（`scripts/private/` + gitignore + registry/apply/probe 支持 + 猫猫/梦梦 抽取）。
 - P1 抽取器：已完成（`neko-data extract`，去注释/注解，私有角色合并）。
 - P2 内核补全：已完成（人格/成长/好奇/社交/环境感受/表情 + 记忆补字段；成长升级规则 8500）。
-- P3 内容与规则分离：**不把实体数据放进 scripts/**。事件数据抽到 `private/events/`（12 条，gitignored），事件底层在 `scripts/kernel/event/`（角色无关）；任务/行为改为规则写在 `scripts/rules/`（L14），不再有 @实例 模板库；`cmd/neko-data extract` 已移除。
+- P3 内容与规则分离：**不把实体数据放进 scripts/**。事件语料（12 条）作为参考材料放 `archive/reference/`，不参与 apply，事件底层在 `scripts/kernel/event/`（角色无关）；任务/行为改为规则写在 `scripts/rules/`（L14），不再有 @实例 模板库；`cmd/neko-data extract` 已移除。
 - P4 执行引擎：未开始（行为流程/任务推进/R18 流程的执行语义）。
 
 ## 8. 待拍板

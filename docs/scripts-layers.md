@@ -16,7 +16,7 @@ scripts/
 ## 组合契约
 
 `角色基础`（历史名 `角色基础`）组合下列全部内核；它是**完整的基础角色定义**，不带种族特征时即人族。
-种族是组合出来的，不是继承特例：`@实体 角色基础:猫娘 [角色基础, 猫耳, 猫尾, 肉垫] {}`。
+种族是组合出来的，不是继承特例：`@实体 角色定义:猫娘 [角色基础, 猫耳, 猫尾, 肉垫] {}`。
 任意「基础 + 若干特征」都成立，不要求凑齐某族全套。
 
 **选择器注意**：`角色基础` 是 `角色基础` 的**子类型**，所以 `$[角色基础]` 命中全部角色，
@@ -55,7 +55,7 @@ scripts/
 | L11 记忆 | 8400–8499 | 记忆内核 | `scripts/kernel/memory/` |
 | L12 自我状态 | 8500–8599 | 人格/成长/好奇/社交/环境感受/表情内核 | `scripts/kernel/{personality,growth,curiosity,social,environment,expression}/` |
 | L12 内心 | 8521–8592 | 情感 / 九型人格 / 人设内核 | `scripts/kernel/{emotion,personality}/` |
-| L13 事件 | 8540–8579 | 事件内核（事件底层；事件数据在 private/events） | `scripts/kernel/event/` |
+| L13 事件 | 8540–8579 | 事件内核（事件底层；事件语料属 archive/reference 参考材料） | `scripts/kernel/event/` |
 | L14 规则库 | 8800–8999 | 任务/行为等业务规则（只写 @规则/@函数，不含 @实例） | `scripts/rules/` |
 | L6 物品/交互 | 7000–7999 | 素材/食物/饮品/工具/容器/衣物/交互内核 | `scripts/kernel/material/`、`scripts/kernel/interact/` |
 
