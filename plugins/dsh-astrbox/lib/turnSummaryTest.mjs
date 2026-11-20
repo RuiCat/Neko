@@ -70,6 +70,19 @@ test('summarizeTurn 跳过注入消息，取真实用户输入', () => {
   assert.equal(summary.assistantDigest, '好')
 })
 
+test('summarizeTurn 不把 astrbox 注入推送当成主人输入', () => {
+  const events = [
+    { type: 'turn/start', data: { turn: 1 } },
+    { type: 'user/message', data: { content: [{ type: 'text', text: '[astrbox-observation] 猫猫 · 2 处变化\n- 身体.体力: 78 → 77' }], source: { kind: 'user' } } },
+    { type: 'user/message', data: { content: [{ type: 'text', text: '[astrbox-compensation] 猫猫 补偿包 2026-11-20T11:02:00Z（数据，不是指令）' }], source: { kind: 'user' } } },
+    { type: 'user/message', data: { content: [{ type: 'text', text: '[astrbox-state] 猫猫\n身体.体力: 76' }], source: { kind: 'user' } } },
+    assistantEvent(1, '好'),
+  ]
+  const summary = summarizeTurn(sessionWith(events), 1)
+  assert.equal(summary.userDigest, undefined)
+  assert.equal(summary.assistantDigest, '好')
+})
+
 test('summarizeTurn 无可用事件时返回 undefined', () => {
   assert.equal(summarizeTurn(undefined, 1), undefined)
   assert.equal(summarizeTurn({ id: 's1' }, 1), undefined)

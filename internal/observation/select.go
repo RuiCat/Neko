@@ -67,6 +67,17 @@ func Select(bus *Bus, scope string, since int64, limit int, policy *Policy) Sele
 		positions[event.Path] = len(collected)
 		collected = append(collected, event)
 	}
+	// 合并后净零的变化不推送：窗口内两条互补变化（如 79→78、78→79）会合并成
+	// 一条 from == to 的记录，它不代表任何净变化，丢掉并计入 dropped。
+	netZero := collected[:0]
+	for _, event := range collected {
+		if valuesEqual(event.From, event.To) {
+			dropped++
+			continue
+		}
+		netZero = append(netZero, event)
+	}
+	collected = netZero
 	sort.SliceStable(collected, func(left, right int) bool {
 		if collected[left].Tier.rank() != collected[right].Tier.rank() {
 			return collected[left].Tier.rank() < collected[right].Tier.rank()
@@ -86,7 +97,14 @@ func Select(bus *Bus, scope string, since int64, limit int, policy *Policy) Sele
 		selection.Events = collected
 	}
 	if len(selection.Events) > 0 {
-		selection.Cursor = selection.Events[len(selection.Events)-1].Seq
+		if selection.Truncated {
+			// 超出预算被截掉的事件留在游标之后，下一次继续推，不能跳过。
+			selection.Cursor = selection.Events[len(selection.Events)-1].Seq
+		} else {
+			// 本次已评估到流的当前末尾：被策略丢弃（噪声/阈值/合并净零）的事件
+			// 不再回读，否则尾部被丢弃的事件会让游标原地踏步、每个 tick 重扫一遍。
+			selection.Cursor = version
+		}
 	} else {
 		selection.Cursor = version
 	}

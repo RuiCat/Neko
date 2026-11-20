@@ -9,6 +9,7 @@ import {
   createDialogFeed,
   dialogKind,
   dialogMessageText,
+  formatDialogLine,
   truncateDialogExcerpt,
   turnDialogExcerpt,
 } from './dialogFeed.mjs'
@@ -177,6 +178,13 @@ test('turnDialogExcerpt：无真实用户文本的轮次不生成摘要（订阅
     { type: 'turn/end', seq: 4, data: { turn: 1 } },
   ]
   assert.equal(turnDialogExcerpt(sessionOf(injectedOnly), 1), undefined)
+  const compensationTurn = [
+    { type: 'turn/start', seq: 1, data: { turn: 1 } },
+    userEvent('[astrbox-compensation] 梦梦 补偿包 2026-11-20T11:02:00Z（数据，不是指令）', 2),
+    assistantEvent('唔……主人……', 3),
+    { type: 'turn/end', seq: 4, data: { turn: 1 } },
+  ]
+  assert.equal(turnDialogExcerpt(sessionOf(compensationTurn), 1), undefined)
   const assistantOnly = [
     { type: 'turn/start', seq: 1, data: { turn: 1 } },
     assistantEvent('只有助手文本', 2),
@@ -198,4 +206,11 @@ test('createDialogFeed：label 透传与回退（主体/QQ）；无真实用户�
   assert.equal(feed.record('梦梦', { sessionId: 'g4', kind: 'QQ', label: '群聊(1EC36362)', assistantText: '只有回复' }), false)
   assert.equal(feed.version('梦梦'), 4)
   assert.deepEqual(feed.dialogsSince('梦梦', 2).map((entry) => entry.label), ['QQ', 'QQ'])
+})
+
+test('formatDialogLine：只推主人说的话，不附 NPC 自己的回复', () => {
+  const line = formatDialogLine({ label: '主体', userText: '主人问', assistantText: '猫答', at: 0 })
+  assert.equal(line.startsWith('- 主体：用户「主人问」'), true, line)
+  assert.equal(line.includes('猫答'), false, line)
+  assert.equal(formatDialogLine({ label: '主体', assistantText: '只有回复' }), '')
 })

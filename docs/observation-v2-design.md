@@ -50,7 +50,8 @@ Sink               { prepend | main | subagent | panel | tool }
 - **scope**：`entity:<id>`、`turn:<id>`、`workspace:<id>`、`global`。所有事件必带 scope。
 - **tier**：`critical`（状态词/死亡/怀孕/休克，必推）、`normal`（合并后推）、`noise`（默认不推，面板可见）。
 - **threshold**：数值字段变化小于阈值不产生「可推事件」（仍进事件流，供面板/查询）。
-- **coalesce**：同一 path 在窗口内的多次变化折叠为最后一次（`from` 保留窗口起点、`to` 取最新）。
+- **coalesce**：同一 path 在窗口内的多次变化折叠为最后一次（`from` 保留窗口起点、`to` 取最新）；
+  折叠后 `from == to`（净零，比如 79→78 再 78→79）的变化**不推送**——它不代表任何净变化。
 
 ## 4. 数据流
 

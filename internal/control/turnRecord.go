@@ -47,7 +47,11 @@ func (s *Server) recordDSHTurn(request sessionEventRequest, entityID string) {
 	if err := s.runtime.Journal.Append(record); err != nil {
 		log.Printf("astrbox: DSH 轮记录入队失败: %v", err)
 	}
-	s.rememberTurn(turnID, record.UserInput, answer, now)
+	// 只有带真实用户原话的轮次才进专家记忆：状态推送 / relay 触发的轮次没有用户输入，
+	// 记成记忆只会让 NPC 在下一轮「回忆」起自己的独白，再被当成用户的话推回去。
+	if record.UserInput != "" {
+		s.rememberTurn(turnID, record.UserInput, answer, now)
+	}
 	if err := s.runtime.SaveExperts(); err != nil {
 		log.Printf("astrbox: 保存专家上下文失败: %v", err)
 	}

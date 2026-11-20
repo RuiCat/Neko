@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // PERSIST_VERSION is bumped when the file shape changes.
@@ -73,4 +74,54 @@ func LoadFile(path string, registry *Registry) error {
 	}
 	registry.Load(payload.Experts)
 	return nil
+}
+
+// injectedUserPrefixes 是桥接注入的 user 文本前缀：这些消息不是主人说的话。
+// 与插件侧 `injectedText.mjs` 的清单保持一致。
+var injectedUserPrefixes = []string{"[astrbox-", "[context-guard]"}
+
+// DropInjectedEchoes removes memory entries that only exist because a bridge
+// push was recorded as user input: the entry's user half is an injected push
+// (「用户: [astrbox-observation] …」), or the entry has no user half at all
+// (「助手: …」, written for a push-triggered turn). Recalling them makes the NPC
+// echo its own pushes and replies back into the next compensation package.
+// It reports how many entries were dropped.
+func DropInjectedEchoes(registry *Registry) int {
+	if registry == nil {
+		return 0
+	}
+	snapshot := registry.Snapshot()
+	dropped := 0
+	for id, entries := range snapshot {
+		kept := entries[:0]
+		for _, entry := range entries {
+			if isInjectedEcho(entry.Content) {
+				dropped++
+				continue
+			}
+			kept = append(kept, entry)
+		}
+		snapshot[id] = kept
+	}
+	if dropped > 0 {
+		registry.Load(snapshot)
+	}
+	return dropped
+}
+
+// isInjectedEcho reports whether one memory entry is an injected-push echo.
+func isInjectedEcho(content string) bool {
+	if strings.HasPrefix(content, "助手: ") {
+		return true
+	}
+	user, ok := strings.CutPrefix(content, "用户: ")
+	if !ok {
+		return false
+	}
+	for _, prefix := range injectedUserPrefixes {
+		if strings.HasPrefix(user, prefix) {
+			return true
+		}
+	}
+	return false
 }

@@ -13,7 +13,7 @@
     { "pattern": "九型.*", "tier": "normal" },
     { "pattern": "心情.*", "tier": "normal" },
     { "pattern": "睡眠.*", "tier": "normal" },
-    { "pattern": "身体.*", "tier": "normal" },
+    { "pattern": "身体.*", "tier": "noise" },
     { "pattern": "位置.*", "tier": "normal" },
     { "pattern": "场景.*", "tier": "normal" },
     { "pattern": "代谢.*", "tier": "noise" },

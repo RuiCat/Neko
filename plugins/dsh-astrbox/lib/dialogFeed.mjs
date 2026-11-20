@@ -5,6 +5,7 @@
  * 任何形状异常都返回 undefined，绝不向宿主抛错（桥接插件统一约束）。
  * `feedVersion` 每新增一条 +1，供 K12/K13 的推送/注入门控使用。
  */
+import { isInjectedUserText } from './injectedText.mjs'
 
 /** 反向扫描 Session 事件窗口的上限（条），与 turnSummary 同口径。 */
 export const DIALOG_SCAN_LIMIT = 200
@@ -14,9 +15,6 @@ export const DEFAULT_DIALOG_EXCERPT_CHARS = 160
 
 /** 默认每实体保留的最近对话条数（K10：dialogFeedSize）。 */
 export const DEFAULT_DIALOG_FEED_SIZE = 20
-
-/** 桥接自己注入的文本前缀：这些 user 消息不算「用户说的话」（避免推送回灌）。 */
-const INJECTED_PREFIXES = Object.freeze(['[astrbox-observation]', '[astrbox-state]', '[astrbox-board]', '[astrbox-relay]', '[context-guard]'])
 
 /**
  * 取一条消息的纯文本（text 块拼接；空白视为无文本）。
@@ -47,15 +45,6 @@ export function truncateDialogExcerpt(text, maxChars) {
 }
 
 /**
- * 是否为本插件注入的 user 文本（K10 只收用户本人说的话）。
- * @param {string} text 文本
- * @returns {boolean} 是否跳过
- */
-function isInjectedText(text) {
-  return INJECTED_PREFIXES.some((prefix) => text.startsWith(prefix))
-}
-
-/**
  * 时间戳 → 本地 `HH:MM:SS`；非法值返回 `--:--:--`（对话行的时间部分）。
  * @param {unknown} at epoch 毫秒
  * @returns {string} 时间文本
@@ -68,7 +57,7 @@ function formatDialogTime(at) {
 }
 
 /**
- * 一条对话摘要行：`- <label>：用户「…」→ 回复「…」（HH:MM:SS）`；两侧都空返回空串。
+ * 一条对话摘要行：`- <label>：用户「…」（HH:MM:SS）`；没有用户文本返回空串。
  * label 取条目的会话标记（如 `私聊(85D47757)`），缺省回退 `主体`/`QQ`。
  * @param {unknown} entry 对话条目（record 写入的形状）
  * @returns {string} 行文本
@@ -77,12 +66,10 @@ export function formatDialogLine(entry) {
   if (entry === null || typeof entry !== 'object') return ''
   const kind = entry.kind === '主体' ? '主体' : 'QQ'
   const label = typeof entry.label === 'string' && entry.label.trim() !== '' ? entry.label.trim() : kind
-  const userText = typeof entry.userText === 'string' && entry.userText.trim() !== '' ? entry.userText.trim() : '—'
-  const assistantText = typeof entry.assistantText === 'string' && entry.assistantText.trim() !== ''
-    ? entry.assistantText.trim()
-    : '—'
-  if (userText === '—' && assistantText === '—') return ''
-  return `- ${label}：用户「${userText}」→ 回复「${assistantText}」（${formatDialogTime(entry.at)}）`
+  const userText = typeof entry.userText === 'string' && entry.userText.trim() !== '' ? entry.userText.trim() : ''
+  // 只推主人说的话：把 NPC 自己的回复推回给它，会让对话尾巴自我循环。
+  if (userText === '') return ''
+  return `- ${label}：用户「${userText}」（${formatDialogTime(entry.at)}）`
 }
 
 /**
@@ -123,7 +110,7 @@ export function turnDialogExcerpt(session, turn, excerptChars = DEFAULT_DIALOG_E
       const message = event.data
       if (message?.source?.kind !== 'user') continue
       const text = dialogMessageText(message)
-      if (text === '' || isInjectedText(text)) continue
+      if (text === '' || isInjectedUserText(message, text)) continue
       userText = text
       seq = typeof event.seq === 'number' ? event.seq : seq
       continue

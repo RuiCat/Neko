@@ -98,6 +98,35 @@ func TestSelectDoesNotCoalesceCriticalOrOutOfWindow(t *testing.T) {
 	}
 }
 
+func TestSelectDropsNetZeroAfterCoalesce(t *testing.T) {
+	bus := NewBus()
+	bus.Append(Event{Scope: "entity:猫", Path: "身体.体力", From: 79, To: 78, At: "2026-11-20T08:00:00Z"})
+	bus.Append(Event{Scope: "entity:猫", Path: "身体.体力", From: 78, To: 79, At: "2026-11-20T08:00:30Z"})
+	selection := Select(bus, "entity:猫", 0, 0, testPolicy())
+	if len(selection.Events) != 0 {
+		t.Fatalf("窗口内合并成 79→79 的净零变化不应推送：%+v", selection.Events)
+	}
+	if selection.Dropped != 2 {
+		t.Fatalf("两条事件都应计入 dropped，得到 %d", selection.Dropped)
+	}
+	if selection.Cursor != 2 {
+		t.Fatalf("净零事件被丢弃后 cursor 仍应推进到 version=2，得到 %d", selection.Cursor)
+	}
+}
+
+func TestSelectAdvancesCursorPastDroppedTail(t *testing.T) {
+	bus := NewBus()
+	bus.Append(Event{Scope: "entity:猫", Path: "位置.场景", From: "书房", To: "走廊"})
+	bus.Append(Event{Scope: "entity:猫", Path: "代谢.体温", From: 370, To: 371})
+	selection := Select(bus, "entity:猫", 0, 0, testPolicy())
+	if len(selection.Events) != 1 {
+		t.Fatalf("只应留下非噪声那条：%+v", selection.Events)
+	}
+	if selection.Cursor != 2 {
+		t.Fatalf("尾部噪声被丢弃后 cursor 应推进到 version=2，得到 %d", selection.Cursor)
+	}
+}
+
 func TestSelectOrdersCriticalFirstThenCapsBudget(t *testing.T) {
 	bus := NewBus()
 	bus.Append(Event{Scope: "entity:猫", Path: "位置.场景", To: "书房"})

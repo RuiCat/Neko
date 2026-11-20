@@ -415,7 +415,7 @@ test('只有对话 feed 变化不触发主会话推送；有变化时对话随�
   assert.equal(followups.length, 1)
   const text = followups[0].content[0].text
   assert.ok(text.includes('最近对话：'), text)
-  assert.ok(text.includes('- 主体：用户「主人问」→ 回复「猫答」'), text)
+  assert.ok(text.includes('- 主体：用户「主人问」（'), text)
 
   // 再次推送：已推过的对话不重复附带。
   control.observations['梦梦'] = { version: 5, events: [change(5, '超开心', '平静')] }

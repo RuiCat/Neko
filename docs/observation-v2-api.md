@@ -43,6 +43,7 @@
     { "pattern": "伤害.*", "tier": "critical", "threshold": 0 },
     { "pattern": "生殖.怀孕状态", "tier": "critical" },
     { "pattern": "位置.*", "tier": "normal" },
+    { "pattern": "身体.*", "tier": "noise" },
     { "pattern": "代谢.*", "tier": "noise" },
     { "pattern": "循环.心率", "tier": "noise", "threshold": 2 }
   ],
@@ -53,8 +54,11 @@
 - `pattern` 用 `*` 通配（匹配任意字符序列，含 `.`）；首个匹配的规则生效（数组顺序）。
 - `tier` ∈ `critical` | `normal` | `noise`。
 - `threshold` 只对两侧都是数字的事件生效：`|to-from| < threshold` 时不进推送（事件仍进流）。
+- 旧兼容别名（`身体.体力` 这类字段与规范账本 `角色状态.体力` 同值双写）设为 `noise`：
+  否则每个 tick 会推两行数值相同的变化，看起来像重复。
 - `defaultTier` 缺省 `normal`；文件缺失时使用**中立内置策略（无路径规则）**，路径分级由 `observation.json` 提供（installer 从 `observation.example.json` 播种）。
-- `coalesceMs`：同一 path 在窗口内的多次变化合并为一条（`from` 取窗口起点、`to` 取最新、`tier` 取最高）。
+- `coalesceMs`：同一 path 在窗口内的多次变化合并为一条（`from` 取窗口起点、`to` 取最新、`tier` 取最高）；
+  合并后 `from == to` 的净零变化不返回，并计入 `dropped`。
 - 文件解析失败：**保留上一份可用策略**（启动时即内置默认），记日志，不阻断服务。
 
 ## 3. 控制面接口
@@ -94,7 +98,8 @@
 
 - `tier`：服务端按策略判定的等级（客户端不再自行判定）。
 - `events` 已按策略过滤/合并/排序：**先 critical 后 normal**（同级按 `seq` 升序），`noise` 永不出现。
-- `cursor`：调用方下一次的 `since`。有返回事件时 = 最后一条事件的 `seq`；无返回事件时 = `version`（跳过噪声，避免重扫）。
+- `cursor`：调用方下一次的 `since`。默认 = `version`（本次已评估到流末尾，被策略丢弃的事件不再重扫）；
+  仅当 `truncated` 为真（预算截断、后面还有没推的事件）时 = 最后一条返回事件的 `seq`，下次接着推。
 - `truncated`：候选事件多于返回条数（预算或 `limit` 截断）时为 `true`。
 - `dropped`：范围内被策略排除的原始事件数（noise / 阈值 / 合并），仅供诊断。
 - `version`：该 scope 当前最大 `seq`；`since` 大于 `version` 时按 `version` 处理。

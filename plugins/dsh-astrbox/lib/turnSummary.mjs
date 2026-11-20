@@ -4,6 +4,8 @@
  * 只读 `snapshotEvents()` 的尾部窗口（上限 SCAN_LIMIT 条），不复制整段日志；
  * 任何形状异常都返回 undefined，绝不向宿主抛错（桥接插件的统一约束）。
  */
+import { isInjectedUserText } from './injectedText.mjs'
+
 /** 反向扫描 Session 事件窗口的上限（条）。 */
 export const SCAN_LIMIT = 200
 
@@ -34,13 +36,6 @@ function truncate(text) {
   const chars = Array.from(text)
   if (chars.length <= DIGEST_MAX_CHARS) return text
   return chars.slice(0, DIGEST_MAX_CHARS).join('') + '…'
-}
-
-/** 判断一条 user/message 是否为注入内容（不是用户本人输入）。 */
-function injectedUserText(message, text) {
-  const kind = message?.source?.kind
-  if (kind === 'runtime-context' || kind === 'astrbox') return true
-  return text.startsWith('[context-guard]')
 }
 
 /**
@@ -81,7 +76,7 @@ export function summarizeTurn(session, turn) {
     if (event.type === 'user/message') {
       if (userDigest !== '') continue
       const text = messageText(data)
-      if (text === '' || injectedUserText(data, text)) continue
+      if (text === '' || isInjectedUserText(data, text)) continue
       userDigest = truncate(text)
       continue
     }

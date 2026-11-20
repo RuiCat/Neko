@@ -201,6 +201,11 @@ func New(options Options) (*Runtime, error) {
 	if err := expert.LoadFile(expertsPath, experts); err != nil {
 		log.Printf("astrbox: 恢复专家上下文失败: %v", err)
 	}
+	// 旧版本把桥接推送当成用户原话写进记忆，这些回声条目会在下一轮补偿包里
+	// 把 NPC 自己的推送和回复再喂回去；加载时清掉（新条目已在写入侧拦截）。
+	if dropped := expert.DropInjectedEchoes(experts); dropped > 0 {
+		log.Printf("astrbox: 清理注入回声记忆 %d 条", dropped)
+	}
 	ruleGate := gate.NewRuleGate()
 	gateImpl := gate.Gate(ruleGate)
 	gateModelPath := filepath.Join(options.DataDir, "models", "gate-mlp-v1.json")

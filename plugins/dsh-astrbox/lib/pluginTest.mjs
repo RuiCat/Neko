@@ -168,7 +168,7 @@ test('pre-step 注入补偿包：记忆/约束/情境/专家，文本不变不�
   assert.equal(first.messages[0].content[0].text, '[astrbox-state] 猫猫\n状态.身体: 虚弱')
   const compensation = first.messages[1].content[0].text
   assert.ok(compensation.startsWith('[astrbox-compensation] 猫猫 补偿包 '), compensation)
-  assert.ok(compensation.includes('记忆: [episodic s-1] 昨天在书房'), compensation)
+  assert.ok(compensation.includes('记忆:\n- [episodic s-1] 昨天在书房'), compensation)
   assert.ok(compensation.includes('约束: 不主动离开场景'), compensation)
   assert.ok(compensation.includes('情境: 傍晚，书房'), compensation)
   assert.ok(compensation.includes('专家: 情绪专家、记忆专家'), compensation)
@@ -797,5 +797,5 @@ test('K10：assistant-only / 注入文本轮次不记 feed；真实对话行带 
   assert.equal(followups.length, 2)
   const text = followups[1].content[0].text
   assert.ok(text.includes('最近对话：'), text)
-  assert.ok(text.includes('- 私聊(85D47757)：用户「主人真的在吗」→ 回复「在的喵」'), text)
+  assert.ok(text.includes('- 私聊(85D47757)：用户「主人真的在吗」（'), text)
 })

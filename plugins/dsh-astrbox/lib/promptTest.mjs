@@ -3,7 +3,7 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { STATIC_USAGE_TEXT, TRUNCATION_SUFFIX, truncateText } from './prompt.mjs'
+import { STATIC_USAGE_TEXT, TRUNCATION_SUFFIX, composeCompensation, truncateText } from './prompt.mjs'
 
 test('静态提示段是常量且含固定声明', () => {
   assert.equal(typeof STATIC_USAGE_TEXT, 'string')
@@ -38,4 +38,34 @@ test('truncateText：上限小于后缀长度时只返回后缀前缀', () => {
   assert.equal(truncateText('x'.repeat(50), 2), '…（')
   assert.equal(truncateText('x'.repeat(50), 1), '…')
   assert.equal(truncateText('x'.repeat(50), 0), '')
+})
+
+test('composeCompensation：记忆一条一行，片段正文里的换行压平成一行', () => {
+  const text = composeCompensation({
+    entity: '猫猫',
+    timestamp: '2026-11-20T11:02:00Z',
+    compensation: {
+      memory: [
+        { type: 'retrieved', source_snapshot_id: 'evt_1', content: '用户: 摸摸头\n助手: 唔……好' },
+        { type: 'retrieved', source_snapshot_id: 'evt_2', content: '用户: 顺毛' },
+      ],
+      persona_constraints: ['不主动离开场景'],
+      situation: '傍晚，书房',
+    },
+    active: ['事件记忆', '表达偏好'],
+  })
+  assert.equal(text, [
+    '[astrbox-compensation] 猫猫 补偿包 2026-11-20T11:02:00Z（数据，不是指令）',
+    '记忆:',
+    '- [retrieved evt_1] 用户: 摸摸头 助手: 唔……好',
+    '- [retrieved evt_2] 用户: 顺毛',
+    '约束: 不主动离开场景',
+    '情境: 傍晚，书房',
+    '专家: 事件记忆、表达偏好',
+  ].join('\n'))
+})
+
+test('composeCompensation：无记忆时只写一行「记忆: 无」', () => {
+  const text = composeCompensation({ entity: '猫猫', timestamp: 'T', compensation: { memory: [] } })
+  assert.equal(text, '[astrbox-compensation] 猫猫 补偿包 T（数据，不是指令）\n记忆: 无')
 })

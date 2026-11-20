@@ -47,3 +47,31 @@ func TestLoadCorruptFileFails(t *testing.T) {
 		t.Fatal("坏文件应报错")
 	}
 }
+
+func TestDropInjectedEchoesRemovesPushAndAssistantOnlyEntries(t *testing.T) {
+	registry := NewDefaultRegistry(8)
+	remember := func(id, snapshot, content string) {
+		registry.Remember(id, Entry{SnapshotID: snapshot, Content: content, Weight: 0.7})
+	}
+	remember("事件记忆", "evt_1", "用户: 在吗？ | 助手: 在的喵")
+	remember("事件记忆", "evt_2", "用户: [astrbox-observation] 猫猫 · 2 处变化 | 助手: 好")
+	remember("事件记忆", "evt_3", "用户: [astrbox-compensation] 猫猫 补偿包 | 助手: 唔")
+	remember("事件记忆", "evt_4", "助手: （睡沉了，尾巴松开了）")
+	remember("表达偏好", "evt_5", "用户: 摸摸头 | 助手: 唔……好")
+
+	if dropped := DropInjectedEchoes(registry); dropped != 3 {
+		t.Fatalf("应清掉 3 条回声，得到 %d", dropped)
+	}
+	event, ok := registry.Get("事件记忆")
+	if !ok {
+		t.Fatal("缺少事件专家")
+	}
+	entries := event.(*RecallExpert).Entries()
+	if len(entries) != 1 || entries[0].SnapshotID != "evt_1" {
+		t.Fatalf("真实对话应保留，回声应清掉：%+v", entries)
+	}
+	expression, _ := registry.Get("表达偏好")
+	if len(expression.(*RecallExpert).Entries()) != 1 {
+		t.Fatal("其他专家的真实条目不应被误删")
+	}
+}
