@@ -151,11 +151,24 @@ func (s *Store) loadEntitiesFileLocked(path string) error {
 	return nil
 }
 
-// isLocalEntityType reports whether one entity belongs to the local-only store:
+// isLocalEntity reports whether one entity belongs to the local-only store:
 // driven role/user entities stay on this machine, plain content stays public.
-func isLocalEntityType(typeName string) bool {
+// The id is also an access path (角色:猫猫), so it participates in the decision.
+func isLocalEntity(ent *Entity) bool {
+	if hasLocalPrefix(ent.Type) || hasLocalPrefix(ent.ID) {
+		return true
+	}
+	for _, typeName := range ent.Types {
+		if hasLocalPrefix(typeName) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasLocalPrefix(name string) bool {
 	for _, prefix := range []string{"角色", "用户"} {
-		if strings.HasPrefix(typeName, prefix) {
+		if strings.HasPrefix(name, prefix) {
 			return true
 		}
 	}
@@ -195,7 +208,7 @@ func (s *Store) saveLocked() error {
 			"id": ent.ID, "type": ent.Type, "types": ent.Types, "keys": ent.Keys,
 			"data": ent.Snapshot(), "_meta": ent.Meta,
 		}
-		if isLocalEntityType(ent.Type) {
+		if isLocalEntity(ent) {
 			user[id] = record
 		} else {
 			public[id] = record
@@ -233,7 +246,7 @@ func (s *Store) MigrateUserEntities() error {
 	}
 	hasRole := false
 	for _, ent := range s.entities {
-		if strings.HasPrefix(ent.Type, "角色基础") {
+		if isLocalEntity(ent) {
 			hasRole = true
 			break
 		}
@@ -397,6 +410,27 @@ func (s *Store) Create(entityID, typeName string, data map[string]any, keys map[
 	return ent, nil
 }
 
+// CreateWithTypes builds and stores a new instance from its bracket type list;
+// the id is the instance access path (角色:猫猫) and no single Type is recorded.
+func (s *Store) CreateWithTypes(entityID string, types []string, data map[string]any, keys map[string]string) (*Entity, error) {
+	s.mu.Lock()
+	if _, exists := s.entities[entityID]; exists {
+		s.mu.Unlock()
+		return nil, &ValidationError{Message: fmt.Sprintf("实体 '%s' 已存在", entityID)}
+	}
+	ent, err := CreateEntityWithTypes(entityID, types, s.templates, s.parents, data, keys)
+	if err != nil {
+		s.mu.Unlock()
+		return nil, err
+	}
+	s.entities[entityID] = ent
+	s.mu.Unlock()
+	if s.OnCreate != nil {
+		s.OnCreate(ent)
+	}
+	return ent, nil
+}
+
 // Get returns an entity by id.
 func (s *Store) Get(entityID string) *Entity {
 	s.mu.RLock()
@@ -446,8 +480,28 @@ func (s *Store) EntityMatches(sel Selector, ent *Entity) bool {
 			}
 		}
 	}
-	classifications = append(classifications, s.Ancestors(ent.Type)...)
-	return sel.Matches(ent.Type, ent.ID, classifications)
+	if ent.Type != "" {
+		classifications = append(classifications, s.Ancestors(ent.Type)...)
+	}
+	// An instance's access path (for example 角色:猫猫) is its identity; the
+	// bracket type list carries the composition chain. Both participate in
+	// matching so $[角色] and $[器官内核] can reach the same entity.
+	for _, typeName := range ent.Types {
+		if typeName == ent.Type {
+			continue
+		}
+		classifications = append(classifications, typeName)
+		classifications = append(classifications, s.Ancestors(typeName)...)
+	}
+	if sel.Matches(ent.Type, ent.ID, classifications) {
+		return true
+	}
+	if sel.Kind == SelectorTypeWildcard || sel.Kind == SelectorByType {
+		if sel.MatchesIDPath(ent.ID) || sel.MatchesPrefixedID(ent.ID) {
+			return true
+		}
+	}
+	return false
 }
 
 // QuerySelector returns all matching entities.

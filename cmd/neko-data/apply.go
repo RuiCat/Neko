@@ -14,7 +14,8 @@ import (
 	"github.com/RuiCat/Neko/internal/neko"
 )
 
-// contentInstance is one @实例 block resolved to a type and an entity id.
+// contentInstance is one @实例 block: the id is the instance access path and
+// Types carries the bracket composition list (empty for the legacy form).
 type contentInstance struct {
 	Source string
 	Type   string
@@ -60,9 +61,13 @@ func runApply(runtime *bootstrap.Runtime, args []string) error {
 	}
 	created, updated, skipped := 0, 0, 0
 	for _, instance := range instances {
-		// The classification path (instance.Type) is a namespace and need not be a
-		// template; every listed type must resolve, or the fields cannot be built.
-		if len(instance.Types) == 0 {
+		// The legacy classification path (instance.Type) is a namespace and need
+		// not be a template; every listed type must resolve, or the fields cannot
+		// be built. The bracket form carries its composition in instance.Types.
+		if instance.Type == "" && len(instance.Types) == 0 {
+			return fmt.Errorf("%s: @实例 %q 缺少类型列表", instance.Source, instance.ID)
+		}
+		if instance.Type != "" && len(instance.Types) == 0 {
 			if runtime.Store.GetTemplate(instance.Type) == nil && len(runtime.Store.Ancestors(instance.Type)) == 0 {
 				return fmt.Errorf("%s: 类型 %q 没有模板或继承链（也没有 [] 类型列表）", instance.Source, instance.Type)
 			}
@@ -76,17 +81,25 @@ func runApply(runtime *bootstrap.Runtime, args []string) error {
 		switch {
 		case existing == nil:
 			if *dryRun {
-				fmt.Printf("would create %s (%s; types=%v) <- %s\n", instance.ID, instance.Type, instance.Types, instance.Source)
+				fmt.Printf("would create %s (type=%q; types=%v) <- %s\n", instance.ID, instance.Type, instance.Types, instance.Source)
 				created++
 				continue
 			}
-			composed := runtime.Store.ComposeDefaults(append([]string{instance.Type}, instance.Types...), instance.Data)
-			createdEntity, err := runtime.Store.Create(instance.ID, instance.Type, composed, nil)
-			if err != nil {
-				return fmt.Errorf("%s: 创建 %s 失败: %w", instance.Source, instance.ID, err)
+			if instance.Type == "" {
+				createdEntity, err := runtime.Store.CreateWithTypes(instance.ID, instance.Types, instance.Data, nil)
+				if err != nil {
+					return fmt.Errorf("%s: 创建 %s 失败: %w", instance.Source, instance.ID, err)
+				}
+				fmt.Printf("created %s (types=%v)\n", createdEntity.ID, createdEntity.Types)
+			} else {
+				composed := runtime.Store.ComposeDefaults(append([]string{instance.Type}, instance.Types...), instance.Data)
+				createdEntity, err := runtime.Store.Create(instance.ID, instance.Type, composed, nil)
+				if err != nil {
+					return fmt.Errorf("%s: 创建 %s 失败: %w", instance.Source, instance.ID, err)
+				}
+				createdEntity.Types = append([]string(nil), instance.Types...)
+				fmt.Printf("created %s (%s; types=%v)\n", instance.ID, instance.Type, instance.Types)
 			}
-			createdEntity.Types = append([]string(nil), instance.Types...)
-			fmt.Printf("created %s (%s; types=%v)\n", instance.ID, instance.Type, instance.Types)
 			created++
 		case !*overwrite:
 			fmt.Printf("skip %s (已存在)\n", instance.ID)
@@ -146,9 +159,17 @@ func collectContent(dir string) ([]contentInstance, error) {
 			if def.IsEntity {
 				continue
 			}
-			typeName, id := splitInstanceName(def.TypeName)
-			if typeName == "" || id == "" {
-				return nil, fmt.Errorf("%s: @实例 %q 需要写成 `类型:实体ID`", file, def.TypeName)
+			typeName, id := "", strings.TrimSpace(def.TypeName)
+			types := append([]string(nil), def.Parents...)
+			if len(types) == 0 {
+				// 旧写法（没有 [] 类型列表）：名字是 `类型:实体ID`，类型只是命名空间。
+				typeName, id = splitInstanceName(def.TypeName)
+				if typeName == "" || id == "" {
+					return nil, fmt.Errorf("%s: @实例 %q 需要写成 `角色:猫猫 [类型]` 或 `类型:实体ID`", file, def.TypeName)
+				}
+			}
+			if id == "" {
+				return nil, fmt.Errorf("%s: @实例 名称不能为空", file)
 			}
 			if previous, exists := seen[id]; exists {
 				return nil, fmt.Errorf("%s: 实体 ID %q 与 %s 重复", file, id, previous)
@@ -156,7 +177,7 @@ func collectContent(dir string) ([]contentInstance, error) {
 			seen[id] = file
 			markExplicitAgeKnown(def.Data)
 			instances = append(instances, contentInstance{
-				Source: file, Type: typeName, Types: append([]string(nil), def.Parents...),
+				Source: file, Type: typeName, Types: types,
 				ID: id, Data: def.Data,
 			})
 		}

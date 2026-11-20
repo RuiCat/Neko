@@ -152,9 +152,9 @@ func toNum(value any) float64 {
 	}
 }
 
-// TestApplyInstanceClassificationWithTypeList covers the classification-path
-// form: 分类:名称 + [类型…]，实体的 type 存分类路径，字段由 [] 里的类型组合。
-func TestApplyInstanceClassificationWithTypeList(t *testing.T) {
+// TestApplyInstancePathWithTypeList covers `@实例 角色:猫猫 [类型…]`：实体名称
+// 就是访问路径，组合类型由 [] 给出；$[角色] 按路径前缀命中。
+func TestApplyInstancePathWithTypeList(t *testing.T) {
 	runtime := newApplyRuntime(t)
 	contentDir := t.TempDir()
 	payload := "@实例 角色:猫猫 [角色定义:猫娘] {\n  \"基础\": {\"名字\": \"猫猫\", \"性别\": \"女\", \"年龄\": 20}\n}\n"
@@ -164,12 +164,12 @@ func TestApplyInstanceClassificationWithTypeList(t *testing.T) {
 	if err := runApply(runtime, []string{"-content", contentDir}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	cat := runtime.Store.Get("猫猫")
+	cat := runtime.Store.Get("角色:猫猫")
 	if cat == nil {
-		t.Fatal("猫猫 没有创建")
+		t.Fatal("角色:猫猫 没有创建")
 	}
-	if cat.Type != "角色" {
-		t.Fatalf("type = %q，期望分类路径 角色", cat.Type)
+	if cat.Type != "" {
+		t.Fatalf("type = %q，期望空（实体名称即访问路径，没有单一类型）", cat.Type)
 	}
 	if len(cat.Types) != 1 || cat.Types[0] != "角色定义:猫娘" {
 		t.Fatalf("types = %v，期望 [角色定义:猫娘]", cat.Types)
@@ -180,12 +180,12 @@ func TestApplyInstanceClassificationWithTypeList(t *testing.T) {
 	if _, ok := cat.GetOrNone("基础.名字").(string); !ok {
 		t.Fatalf("基础.名字 缺失，说明内核模板没有合并进来")
 	}
-	// 分类前缀匹配：$[角色] 命中 角色:猫猫。
+	// 路径前缀匹配：$[角色] 命中 角色:猫猫。
 	selector, err := entity.ParseEntityRef("角色[*]")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if matched := runtime.Store.QuerySelector(selector); len(matched) != 1 || matched[0].ID != "猫猫" {
-		t.Fatalf("分类前缀匹配失败：%v", matched)
+	if matched := runtime.Store.QuerySelector(selector); len(matched) != 1 || matched[0].ID != "角色:猫猫" {
+		t.Fatalf("路径前缀匹配失败：%v", matched)
 	}
 }

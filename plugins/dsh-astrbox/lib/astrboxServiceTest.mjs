@@ -268,7 +268,7 @@ test('K5 配置：人设路径是固定常量，personaMaxChars 仍可配置', (
 
 test('ensureEntity：不存在时按模板创建，并强制刷新实体目录', async () => {
   const calls = { created: [], entities: 0 }
-  let entitiesBody = { entities: [{ id: '猫猫', type: '角色基础' }] }
+  let entitiesBody = { entities: [{ id: '猫猫', types: ['角色定义:猫娘'] }] }
   const client = {
     async getEntities() {
       calls.entities += 1
@@ -277,16 +277,16 @@ test('ensureEntity：不存在时按模板创建，并强制刷新实体目录',
     async getState() {
       return { ok: true, values: {} }
     },
-    async createEntity(entity, type) {
-      calls.created.push([entity, type])
-      entitiesBody = { entities: [...entitiesBody.entities, { id: entity, type }] }
-      return { ok: true, entity, type, created: true }
+    async createEntity(entity) {
+      calls.created.push([entity])
+      entitiesBody = { entities: [...entitiesBody.entities, { id: entity, types: ['角色定义:猫娘'] }] }
+      return { ok: true, entity, created: true }
     },
   }
   const bridge = createHostBridge({ client, config: CONFIG })
-  const result = await bridge.ensureEntity('梦梦', '角色基础')
+  const result = await bridge.ensureEntity('梦梦')
   assert.equal(result.created, true)
-  assert.deepEqual(calls.created, [['梦梦', '角色基础']])
+  assert.deepEqual(calls.created, [['梦梦']])
   assert.ok(bridge.entities().includes('梦梦'), '刷新后目录应包含新实体')
   bridge.dispose()
 })
@@ -300,13 +300,13 @@ test('ensureEntity：已存在时不重复创建（created=false）', async () =
     async getState() {
       return { ok: true, values: {} }
     },
-    async createEntity(entity, type) {
+    async createEntity(entity) {
       calls.created += 1
-      return { ok: true, entity, type, created: false }
+      return { ok: true, entity, created: false }
     },
   }
   const bridge = createHostBridge({ client, config: CONFIG })
-  const result = await bridge.ensureEntity('猫猫', '角色基础')
+  const result = await bridge.ensureEntity('猫猫')
   assert.equal(result.created, false)
   assert.equal(calls.created, 1)
   bridge.dispose()

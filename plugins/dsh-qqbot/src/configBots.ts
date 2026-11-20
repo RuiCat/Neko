@@ -76,21 +76,15 @@ export interface NormalizedBots {
 
 
 /**
- * 把 `分类:名称` 形式的绑定值拆成实体 id 与分类路径。
- * 实体名称全局唯一，分类只在「实体不存在时按该类型创建」时使用；
- * 纯名称（无冒号）只表示 id，不产生类型。
+ * 归一化 NPC 实体绑定值：实体名称就是访问路径（如 `角色:猫猫`），
+ * 组合类型由内容层 `@实例` 定义，这里不再拆分类前缀。
  * @param raw - 配置里的 entity 原始值
- * @returns entity=末段名称；entityType=前面的分类路径（无冒号时 undefined）
+ * @returns entity=完整名称；未配置/空白时 undefined
  */
-export function splitEntityRef(raw: string | undefined): { entity?: string; entityType?: string } {
+export function splitEntityRef(raw: string | undefined): { entity?: string } {
   const text = raw?.trim();
   if (text === undefined || text === '') return {};
-  const cut = text.lastIndexOf(':');
-  if (cut <= 0 || cut === text.length - 1) return { entity: text };
-  const entity = text.slice(cut + 1).trim();
-  const entityType = text.slice(0, cut).trim();
-  if (entity === '' || entityType === '') return {};
-  return { entity, entityType };
+  return { entity: text };
 }
 
 /**
@@ -107,12 +101,11 @@ function mergeBotConfig(base: ImQQBotConfig, bot: BotEntryConfig): ImQQBotConfig
   if (bot.preset !== undefined) merged.preset = bot.preset;
   if (bot.cwd !== undefined) merged.cwd = bot.cwd;
   // BotEntrySchema 会把缺省 entity 填成空串，因此空白条目视为「未设置」并继承顶层；
-  // 绑定值可写成 `分类:名称`：id 取末段，分类留给「不存在时按该类型创建」。
+  // 绑定值就是实体名称（访问路径），组合类型由内容层 `@实例` 定义。
   const botRef = splitEntityRef(bot.entity);
   const baseRef = splitEntityRef(base.entity);
   const ref = botRef.entity !== undefined ? botRef : baseRef;
   merged.entity = normalizeEntityId(ref.entity);
-  merged.entityType = normalizeEntityId(ref.entityType);
   if (bot.groupPrompt !== undefined) merged.groupPrompt = bot.groupPrompt;
   if (bot.directPrompt !== undefined) merged.directPrompt = bot.directPrompt;
   // K26：单会话提示词整体覆盖（条目提供时），缺省继承顶层已归一化列表。
@@ -143,7 +136,6 @@ function legacyBot(base: ImQQBotConfig, options: NormalizeBotsOptions): Effectiv
       appSecret: isEnvPlaceholder(base.appSecret) ? (options.envAppSecret ?? '') : base.appSecret,
       // Schema 默认值把未配置的顶层 entity 填成空串：旧单 bot 同样归一为「未绑定」。
       entity: normalizeEntityId(splitEntityRef(base.entity).entity),
-      entityType: normalizeEntityId(splitEntityRef(base.entity).entityType),
     },
   };
 }

@@ -209,16 +209,15 @@ export function createControlClient(options) {
     },
 
     /**
-     * `POST /entities/create`：确保实体存在（不存在则由模板链创建）。
-     * @param {string} entity 实体 id
-     * @param {string} [type] 模板类型，缺省 NPC
+     * `POST /entities/create`：确保实体存在（实体名称即访问路径，由内容层 `@实例` 定义）。
+     * @param {string} entity 实体名称（如 角色:猫猫）
      * @returns {Promise<any>} 响应体 `{ok, entity, type, created}`
      */
-    async createEntity(entity, type = 'NPC') {
+    async createEntity(entity) {
       const response = await send({
         method: 'POST',
         path: '/entities/create',
-        body: { entity, type },
+        body: { entity },
         timeoutMs: requestTimeoutMs,
       })
       if (response.status !== 200) throw errorFromResponse(response)

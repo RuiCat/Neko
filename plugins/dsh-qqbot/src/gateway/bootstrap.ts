@@ -134,10 +134,9 @@ export function createBotRuntime(
       logger.warn(`im-qqbot: 机器人 ${botId} 工作区初始化失败（继续启动）: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  // K33：只有显式配置 entityType 时才按该类型创建（无缺省类型；实体由内容层定义）。
-  const bootstrapEntityType = typeof config.entityType === 'string' ? config.entityType.trim() : '';
-  if (config.entity !== undefined && config.entity.trim() !== '' && bootstrapEntityType !== '') {
-    void ensureBridgeEntity(ctx, config.entity, bootstrapEntityType, logger);
+  // K33：实体名称即访问路径，组合类型由内容层 `@实例` 定义；绑定后按名称幂等确保存在。
+  if (config.entity !== undefined && config.entity.trim() !== '') {
+    void ensureBridgeEntity(ctx, config.entity, logger);
   }
   const manager = new SessionManager(ctx, agents, config, logger, legacy ? undefined : botId, workspaceTitle);
   // 主会话（Neko 主体）：每 bot 一个常驻父会话，QQ 私聊/群聊子会话挂到它下面。

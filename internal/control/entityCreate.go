@@ -38,9 +38,22 @@ func (s *Server) handleEntityCreate(r *http.Request) response {
 	if entityID == "" {
 		return badRequest("缺少 entity")
 	}
+	// An entity is identified by its access path (角色:猫猫); its composition
+	// comes from the content layer. A create call therefore only needs the id,
+	// and an existing entity is always idempotent success.
 	typeName := strings.TrimSpace(request.Type)
 	if typeName == "" {
-		typeName = "角色基础"
+		if s.runtime.Store.Get(entityID) != nil {
+			return response{status: http.StatusOK, body: map[string]any{
+				"ok": true, "entity": entityID, "type": "", "created": false,
+			}, note: fmt.Sprintf("entity=%s created=false", entityID)}
+		}
+		return badRequest(fmt.Sprintf("实体 '%s' 不存在；请由内容层 @实例 apply 创建", entityID))
+	}
+	if s.runtime.Store.Get(entityID) != nil {
+		return response{status: http.StatusOK, body: map[string]any{
+			"ok": true, "entity": entityID, "type": typeName, "created": false,
+		}, note: fmt.Sprintf("entity=%s created=false", entityID)}
 	}
 	if !s.runtime.Store.HasTemplate(typeName) {
 		return badRequest(fmt.Sprintf("实体模板类型 '%s' 不存在（可用: %s）", typeName, strings.Join(s.runtime.Store.ListTemplates(), ", ")))

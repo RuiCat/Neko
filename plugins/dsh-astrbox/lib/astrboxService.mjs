@@ -36,11 +36,16 @@ function isPlainObject(value) {
 }
 
 /**
- * @param {unknown} type 实体类型
- * @returns {boolean} 是否是角色实体（K8：只暴露 `type.startsWith('角色基础')`）
+ * @param {unknown} item 实体目录条目
+ * @returns {boolean} 是否是角色实体（K8：id 在 角色: 路径下，或类型列表含 角色*；type 可缺省）
  */
-function isNpcType(type) {
-  return typeof type === 'string' && type.startsWith('角色基础')
+function isNpcEntity(item) {
+  if (typeof item !== 'object' || item === null) return false
+  if (typeof item.type === 'string' && item.type.startsWith('角色')) return true
+  const types = Array.isArray(item.types) ? item.types : []
+  if (types.some((type) => typeof type === 'string' && type.startsWith('角色'))) return true
+  const id = item.id
+  return typeof id === 'string' && (id === '角色' || id.startsWith('角色:'))
 }
 
 /**
@@ -85,9 +90,9 @@ function npcEntityIds(response) {
   const ids = []
   const seen = new Set()
   for (const item of list) {
+    if (!isNpcEntity(item)) continue
     const id = item?.id
-    if (typeof id !== 'string' || id.trim() === '') continue
-    if (!isNpcType(item?.type) || seen.has(id)) continue
+    if (typeof id !== 'string' || id.trim() === '' || seen.has(id)) continue
     seen.add(id)
     ids.push(id)
   }
@@ -279,24 +284,22 @@ export function createHostBridge(options = {}) {
     },
 
     /**
-     * 确保实体存在：不存在则由控制面按模板创建；创建成功后强制刷新实体目录，
-     * 新一轮 `entities()` 立即能看到它。失败上抛（调用方决定是否降级）。
-     * @param {string} entityId 实体 id（名称全局唯一）
-     * @param {string} type 实体类型（必填，无缺省类型）
-     * @returns {Promise<{entity: string, type: string, created: boolean}>} 结果
+     * 确保实体存在：实体名称即访问路径，组合类型由内容层 `@实例` 定义；
+     * 创建成功后强制刷新实体目录，新一轮 `entities()` 立即能看到它。
+     * 失败上抛（调用方决定是否降级）。
+     * @param {string} entityId 实体名称（如 角色:猫猫）
+     * @returns {Promise<{entity: string, created: boolean}>} 结果
      */
-    async ensureEntity(entityId, type) {
+    async ensureEntity(entityId) {
       const id = typeof entityId === 'string' ? entityId.trim() : ''
       if (id === '') throw new Error('entity 不能为空')
-      const typeName = typeof type === 'string' ? type.trim() : ''
-      if (typeName === '') throw new Error('type 不能为空（不设缺省类型）')
-      const response = await client.createEntity(id, typeName)
+      const response = await client.createEntity(id)
       const created = response?.created === true
       if (created && !disposed) {
         const pending = scheduleEntities(true)
         if (pending !== undefined) await pending
       }
-      return { entity: id, type: typeName, created }
+      return { entity: id, created }
     },
 
     /** 卸载清理：停止后续拉取（不上抛）。 */

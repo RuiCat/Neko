@@ -281,10 +281,10 @@ export function registerBotCredentialRoutes(
       onUpdateConfig: async (config) => {
         const ok = updateBotProfileConfig(bot.id, config, getProfileDir() ?? undefined, logger);
         if (ok) {
-          // 绑定值 `分类:名称` 拆出 id 与类型；没有分类就不自动创建（无缺省类型）。
+          // 实体名称即访问路径（如 角色:猫猫），组合类型由内容层定义。
           const entityRef = splitEntityRef(typeof config.entity === 'string' ? config.entity : undefined);
-          if (entityRef.entity !== undefined && entityRef.entityType !== undefined) {
-            void ensureBridgeEntity(ctx, entityRef.entity, entityRef.entityType, logger);
+          if (entityRef.entity !== undefined) {
+            void ensureBridgeEntity(ctx, entityRef.entity, logger);
           }
         }
         return ok;

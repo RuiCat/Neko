@@ -27,7 +27,7 @@ var selectorPattern = regexp.MustCompile(`^` +
 	`(?:\[(?P<all>\*)\])` +
 	`|^(?P<byType>(?P<t1>[\p{L}\p{N}_:]+)\[(?P<n1>[\p{L}\p{N}_]+)\])` +
 	`|^(?P<wild>(?P<t2>[\p{L}\p{N}_:]+)\[\*\])` +
-	`|^(?P<byID>[\p{L}\p{N}_]+)$`)
+	`|^(?P<byID>[\p{L}\p{N}_:]+)$`)
 
 // ParseEntityRef parses NAME, TYPE[NAME], TYPE[*] and [*].
 func ParseEntityRef(ref string) (Selector, error) {
@@ -106,9 +106,27 @@ func (s Selector) TypeMatches(entityType string, classifications []string) bool 
 	return false
 }
 
+// MatchesIDPath reports whether the entity id is the selector path itself or
+// lives under it (角色 matches 角色:猫猫). Entity ids are access paths, so a
+// wildcard selector also targets the id namespace even when Type is empty.
+func (s Selector) MatchesIDPath(entityID string) bool {
+	if s.TypeName == "" {
+		return false
+	}
+	return entityID == s.TypeName || strings.HasPrefix(entityID, s.TypeName+":")
+}
+
+// MatchesPrefixedID reports whether TYPE[NAME] matches the path id TYPE:NAME.
+func (s Selector) MatchesPrefixedID(entityID string) bool {
+	if s.TypeName == "" || s.EntityID == "" {
+		return false
+	}
+	return entityID == s.TypeName+":"+s.EntityID
+}
+
 // ExtractSelector returns the first selector found in an expression.
 func ExtractSelector(expr string) (Selector, bool) {
-	re := regexp.MustCompile(`(?:[\p{L}\p{N}_:]+\[[*]?[\p{L}\p{N}_]*\]|\[\*\]|[\p{L}\p{N}_]+)(?:\.[\p{L}\p{N}_]+)*`)
+	re := regexp.MustCompile(`(?:[\p{L}\p{N}_:]+\[[*]?[\p{L}\p{N}_]*\]|\[\*\]|[\p{L}\p{N}_:]+)(?:\.[\p{L}\p{N}_]+)*`)
 	for _, raw := range re.FindAllString(expr, -1) {
 		ref := raw
 		if index := strings.IndexByte(ref, '.'); index >= 0 {

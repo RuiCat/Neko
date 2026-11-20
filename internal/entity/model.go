@@ -257,6 +257,39 @@ func CreateEntityWithParents(entityID, typeName string, templates map[string]map
 	return ent, nil
 }
 
+// CreateEntityWithTypes builds an instance whose composition comes from its
+// bracket type list (for example [角色定义:猫娘]). The entity id is the access
+// path (角色:猫猫), so no single Type is recorded; the list carries the chain.
+func CreateEntityWithTypes(entityID string, types []string, templates map[string]map[string]any,
+	parents map[string][]string, data map[string]any, keys map[string]string) (*Entity, error) {
+	if len(types) == 0 {
+		return nil, &ValidationError{Message: "实体类型列表不能为空"}
+	}
+	merged := map[string]any{}
+	for _, typeName := range types {
+		order, err := ResolveTemplateOrder(typeName, templates, parents)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range order {
+			if template, ok := templates[name]; ok {
+				merged = DeepMerge(merged, template)
+			}
+		}
+	}
+	stripTemplateMetadata(merged)
+	if data != nil {
+		merged = DeepMerge(merged, data)
+		stripTemplateMetadata(merged)
+	}
+	ent := &Entity{ID: entityID, Types: append([]string(nil), types...), Data: merged, Keys: keys,
+		Templates: templates, Parents: parents}
+	if err := ent.ValidateID(); err != nil {
+		return nil, err
+	}
+	return ent, nil
+}
+
 // Snapshot returns a deep copy of the instance data. It holds the read lock
 // while copying, so callers never read Data outside the entity lock.
 func (e *Entity) Snapshot() map[string]any {
