@@ -22,17 +22,21 @@ const MAX_MEMORY_FRAGMENTS = 8
 // Assembler turns a board plus gate output into a validated package.
 type Assembler struct {
 	Gate         gate.Gate
-	Experts      *expert.Registry
+	Experts      *expert.Set
 	MaxFragments int
 }
 
-// NewAssembler wires a gate and an expert registry.
-func NewAssembler(g gate.Gate, experts *expert.Registry) *Assembler {
+// NewAssembler wires a gate and the per-entity expert pools.
+func NewAssembler(g gate.Gate, experts *expert.Set) *Assembler {
 	return &Assembler{Gate: g, Experts: experts}
 }
 
-// Input is everything one assembly needs beyond the board.
+// Input is everything one assembly needs beyond the board. Entity selects the
+// expert pool, so one NPC never recalls another's memory; SessionID keeps the
+// current session's own entries out of its package.
 type Input struct {
+	Entity             string
+	SessionID          string
 	UserInput          string
 	Board              blackboard.Reader
 	Features           gate.Features
@@ -71,7 +75,11 @@ func (a *Assembler) AssembleWithActive(ctx context.Context, in Input) (journal.C
 	if err != nil {
 		return journal.Compensation{}, nil, fmt.Errorf("compensation: 门控失败: %w", err)
 	}
-	fragments, err := a.Experts.Compensate(ctx, active, expert.Input{UserInput: in.UserInput, Board: in.Board})
+	fragments, err := a.Experts.Compensate(ctx, in.Entity, active, expert.Input{
+		UserInput: in.UserInput,
+		SessionID: in.SessionID,
+		Board:     in.Board,
+	})
 	if err != nil {
 		return journal.Compensation{}, nil, err
 	}

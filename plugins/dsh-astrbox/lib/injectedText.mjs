@@ -15,10 +15,13 @@ export const INJECTED_PREFIXES = Object.freeze([
   '[context-guard]',
 ])
 
+/** 宿主的上下文注入 kind；真实用户输入恒为 `user`（`time-context` 的时间片也属于注入）。 */
+export const INJECTED_SOURCE_KINDS = Object.freeze(['runtime-context', 'time-context', 'astrbox'])
+
 /**
  * 判断一条 user 消息是否为注入内容。
  *
- * 先看消息来源标记（宿主注入是 runtime-context；桥接自己的注入标记为 astrbox），
+ * 先看消息来源标记（宿主注入是 runtime-context / time-context；桥接自己的注入标记为 astrbox），
  * 再按文本前缀兜底——`createInjectedMessage` 把 source.kind 设成 'user'，前缀是唯一可靠的判据。
  * @param {unknown} message user/message 的消息体（可缺）
  * @param {string} text 消息纯文本
@@ -26,7 +29,7 @@ export const INJECTED_PREFIXES = Object.freeze([
  */
 export function isInjectedUserText(message, text) {
   const kind = message?.source?.kind
-  if (kind === 'runtime-context' || kind === 'astrbox') return true
+  if (INJECTED_SOURCE_KINDS.includes(kind)) return true
   if (typeof text !== 'string' || text === '') return false
   return INJECTED_PREFIXES.some((prefix) => text.startsWith(prefix))
 }

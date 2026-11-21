@@ -5,6 +5,9 @@ package control
 import (
 	"net/http"
 	"testing"
+
+	"github.com/RuiCat/Neko/internal/expert"
+	"github.com/RuiCat/Neko/internal/gate"
 )
 
 func TestTurnContextReturnsPackage(t *testing.T) {
@@ -46,6 +49,52 @@ func TestTurnContextRejectsMissingEntity(t *testing.T) {
 	if recorder := env.call(t, http.MethodGet, "/turn-context?entity=梦梦", nil); recorder.Code != http.StatusNotFound {
 		t.Fatalf("未知实体应 404，得到 %d", recorder.Code)
 	}
+}
+
+// TestTurnContextFiltersBySession proves the optional session parameter keeps a
+// turn's own memory out of its package while sibling data stays recallable.
+func TestTurnContextFiltersBySession(t *testing.T) {
+	env := newTestEnv(t, Options{})
+	env.runtime.Experts.Remember("猫猫", gate.EXPERT_EVENT, expert.Entry{
+		SnapshotID: "evt_self", SessionID: "s-self", Content: "用户: 本会话 | 助手: 喵", Weight: 0.9,
+	})
+	env.runtime.Experts.Remember("猫猫", gate.EXPERT_EVENT, expert.Entry{
+		SnapshotID: "evt_other", SessionID: "s-other", Content: "用户: 别的会话 | 助手: 喵", Weight: 0.9,
+	})
+	own := decodeBody(t, env.call(t, http.MethodGet, "/turn-context?entity=猫猫&session=s-self", nil))
+	if memory := memoryOf(t, own); len(memory) != 1 || memory[0]["source_snapshot_id"] != "evt_other" {
+		t.Fatalf("本会话条目应被剔除：%v", memory)
+	}
+	other := decodeBody(t, env.call(t, http.MethodGet, "/turn-context?entity=猫猫&session=s-other", nil))
+	if memory := memoryOf(t, other); len(memory) != 1 || memory[0]["source_snapshot_id"] != "evt_self" {
+		t.Fatalf("别的会话条目应保留：%v", memory)
+	}
+	anonymous := decodeBody(t, env.call(t, http.MethodGet, "/turn-context?entity=猫猫", nil))
+	if memory := memoryOf(t, anonymous); len(memory) != 2 {
+		t.Fatalf("无 session 参数时历史条目都应召回：%v", memory)
+	}
+}
+
+// memoryOf extracts the package memory list from a /turn-context response.
+func memoryOf(t *testing.T, payload map[string]any) []map[string]any {
+	t.Helper()
+	compensation, ok := payload["compensation"].(map[string]any)
+	if !ok {
+		t.Fatalf("缺少补偿包：%v", payload)
+	}
+	items, ok := compensation["memory"].([]any)
+	if !ok {
+		return nil
+	}
+	memory := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		fragment, ok := item.(map[string]any)
+		if !ok {
+			t.Fatalf("记忆片段形状错误：%v", item)
+		}
+		memory = append(memory, fragment)
+	}
+	return memory
 }
 
 func TestTurnContextDoesNotWriteJournal(t *testing.T) {

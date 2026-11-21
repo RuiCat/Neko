@@ -25,9 +25,12 @@ func (s *Server) handleTurnContext(r *http.Request) response {
 	if s.runtime.Store.Get(entityID) == nil {
 		return notFound(fmt.Sprintf("实体 '%s' 不存在", entityID))
 	}
+	// session 是可选参数：桥接传入当前会话 id 后，本会话自己写下的记忆不会被当成
+	// 外部记忆召回；缺省为空串时按「未知会话」处理，历史条目仍然可召回。
+	sessionID := strings.TrimSpace(r.URL.Query().Get("session"))
 	now := time.Now()
 	snapshotID := fmt.Sprintf("ctx_%d", now.UnixNano())
-	snapshot, pkg, active, err := s.buildTurnContext(r.Context(), snapshotID, entityID, "", now)
+	snapshot, pkg, active, err := s.buildTurnContext(r.Context(), snapshotID, entityID, sessionID, "", now)
 	if err != nil {
 		return internalError(err.Error())
 	}
@@ -41,10 +44,10 @@ func (s *Server) handleTurnContext(r *http.Request) response {
 	}}
 }
 
-// buildTurnContext captures one entity's hard state and assembles a package.
-// The caller owns the snapshot ID: ctx_ for prompt projections, evt_ for
-// journaled DSH turns.
-func (s *Server) buildTurnContext(ctx context.Context, snapshotID, entityID, userInput string, now time.Time) (hardstate.Snapshot, journal.Compensation, []string, error) {
+// buildTurnContext captures one entity's hard state and assembles a package
+// from that entity's own expert pool. The caller owns the snapshot ID: ctx_ for
+// prompt projections, evt_ for journaled DSH turns.
+func (s *Server) buildTurnContext(ctx context.Context, snapshotID, entityID, sessionID, userInput string, now time.Time) (hardstate.Snapshot, journal.Compensation, []string, error) {
 	if s.runtime.Assembler == nil || s.runtime.Board == nil {
 		return hardstate.Snapshot{}, journal.Compensation{}, nil, fmt.Errorf("补偿包组装器未配置")
 	}
@@ -69,6 +72,8 @@ func (s *Server) buildTurnContext(ctx context.Context, snapshotID, entityID, use
 		}
 		var assembleErr error
 		pkg, active, assembleErr = s.runtime.Assembler.AssembleWithActive(ctx, compensation.Input{
+			Entity:    entityID,
+			SessionID: sessionID,
 			UserInput: userInput,
 			Board:     s.runtime.Board,
 			Features:  gate.Features{EventKind: "turn"},

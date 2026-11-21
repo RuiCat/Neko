@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RuiCat/Neko/internal/expert"
 	"github.com/RuiCat/Neko/internal/journal"
 	"github.com/RuiCat/Neko/internal/neko"
 )
@@ -391,6 +392,24 @@ func TestSessionEventExplicitEntityDrivesTurnRecord(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("缺少 DSH 轮记录（全部 %d 条）", len(records))
+	}
+	// 记忆按实体隔离：本轮只进 梦梦 的池，且条目带上来源会话 id。
+	set := expert.NewDefaultSet(expert.DEFAULT_CONTEXT_CAPACITY)
+	if err := expert.LoadSetFile(filepath.Join(runtime.DataDir, "experts.json"), set); err != nil {
+		t.Fatalf("加载专家池: %v", err)
+	}
+	for entity, perExpert := range set.Snapshot() {
+		for id, entries := range perExpert {
+			if len(entries) == 0 {
+				continue
+			}
+			if entity != "梦梦" {
+				t.Fatalf("记忆写进了错误实体 %s（专家 %s，%d 条）", entity, id, len(entries))
+			}
+			if entries[0].SessionID != "s-record" {
+				t.Fatalf("记忆缺少来源会话：%+v", entries[0])
+			}
+		}
 	}
 }
 

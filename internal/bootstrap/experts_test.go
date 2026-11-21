@@ -12,16 +12,16 @@ import (
 func TestRuntimeLoadsAndPersistsExperts(t *testing.T) {
 	dataDir := t.TempDir()
 	path := filepath.Join(dataDir, "experts.json")
-	seed := expert.NewDefaultRegistry(8)
-	seed.Remember("事件记忆", expert.Entry{SnapshotID: "evt_seed", Content: "种子记忆", Weight: 0.8})
-	if err := expert.SaveFile(path, seed); err != nil {
+	seed := expert.NewDefaultSet(8)
+	seed.Remember("猫猫", "事件记忆", expert.Entry{SnapshotID: "evt_seed", Content: "种子记忆", Weight: 0.8})
+	if err := expert.SaveSetFile(path, seed); err != nil {
 		t.Fatal(err)
 	}
 	runtime, err := New(Options{DataDir: dataDir, ScriptsDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, ok := runtime.Experts.Get("事件记忆")
+	loaded, ok := runtime.Experts.RegistryOf("猫猫").Get("事件记忆")
 	if !ok {
 		t.Fatal("缺少事件专家")
 	}
@@ -29,15 +29,15 @@ func TestRuntimeLoadsAndPersistsExperts(t *testing.T) {
 	if err != nil || len(fragments) != 1 || fragments[0].SourceSnapshotID != "evt_seed" {
 		t.Fatalf("未加载种子记忆：%v,%v", fragments, err)
 	}
-	runtime.Experts.Remember("事件记忆", expert.Entry{SnapshotID: "evt_new", Content: "新记忆", Weight: 0.9})
+	runtime.Experts.Remember("猫猫", "事件记忆", expert.Entry{SnapshotID: "evt_new", Content: "新记忆", Weight: 0.9})
 	if err := runtime.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reloaded := expert.NewDefaultRegistry(8)
-	if err := expert.LoadFile(path, reloaded); err != nil {
+	reloaded := expert.NewDefaultSet(8)
+	if err := expert.LoadSetFile(path, reloaded); err != nil {
 		t.Fatal(err)
 	}
-	recall, _ := reloaded.Get("事件记忆")
+	recall, _ := reloaded.RegistryOf("猫猫").Get("事件记忆")
 	fragments, _ = recall.Compensate(context.Background(), expert.Input{})
 	if len(fragments) != 2 {
 		t.Fatalf("Close 未持久化新记忆：%d 条", len(fragments))

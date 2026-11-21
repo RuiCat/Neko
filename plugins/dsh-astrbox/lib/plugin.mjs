@@ -22,7 +22,7 @@ import { createHostBridge } from './astrboxService.mjs'
 import { registerBlackboardRoute } from './blackboardRoute.mjs'
 import { registerControlRoutes } from './controlRoutes.mjs'
 import { boardFromObservationState, statePathsOf } from './observationBoard.mjs'
-import { renderDelta, renderState } from './observationRender.mjs'
+import { renderDelta, renderState, renderStateDelta, stateValuesOf } from './observationRender.mjs'
 import { createDialogFeed, dialogKind, formatDialogLine, turnDialogExcerpt } from './dialogFeed.mjs'
 import { createRelayTool } from './relayTool.mjs'
 import { createIntervalStore, isValidIntervalMinutes } from './subscriptionInterval.mjs'
@@ -39,7 +39,7 @@ import { DEFAULT_CONFIG_PATH, normalizeConfig } from './config.mjs'
 import { createControlClient } from './controlClient.mjs'
 import { normalizeBindings, resolveEntityForCwd } from './entityBindings.mjs'
 import { createLogger } from './logger.mjs'
-import { STATIC_USAGE_TEXT, composeCompensation, truncateText } from './prompt.mjs'
+import { STATIC_USAGE_TEXT, composeCompensation, compensationSignature, truncateText } from './prompt.mjs'
 import { createSessionEventSender } from './sessionEvents.mjs'
 
 export const name = 'astrbox-bridge'
@@ -52,6 +52,12 @@ export const inject = ['systemPrompt', 'timer']
 
 /** 提示段固定元数据（K2）。 */
 const SECTION = Object.freeze({ name: 'astrbox-usage', order: 2500, interpolate: false })
+
+/** 会话级缓存条目上限：超出后淘汰最早建立的会话，防止长跑内存只增不减。 */
+const SESSION_CACHE_LIMIT = 512
+
+/** 单会话「已推送记忆」上限。 */
+const PUSHED_MEMORY_LIMIT = 256
 
 /** 某实体现状连续失败达到该次数后本轮不注入现状卡。 */
 const STATE_FAILURE_LIMIT = 3
@@ -130,14 +136,16 @@ function createRuntime(options) {
   let lastActivityAt = 0
   /** 最近一次非空合法绑定（K6：服务缺失/HMR 空窗继续用它）。 */
   let lastBindings = []
-  /** 每实体现状卡缓存：entity → { text, checkedAt, failures, inflight }（Observation v2）。 */
+  /** 每实体现状卡缓存：entity → { text, structured, values, checkedAt, failures, inflight }（Observation v2）。 */
   const observationStates = new Map()
-  /** 每会话上次注入的现状卡文本：相同则默认跳过注入。 */
-  const lastStateTexts = new Map()
-  /** 每实体补偿包缓存：entity → { text, checkedAt, failures, inflight }（记忆/约束/情境/专家）。 */
+  /** 每会话上次注入的现状值表：sessionId → Map(path → 值)，下一轮只推与它相比的变化。 */
+  const lastStateValues = new Map()
+  /** 每 (entity, session) 补偿包缓存：键 `entity\0sessionId`，服务端按会话过滤记忆。 */
   const compensationPackages = new Map()
-  /** 每会话上次注入的补偿包文本：相同则跳过。 */
-  const lastCompensationTexts = new Map()
+  /** 每会话上次注入的补偿包正文签名：正文相同则跳过（头行时间戳不算变化）。 */
+  const lastCompensationSignatures = new Map()
+  /** 每会话已经推送过的记忆片段 id：同一会话不再重复收到同一条记忆。 */
+  const pushedMemoryIds = new Map()
   const lastTurnByAgent = new WeakMap()
   /** 主会话推送游标：`entity\0sessionId` → { cursor, feedVersion, pushedAt }（Observation v2）。 */
   const mainPushes = new Map()
@@ -393,6 +401,35 @@ function createRuntime(options) {
   }
 
   /**
+   * 写一条会话级缓存；超过上限时淘汰最早建立的会话。
+   * @param {Map<string, unknown>} map 会话级 Map
+   * @param {string} key 键
+   * @param {unknown} value 值
+   */
+  function setSessionEntry(map, key, value) {
+    map.delete(key)
+    map.set(key, value)
+    if (map.size > SESSION_CACHE_LIMIT) {
+      const oldest = map.keys().next()
+      if (!oldest.done) map.delete(oldest.value)
+    }
+  }
+
+  /**
+   * 某会话已推送记忆 id 集合（懒建、有上限）。
+   * @param {string} sessionId 会话 id
+   * @returns {Set<string>} 已推送 id
+   */
+  function pushedMemoryOf(sessionId) {
+    let seen = pushedMemoryIds.get(sessionId)
+    if (seen === undefined) {
+      seen = new Set()
+      setSessionEntry(pushedMemoryIds, sessionId, seen)
+    }
+    return seen
+  }
+
+  /**
    * 造一条注入 user 消息（现状卡 / 变化推送共用；形状与宿主 `createUserMessage` 一致）。
    * @param {string} text 注入文本
    * @returns {object} user 消息
@@ -518,12 +555,12 @@ function createRuntime(options) {
   /**
    * 取（或建）某实体的现状缓存条目：TTL、失败计数、在飞请求都按实体隔离（Observation v2）。
    * @param {string} entity 实体 id
-   * @returns {{text: string, checkedAt: number, failures: number, inflight: Promise<void> | undefined}} 缓存条目
+   * @returns {{text: string, structured: object|undefined, values: Map<string, string>|undefined, checkedAt: number, failures: number, inflight: Promise<void> | undefined}} 缓存条目
    */
   function stateEntry(entity) {
     let entry = observationStates.get(entity)
     if (entry === undefined) {
-      entry = { text: '', checkedAt: 0, failures: 0, inflight: undefined }
+      entry = { text: '', structured: undefined, values: undefined, checkedAt: 0, failures: 0, inflight: undefined }
       observationStates.set(entity, entry)
     }
     return entry
@@ -539,6 +576,8 @@ function createRuntime(options) {
       const payload = await client.fetchObservationState(`entity:${entity}`)
       if (disposed) return
       entry.text = renderState(payload, { maxChars: config.promptMaxChars })
+      entry.structured = { scope: payload?.scope, entries: Array.isArray(payload?.entries) ? payload.entries : [] }
+      entry.values = stateValuesOf(payload)
       entry.failures = 0
     } catch (error) {
       entry.failures += 1
@@ -556,13 +595,13 @@ function createRuntime(options) {
    * 取某实体当前现状卡文本：窗口内复用缓存；同实体并发复用同一在飞请求。
    * 失败也占一个刷新窗口，避免失败时每轮打服务端。
    * @param {string} entity 实体 id
-   * @returns {Promise<string>} 现状卡文本（失败/抑制时为 ''）
+   * @returns {Promise<{text: string, structured: object|undefined, values: Map<string, string>|undefined}>} 现状快照
    */
   async function currentObservationState(entity) {
-    if (disposed) return ''
+    if (disposed) return { text: '', structured: undefined, values: undefined }
     const entry = stateEntry(entity)
     const at = Date.now()
-    if (entry.checkedAt !== 0 && at - entry.checkedAt < config.promptRefreshMs) return entry.text
+    if (entry.checkedAt !== 0 && at - entry.checkedAt < config.promptRefreshMs) return { text: entry.text, structured: entry.structured, values: entry.values }
     entry.checkedAt = at
     if (entry.inflight === undefined) {
       entry.inflight = Promise.resolve()
@@ -572,19 +611,22 @@ function createRuntime(options) {
         })
     }
     await entry.inflight
-    return entry.text
+    return { text: entry.text, structured: entry.structured, values: entry.values }
   }
 
   /**
-   * 取（或建）某实体的补偿包缓存条目：TTL、失败计数、在飞请求都按实体隔离。
+   * 取（或建）某会话的补偿包缓存条目：服务端按 session 过滤本会话来源，
+   * 所以缓存键必须是 (entity, sessionId)，不能只按实体。
    * @param {string} entity 实体 id
+   * @param {string} sessionId 会话 id（可为空串）
    * @returns {{text: string, checkedAt: number, failures: number, inflight: Promise<void> | undefined}} 缓存条目
    */
-  function compensationEntry(entity) {
-    let entry = compensationPackages.get(entity)
+  function compensationEntry(entity, sessionId) {
+    const key = `${entity}\u0000${sessionId ?? ''}`
+    let entry = compensationPackages.get(key)
     if (entry === undefined) {
-      entry = { text: '', checkedAt: 0, failures: 0, inflight: undefined }
-      compensationPackages.set(entity, entry)
+      entry = { text: '', ids: [], checkedAt: 0, failures: 0, inflight: undefined }
+      setSessionEntry(compensationPackages, key, entry)
     }
     return entry
   }
@@ -594,20 +636,33 @@ function createRuntime(options) {
    * @param {string} entity 实体 id
    * @param {object} entry 缓存条目
    */
-  async function loadCompensation(entity, entry) {
+  async function loadCompensation(entity, entry, sessionId) {
     try {
-      const context = await client.getTurnContext({ entity })
+      const context = await client.getTurnContext({ entity, sessionId })
       if (disposed) return
       const compensation = context?.compensation
-      entry.text = typeof compensation === 'object' && compensation !== null
-        ? composeCompensation({
-            entity,
-            timestamp: new Date().toISOString(),
-            compensation,
-            active: Array.isArray(context?.gate?.active) ? context.gate.active : [],
-            maxChars: config.promptMaxChars,
-          })
-        : ''
+      if (typeof compensation === 'object' && compensation !== null) {
+        const allMemory = Array.isArray(compensation.memory) ? compensation.memory : []
+        const seen = pushedMemoryOf(sessionId)
+        const memory = allMemory.filter((item) => {
+          const id = typeof item?.source_snapshot_id === 'string' ? item.source_snapshot_id : ''
+          return id === '' || !seen.has(id)
+        })
+        entry.ids = memory.map((item) => item?.source_snapshot_id).filter((id) => typeof id === 'string' && id !== '')
+        entry.text = composeCompensation({
+          entity,
+          timestamp: new Date().toISOString(),
+          compensation: { ...compensation, memory },
+          active: Array.isArray(context?.gate?.active) ? context.gate.active : [],
+          maxChars: config.promptMaxChars,
+          omitEmptyMemory: allMemory.length > 0 && memory.length === 0,
+        })
+        // 只有头行、没有正文（记忆全被过滤且无约束/情境/专家）→ 没有可注入内容。
+        if (!entry.text.includes('\n')) entry.text = ''
+      } else {
+        entry.text = ''
+        entry.ids = []
+      }
       entry.failures = 0
     } catch (error) {
       entry.failures += 1
@@ -624,23 +679,24 @@ function createRuntime(options) {
   /**
    * 取某实体当前补偿包文本：窗口内复用缓存；同实体并发复用同一在飞请求。
    * @param {string} entity 实体 id
-   * @returns {Promise<string>} 补偿包文本（无包/失败/抑制时为 ''）
+   * @param {string} sessionId 会话 id（可为空串）
+   * @returns {Promise<{text: string, ids: string[]}>} 补偿包文本与其记忆片段 id
    */
-  async function currentCompensation(entity) {
-    if (disposed) return ''
-    const entry = compensationEntry(entity)
+  async function currentCompensation(entity, sessionId) {
+    if (disposed) return { text: '', ids: [] }
+    const entry = compensationEntry(entity, sessionId)
     const at = Date.now()
-    if (entry.checkedAt !== 0 && at - entry.checkedAt < config.promptRefreshMs) return entry.text
+    if (entry.checkedAt !== 0 && at - entry.checkedAt < config.promptRefreshMs) return { text: entry.text, ids: entry.ids ?? [] }
     entry.checkedAt = at
     if (entry.inflight === undefined) {
       entry.inflight = Promise.resolve()
-        .then(() => loadCompensation(entity, entry))
+        .then(() => loadCompensation(entity, entry, sessionId))
         .finally(() => {
           entry.inflight = undefined
         })
     }
     await entry.inflight
-    return entry.text
+    return { text: entry.text, ids: entry.ids ?? [] }
   }
 
   const sender = createSessionEventSender({
@@ -1001,23 +1057,41 @@ function createRuntime(options) {
       rememberAgent(agent)
       if (agent !== undefined && lastTurnByAgent.get(agent) === turn) return decision
       const entity = resolveEntity(agent)
-      const stateText = await currentObservationState(entity)
-      const compensationText = await currentCompensation(entity)
-      const boardText = await sessionBoardTextFor(agent)
       const sessionId = typeof agent?.session?.id === 'string' ? agent.session.id : ''
-      // 默认跳过：现状/补偿包没变时不再重复注入（首轮必注入）。
-      const stateDue = stateText !== '' && stateText !== lastStateTexts.get(sessionId)
-      const compensationDue = compensationText !== '' && compensationText !== lastCompensationTexts.get(sessionId)
+      const state = await currentObservationState(entity)
+      const compensation = await currentCompensation(entity, sessionId)
+      const compensationText = compensation.text
+      const boardText = await sessionBoardTextFor(agent)
+      // 首轮给完整现状卡；之后只给与上次相比变化的字段（无变化就不注入）。
+      const previousState = lastStateValues.get(sessionId)
+      const stateText = previousState === undefined
+        ? state.text
+        : renderStateDelta(state.structured, previousState, { maxChars: config.promptMaxChars })
+      const stateDue = stateText !== ''
+      // 头行带每次刷新的时间戳：按正文签名比较，否则内容没变也会被当成新包反复注入。
+      const compensationKey = compensationSignature(compensationText)
+      const compensationDue = compensationText !== '' && compensationKey !== lastCompensationSignatures.get(sessionId)
       if (!stateDue && !compensationDue && boardText === '') return decision
       if (agent !== undefined) lastTurnByAgent.set(agent, turn)
       const messages = [...decision.messages]
       if (stateDue) {
         messages.push(createInjectedMessage(stateText))
-        lastStateTexts.set(sessionId, stateText)
+        if (state.values instanceof Map) setSessionEntry(lastStateValues, sessionId, state.values)
       }
       if (compensationDue) {
         messages.push(createInjectedMessage(compensationText))
-        lastCompensationTexts.set(sessionId, compensationText)
+        lastCompensationSignatures.set(sessionId, compensationKey)
+        if (compensation.ids.length > 0) {
+          const seen = pushedMemoryOf(sessionId)
+          for (const id of compensation.ids) {
+            if (seen.has(id)) continue
+            seen.add(id)
+            if (seen.size > PUSHED_MEMORY_LIMIT) {
+              const oldest = seen.values().next()
+              if (!oldest.done) seen.delete(oldest.value)
+            }
+          }
+        }
       }
       if (boardText !== '') messages.push(createInjectedMessage(boardText))
       return { ...decision, messages }
@@ -1164,7 +1238,9 @@ function createRuntime(options) {
         // 工具可能已随 tools fiber 释放：忽略。
       }
       dialogFeed.clear()
-      lastStateTexts.clear()
+      lastStateValues.clear()
+      pushedMemoryIds.clear()
+      lastCompensationSignatures.clear()
       observationStates.clear()
       panelBoards.clear()
       mainPushes.clear()

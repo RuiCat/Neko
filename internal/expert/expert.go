@@ -12,8 +12,11 @@ import (
 
 // Entry is one remembered item in an expert's private context. SnapshotID is
 // the anchor that later lets a fragment be traced back to a hard-state capture.
+// SessionID is the session that produced the entry, so the same session does
+// not recall its own turn back as external memory.
 type Entry struct {
 	SnapshotID string
+	SessionID  string
 	Kind       string
 	Content    string
 	Weight     float64
@@ -21,9 +24,11 @@ type Entry struct {
 }
 
 // Input is what an expert may read for one turn: the user text and the shared
-// board. Its own context is internal to the expert.
+// board. Its own context is internal to the expert. SessionID is the reading
+// session; entries carrying the same ID are this session's own echoes.
 type Input struct {
 	UserInput string
+	SessionID string
 	Board     blackboard.Reader
 }
 

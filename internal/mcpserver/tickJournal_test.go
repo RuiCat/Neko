@@ -24,7 +24,7 @@ func TestRunTickWritesJournalRecord(t *testing.T) {
 	fixture.server.SetSessionID("session-42")
 	fixture.server.SetLearningLoop(
 		blackboard.New(),
-		compensation.NewAssembler(gate.NewRuleGate(), expert.NewDefaultRegistry(4)),
+		compensation.NewAssembler(gate.NewRuleGate(), expert.NewDefaultSet(4)),
 	)
 
 	result, err := fixture.server.RunTick("", TickOptions{SkipSaveWhenUnchanged: true})

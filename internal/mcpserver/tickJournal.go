@@ -50,10 +50,13 @@ func (s *Server) attachCompensation(record *journal.TurnRecord, result engine.Ti
 		log.Printf("astrbox: 黑板写入快照失败: %v", err)
 		return
 	}
+	// tick 记录跨实体：它没有单一实体池可以召回，这里只投影状态；专家记忆只在
+	// 有明确实体的 DSH 轮（control 层）里读写。
 	pkg, active, err := s.assembler.AssembleWithActive(context.Background(), compensation.Input{
 		UserInput: record.UserInput,
 		Board:     s.board,
 		Features:  gate.Features{EventKind: eventKindOf(result), Summary: result.ReplyHint},
+		SessionID: s.currentSessionID(),
 	})
 	if err != nil {
 		log.Printf("astrbox: 补偿包组装失败: %v", err)

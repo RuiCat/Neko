@@ -24,19 +24,23 @@ func postNightly(t *testing.T, env *testEnv, body string) *httptest.ResponseReco
 
 func TestNightlyDecaysAndReports(t *testing.T) {
 	env := newTestEnv(t, Options{})
-	env.runtime.Experts.Remember(gate.EXPERT_EVENT, expert.Entry{SnapshotID: "evt_1", Content: "旧事", Weight: 0.06})
-	env.runtime.Experts.Remember(gate.EXPERT_EVENT, expert.Entry{SnapshotID: "evt_2", Content: "新事", Weight: 0.8})
+	env.runtime.Experts.Remember("猫猫", gate.EXPERT_EVENT, expert.Entry{SnapshotID: "evt_1", Content: "旧事", Weight: 0.06})
+	env.runtime.Experts.Remember("猫猫", gate.EXPERT_EVENT, expert.Entry{SnapshotID: "evt_2", Content: "新事", Weight: 0.8})
 	recorder := postNightly(t, env, `{"factor":0.5}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("状态码 %d：%s", recorder.Code, recorder.Body.String())
 	}
 	payload := decodeBody(t, recorder)
-	perExpert, ok := payload["per_expert"].(map[string]any)
+	perEntity, ok := payload["per_expert"].(map[string]any)
 	if !ok {
 		t.Fatalf("缺少 per_expert：%v", payload)
 	}
-	if perExpert[gate.EXPERT_EVENT] != float64(1) {
-		t.Fatalf("事件专家应移除 1 条：%v", perExpert)
+	catExperts, ok := perEntity["猫猫"].(map[string]any)
+	if !ok {
+		t.Fatalf("per_expert 应按实体嵌套：%v", perEntity)
+	}
+	if catExperts[gate.EXPERT_EVENT] != float64(1) {
+		t.Fatalf("猫猫 的事件专家应移除 1 条：%v", catExperts)
 	}
 	if payload["removed"] != float64(1) {
 		t.Fatalf("总移除数 %v", payload["removed"])

@@ -60,8 +60,8 @@ func TestZeroDepsFailsActionably(t *testing.T) {
 // reported per expert and the result is written to experts.json.
 func TestNightlyDecaysAndPersists(t *testing.T) {
 	deps := newDeps(t)
-	deps.Experts = expert.NewDefaultRegistry(expert.DEFAULT_CONTEXT_CAPACITY)
-	deps.Experts.Remember("事件记忆", expert.Entry{SnapshotID: "evt_1", Content: "旧事", Weight: 0.06})
+	deps.Experts = expert.NewDefaultSet(expert.DEFAULT_CONTEXT_CAPACITY)
+	deps.Experts.Remember("猫猫", "事件记忆", expert.Entry{SnapshotID: "evt_1", Content: "旧事", Weight: 0.06})
 	factor := 0.5
 	body, err := ops.Nightly(deps, &factor)
 	if err != nil {

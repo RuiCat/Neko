@@ -21,7 +21,7 @@ function assistantEvent(turn, text) {
 
 /** 造一条 user/message 事件（真实契约：payload 就是消息本身，没有 turn 字段）。 */
 function userEvent(text) {
-  return { type: 'user/message', data: { content: [{ type: 'text', text }] } }
+  return { type: 'user/message', data: { content: [{ type: 'text', text }], source: { kind: 'user' } } }
 }
 
 test('summarizeTurn 取本轮最后一条助手文本，忽略其他轮', () => {
@@ -81,6 +81,17 @@ test('summarizeTurn 不把 astrbox 注入推送当成主人输入', () => {
   const summary = summarizeTurn(sessionWith(events), 1)
   assert.equal(summary.userDigest, undefined)
   assert.equal(summary.assistantDigest, '好')
+})
+
+test('summarizeTurn 不把宿主 time-context 注入当成主人输入', () => {
+  const events = [
+    { type: 'turn/start', data: { turn: 7 } },
+    { type: 'user/message', data: { content: [{ type: 'text', text: 'Time sampled while preparing turn 7, step 1: 2026-11-21T18:25:03+08:00[Asia/Shanghai]' }], source: { kind: 'time-context' } } },
+    { type: 'user/message', data: { content: [{ type: 'text', text: '[astrbox-observation] 猫猫 · 1 处变化' }], source: { kind: 'user' } } },
+    assistantEvent(7, '好'),
+  ]
+  const summary = summarizeTurn(sessionWith(events), 7)
+  assert.equal(summary.userDigest, undefined)
 })
 
 test('summarizeTurn 无可用事件时返回 undefined', () => {

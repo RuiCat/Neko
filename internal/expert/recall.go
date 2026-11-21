@@ -55,12 +55,18 @@ func (e *RecallExpert) Replace(entries []Entry) {
 	e.ctx.Replace(entries)
 }
 
-// Compensate returns the newest entries as retrieved fragments. No entries
-// means no fragments (the assembler decides the fallback, not the expert).
+// Compensate returns the newest entries as retrieved fragments. Entries this
+// session wrote itself are skipped, so a turn is not fed back into the next
+// package as if someone else had said it; entries with an empty SessionID are
+// legacy data that cannot be attributed and stay recallable. No entries means
+// no fragments (the assembler decides the fallback, not the expert).
 func (e *RecallExpert) Compensate(ctx context.Context, in Input) ([]Fragment, error) {
 	entries := e.ctx.Recent(e.max)
 	fragments := make([]Fragment, 0, len(entries))
 	for _, entry := range entries {
+		if in.SessionID != "" && entry.SessionID == in.SessionID {
+			continue
+		}
 		fragments = append(fragments, Fragment{
 			Content:          entry.Content,
 			SourceSnapshotID: entry.SnapshotID,

@@ -178,6 +178,57 @@ function stateLine(entry) {
  * @param {{maxItems?: number, maxChars?: number}} [options] 渲染选项
  * @returns {string} 现状卡文本；无可用条目时为空串
  */
+/**
+ * 把现状响应拆成 `path → 已格式化值`，供下一次比较变化（不渲染）。
+ * @param {unknown} payload `GET /v2/observations/state` 响应体
+ * @returns {Map<string, string>} 路径 → 文本值
+ */
+export function stateValuesOf(payload) {
+  const values = new Map()
+  if (!isPlainObject(payload) || !Array.isArray(payload.entries)) return values
+  for (const entry of payload.entries) {
+    if (!isPlainObject(entry)) continue
+    const path = typeof entry.path === 'string' ? entry.path.trim() : ''
+    if (path === '') continue
+    const value = formatValue(entry.value)
+    values.set(path, value === null ? 'null' : value)
+  }
+  return values
+}
+
+/**
+ * 渲染现状卡的变化形态（§4.3 增量）：只列与上次相比变了的字段。
+ *
+ * 头行 `[astrbox-state] <entity> · <N> 项变化`；`previous` 为上次注入的 `path → 值`，
+ * 没有变化时返回空串（调用方不注入）。新增字段只写当前值。
+ * @param {unknown} payload `GET /v2/observations/state` 响应体
+ * @param {Map<string, string>} previous 上次注入的值表
+ * @param {{maxChars?: number}} [options] 渲染选项
+ * @returns {string} 变化文本；无变化时为空串
+ */
+export function renderStateDelta(payload, previous, options = {}) {
+  if (!isPlainObject(payload) || !(previous instanceof Map)) return ''
+  const entity = entityOf(payload)
+  if (entity === '') return ''
+  const entries = Array.isArray(payload.entries) ? payload.entries : []
+  const lines = []
+  for (const entry of entries) {
+    if (!isPlainObject(entry)) continue
+    const path = typeof entry.path === 'string' ? entry.path.trim() : ''
+    if (path === '') continue
+    const value = formatValue(entry.value)
+    const toText = value === null ? 'null' : value
+    const fromText = previous.get(path)
+    if (fromText === toText) continue
+    lines.push(fromText === undefined ? `- ${path}: ${toText}` : `- ${path}: ${fromText} → ${toText}`)
+  }
+  if (lines.length === 0) return ''
+  const optionsObject = isPlainObject(options) ? options : {}
+  const maxChars = Number.isInteger(optionsObject.maxChars) && optionsObject.maxChars >= 1
+    ? optionsObject.maxChars
+    : DEFAULT_STATE_MAX_CHARS
+  return fitBlock(`${STATE_PREFIX} ${entity} · ${lines.length} 项变化`, lines, maxChars)
+}
 export function renderState(payload, options = {}) {
   if (!isPlainObject(payload)) return ''
   const entity = entityOf(payload)

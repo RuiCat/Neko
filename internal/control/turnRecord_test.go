@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/RuiCat/Neko/internal/bootstrap"
-	"github.com/RuiCat/Neko/internal/expert"
 	"github.com/RuiCat/Neko/internal/gate"
 	"github.com/RuiCat/Neko/internal/journal"
 	"github.com/RuiCat/Neko/internal/mcpserver"
@@ -134,17 +133,11 @@ func TestTurnEndWithoutUserDigestDoesNotRemember(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("状态码 %d：%s", recorder.Code, recorder.Body.String())
 	}
-	for _, id := range runtime.Experts.IDs() {
-		entry, ok := runtime.Experts.Get(id)
-		if !ok {
-			continue
-		}
-		recall, ok := entry.(*expert.RecallExpert)
-		if !ok {
-			continue
-		}
-		if count := len(recall.Entries()); count != 0 {
-			t.Fatalf("专家 %s 不应记住没有用户原话的轮次，得到 %d 条", id, count)
+	for entity, perExpert := range runtime.Experts.Snapshot() {
+		for id, entries := range perExpert {
+			if len(entries) != 0 {
+				t.Fatalf("实体 %s 的专家 %s 不应记住没有用户原话的轮次，得到 %d 条", entity, id, len(entries))
+			}
 		}
 	}
 }

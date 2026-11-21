@@ -166,14 +166,21 @@ func loadReferences(path string) []referenceset.Entry {
 	return entries
 }
 
-// decayExperts loads, decays and saves the persisted expert contexts.
+// decayExperts loads, decays and saves the persisted expert contexts. The
+// report keeps one count per expert id, summed across the entity pools.
 func decayExperts(path string, factor float64) (map[string]int, error) {
-	registry := expert.NewDefaultRegistry(expert.DEFAULT_CONTEXT_CAPACITY)
-	if err := expert.LoadFile(path, registry); err != nil {
+	set := expert.NewDefaultSet(expert.DEFAULT_CONTEXT_CAPACITY)
+	if err := expert.LoadSetFile(path, set); err != nil {
 		return nil, err
 	}
-	removed := registry.DecayAll(factor)
-	if err := expert.SaveFile(path, registry); err != nil {
+	perEntity := set.DecayAll(factor)
+	removed := map[string]int{}
+	for _, perExpert := range perEntity {
+		for id, count := range perExpert {
+			removed[id] += count
+		}
+	}
+	if err := expert.SaveSetFile(path, set); err != nil {
 		return nil, err
 	}
 	return removed, nil

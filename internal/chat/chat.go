@@ -104,7 +104,12 @@ func (c *Chat) Turn(ctx context.Context, input, tickID string) (Result, error) {
 	}); err != nil {
 		return Result{}, err
 	}
+	// chat 没有独立的实体字段：独立会话即独立实体，故用 SessionID 作为实体键。
+	// 主/子会话共享同一实体池的约定属于桥接侧（control 用真实 entity ID），
+	// 这里的实体池不会被别的会话读到。
 	pkg, active, err := c.options.Assembler.AssembleWithActive(ctx, compensation.Input{
+		Entity:    c.options.SessionID,
+		SessionID: c.options.SessionID,
 		UserInput: input,
 		Board:     c.options.Board,
 		Features:  gate.Features{EventKind: "turn", Summary: summarize(input)},

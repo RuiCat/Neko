@@ -10,6 +10,8 @@ import {
   formatValue,
   renderDelta,
   renderState,
+  renderStateDelta,
+  stateValuesOf,
 } from './observationRender.mjs'
 
 /** §3.1 形状的三条变化（先 critical 后 normal）。 */
@@ -157,4 +159,38 @@ test('renderState：entries 为空 / 非法 payload 返回空串（§4.3）', ()
   assert.equal(renderState({ ok: true, scope: 'entity:猫', entries: [] }), '')
   assert.equal(renderState(null), '')
   assert.equal(renderState({ ok: true, entries: [{ path: '状态.身体', value: 1 }] }), '')
+})
+
+test('stateValuesOf：path → 格式化值，非法条目跳过', () => {
+  const values = stateValuesOf({
+    scope: 'entity:猫',
+    entries: [
+      { path: '状态.身体', value: '虚弱' },
+      { path: '生殖.受孕窗口', value: false },
+      { path: '', value: 1 },
+      null,
+    ],
+  })
+  assert.deepEqual([...values.entries()], [['状态.身体', '虚弱'], ['生殖.受孕窗口', '假']])
+})
+
+test('renderStateDelta：只列与上次相比变化的字段，新增字段只写当前值', () => {
+  const payload = {
+    ok: true,
+    scope: 'entity:猫',
+    entries: [
+      { path: '状态.身体', value: '疲惫' },
+      { path: '状态.情绪', value: '平静' },
+      { path: '状态.位置', value: '书房' },
+    ],
+  }
+  const previous = new Map([['状态.身体', '虚弱'], ['状态.情绪', '平静']])
+  assert.equal(renderStateDelta(payload, previous), '[astrbox-state] 猫 · 2 项变化\n- 状态.身体: 虚弱 → 疲惫\n- 状态.位置: 书房')
+})
+
+test('renderStateDelta：无变化 / 缺 previous / 非法 payload 返回空串', () => {
+  const payload = { ok: true, scope: 'entity:猫', entries: [{ path: '状态.身体', value: '虚弱' }] }
+  assert.equal(renderStateDelta(payload, new Map([['状态.身体', '虚弱']])), '')
+  assert.equal(renderStateDelta(payload, undefined), '')
+  assert.equal(renderStateDelta(null, new Map()), '')
 })

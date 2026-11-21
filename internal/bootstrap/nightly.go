@@ -65,10 +65,13 @@ func (r *Runtime) runNightly(hour, minute int, factor float64) {
 			timer.Stop()
 			return
 		case <-timer.C:
+			// DecayAll 的结果按实体池嵌套，这里只汇总总移除数写日志。
 			removed := r.Experts.DecayAll(factor)
 			total := 0
-			for _, count := range removed {
-				total += count
+			for _, perExpert := range removed {
+				for _, count := range perExpert {
+					total += count
+				}
 			}
 			if err := r.SaveExperts(); err != nil {
 				log.Printf("astrbox: 夜间衰减落盘失败: %v", err)

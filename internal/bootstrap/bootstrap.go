@@ -84,7 +84,8 @@ type Runtime struct {
 	// SessionBoards keeps the workspace/global session boards; the control
 	// plane's /boards routes read and write it.
 	SessionBoards *sessionboard.Store
-	Experts       *expert.Registry
+	// Experts is the per-entity family of expert pools.
+	Experts *expert.Set
 	// ExpertsPath is where the expert contexts are persisted.
 	ExpertsPath string
 	Assembler   *compensation.Assembler
@@ -196,14 +197,14 @@ func New(options Options) (*Runtime, error) {
 	if err := sessionBoards.Load(); err != nil {
 		log.Printf("astrbox: 加载会话黑板失败（按空黑板继续）: %v", err)
 	}
-	experts := expert.NewDefaultRegistry(expert.DEFAULT_CONTEXT_CAPACITY)
+	experts := expert.NewDefaultSet(expert.DEFAULT_CONTEXT_CAPACITY)
 	expertsPath := filepath.Join(options.DataDir, "experts.json")
-	if err := expert.LoadFile(expertsPath, experts); err != nil {
+	if err := expert.LoadSetFile(expertsPath, experts); err != nil {
 		log.Printf("astrbox: 恢复专家上下文失败: %v", err)
 	}
 	// 旧版本把桥接推送当成用户原话写进记忆，这些回声条目会在下一轮补偿包里
 	// 把 NPC 自己的推送和回复再喂回去；加载时清掉（新条目已在写入侧拦截）。
-	if dropped := expert.DropInjectedEchoes(experts); dropped > 0 {
+	if dropped := experts.DropInjectedEchoes(); dropped > 0 {
 		log.Printf("astrbox: 清理注入回声记忆 %d 条", dropped)
 	}
 	ruleGate := gate.NewRuleGate()
@@ -272,7 +273,7 @@ func (r *Runtime) SaveExperts() error {
 	if r.Experts == nil || r.ExpertsPath == "" {
 		return nil
 	}
-	return expert.SaveFile(r.ExpertsPath, r.Experts)
+	return expert.SaveSetFile(r.ExpertsPath, r.Experts)
 }
 
 // NewMCPServer wires the runtime into an MCP tool server, keeping the tool

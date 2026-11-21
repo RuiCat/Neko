@@ -25,8 +25,10 @@ process.on('exit', () => rmSync(TEST_STATE_DIR, { recursive: true, force: true }
  */
 function applyBridge(ctx, rawConfig = {}) {
   testStateSeq += 1
+  // entity 固定：apply() 默认会读本机 bridge.config.json，测试不能跟着本机配置漂。
   return apply(ctx, {
     subscriptionStatePath: join(TEST_STATE_DIR, `subscription-${process.pid}-${testStateSeq}.json`),
+    entity: '猫猫',
     ...rawConfig,
   })
 }
@@ -176,6 +178,83 @@ test('pre-step 注入补偿包：记忆/约束/情境/专家，文本不变不�
   // 补偿包文本未变 → 下一轮不再注入；现状卡也相同 → 整轮没有新消息。
   const second = await runPreStep(handler, { agent: {}, turn: 2, step: 1 })
   assert.equal(second.messages.length, 0)
+})
+
+test('补偿包正文没变时，头行时间戳刷新不重复注入', async (t) => {
+  const { server, control } = await startBridgeServer()
+  t.after(() => server.close())
+  control.observationStates['猫猫'] = stateFixture()
+  control.turnContext = {
+    ok: true,
+    compensation: { memory: [{ type: 'episodic', source_snapshot_id: 's-2', content: '傍晚在窗边' }] },
+  }
+  const stub = createStubContext()
+  const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, promptRefreshMs: 0, entity: '猫猫' })
+  t.after(() => runtime.dispose())
+  const handler = stub.handler('agent/pre-step')
+
+  const first = await runPreStep(handler, { agent: {}, turn: 1, step: 1 })
+  assert.equal(first.messages.length, 2)
+  // 跨过毫秒边界让头行时间戳确实变化：只有正文签名相同才允许跳过。
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  const second = await runPreStep(handler, { agent: {}, turn: 2, step: 1 })
+  assert.equal(second.messages.length, 0)
+})
+
+test('已经推送过的记忆片段不再重复推送', async (t) => {
+  const { server, control } = await startBridgeServer()
+  t.after(() => server.close())
+  const memoryOf = (id, content) => ({ type: 'episodic', source_snapshot_id: id, content })
+  control.observationStates['猫猫'] = stateFixture()
+  control.turnContext = { ok: true, compensation: { memory: [memoryOf('s-1', '甲')] } }
+  const stub = createStubContext()
+  const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, promptRefreshMs: 0 })
+  t.after(() => runtime.dispose())
+  const handler = stub.handler('agent/pre-step')
+  const agent = { session: { id: 's-main' } }
+
+  const first = await runPreStep(handler, { agent, turn: 1, step: 1 })
+  assert.equal(first.messages.length, 2)
+  assert.ok(first.messages[1].content[0].text.includes('[episodic s-1] 甲'))
+  const second = await runPreStep(handler, { agent, turn: 2, step: 1 })
+  assert.equal(second.messages.length, 0)
+
+  control.turnContext = { ok: true, compensation: { memory: [memoryOf('s-1', '甲'), memoryOf('s-2', '乙')] } }
+  const third = await runPreStep(handler, { agent, turn: 3, step: 1 })
+  assert.equal(third.messages.length, 1)
+  const text = third.messages[0].content[0].text
+  assert.ok(text.includes('[episodic s-2] 乙'), text)
+  assert.ok(!text.includes('[episodic s-1]'), text)
+  const fourth = await runPreStep(handler, { agent, turn: 4, step: 1 })
+  assert.equal(fourth.messages.length, 0)
+})
+
+test('现状卡：首轮整份，之后只推与上次相比的变化，无变化不注入', async (t) => {
+  const { server, control } = await startBridgeServer()
+  t.after(() => server.close())
+  control.observationStates['猫猫'] = {
+    version: 5,
+    entries: [{ path: '状态.身体', value: '虚弱' }, { path: '状态.情绪', value: '平静' }],
+  }
+  const stub = createStubContext()
+  const runtime = applyBridge(stub.ctx, { socketPath: server.socketPath, promptRefreshMs: 0, entity: '猫猫' })
+  t.after(() => runtime.dispose())
+  const handler = stub.handler('agent/pre-step')
+
+  const first = await runPreStep(handler, { agent: {}, turn: 1, step: 1 })
+  assert.equal(first.messages.length, 1)
+  assert.equal(first.messages[0].content[0].text, '[astrbox-state] 猫猫\n状态.身体: 虚弱\n状态.情绪: 平静')
+
+  control.observationStates['猫猫'] = {
+    version: 6,
+    entries: [{ path: '状态.身体', value: '疲惫' }, { path: '状态.情绪', value: '平静' }],
+  }
+  const second = await runPreStep(handler, { agent: {}, turn: 2, step: 1 })
+  assert.equal(second.messages.length, 1)
+  assert.equal(second.messages[0].content[0].text, '[astrbox-state] 猫猫 · 1 项变化\n- 状态.身体: 虚弱 → 疲惫')
+
+  const third = await runPreStep(handler, { agent: {}, turn: 3, step: 1 })
+  assert.equal(third.messages.length, 0)
 })
 
 test('现状卡超过 promptMaxChars 时截断（§4.3 字符预算）', async (t) => {

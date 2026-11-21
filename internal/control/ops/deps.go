@@ -60,7 +60,7 @@ func Internal(format string, args ...any) *Error {
 type Deps struct {
 	Store         *entity.Store
 	Machine       *engine.StateMachine
-	Experts       *expert.Registry
+	Experts       *expert.Set
 	DataDir       string
 	CandidatesTTL time.Duration
 }

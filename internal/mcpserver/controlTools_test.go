@@ -243,7 +243,7 @@ func TestOpsTools(t *testing.T) {
 	fx.server.SetOpsDeps(ops.Deps{
 		Store:   fx.server.store,
 		Machine: fx.machine,
-		Experts: expert.NewDefaultRegistry(expert.DEFAULT_CONTEXT_CAPACITY),
+		Experts: expert.NewDefaultSet(expert.DEFAULT_CONTEXT_CAPACITY),
 		DataDir: fx.dataDir,
 	})
 	session, cancel := connect(t, fx.server)

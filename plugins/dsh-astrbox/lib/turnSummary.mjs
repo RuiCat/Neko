@@ -75,6 +75,9 @@ export function summarizeTurn(session, turn) {
     if (event.type === 'turn/end') break
     if (event.type === 'user/message') {
       if (userDigest !== '') continue
+      // 真实用户输入恒为 source.kind === 'user'（与 dialogFeed 同口径）：
+      // time-context 等宿主注入消息不是主人说的话，混进来会被记成记忆再被召回。
+      if (data?.source?.kind !== 'user') continue
       const text = messageText(data)
       if (text === '' || isInjectedUserText(data, text)) continue
       userDigest = truncate(text)

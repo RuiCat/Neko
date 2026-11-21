@@ -26,12 +26,15 @@ func Nightly(deps Deps, factor *float64) (map[string]any, error) {
 	if value <= 0 || value >= 1 {
 		return nil, BadRequest("factor 必须落在 (0,1) 之间")
 	}
-	perExpert := deps.Experts.DecayAll(value)
+	// 衰减按实体池分别进行，响应保留实体 -> 专家 -> 移除数的嵌套结构。
+	perEntity := deps.Experts.DecayAll(value)
 	total := 0
-	for _, removed := range perExpert {
-		total += removed
+	for _, perExpert := range perEntity {
+		for _, removed := range perExpert {
+			total += removed
+		}
 	}
-	if err := expert.SaveFile(filepath.Join(deps.DataDir, "experts.json"), deps.Experts); err != nil {
+	if err := expert.SaveSetFile(filepath.Join(deps.DataDir, "experts.json"), deps.Experts); err != nil {
 		return nil, Internal("保存衰减结果失败: %s", err)
 	}
 	expired, err := deps.candidateStore().Expire(time.Now().Add(-deps.candidateTTL()))
@@ -42,7 +45,7 @@ func Nightly(deps Deps, factor *float64) (map[string]any, error) {
 		"ok":         true,
 		"factor":     value,
 		"removed":    total,
-		"per_expert": perExpert,
+		"per_expert": perEntity,
 		"expired":    expired,
 	}, nil
 }

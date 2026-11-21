@@ -59,7 +59,7 @@ func newChatFixture(t *testing.T, status int, answer string) *chatFixture {
 	chat, err := New(Options{
 		Store: store, Schema: hardstate.DefaultSchema(), Sequence: hardstate.NewSequence(),
 		Board:     blackboard.New(),
-		Assembler: compensation.NewAssembler(gate.NewRuleGate(), expert.NewDefaultRegistry(4)),
+		Assembler: compensation.NewAssembler(gate.NewRuleGate(), expert.NewDefaultSet(4)),
 		Journal:   writer, Provider: provider, SessionID: "test-session", MaxRecent: 2,
 	})
 	if err != nil {
@@ -103,7 +103,7 @@ func TestDryRunSkipsProvider(t *testing.T) {
 	fixture, err := New(Options{
 		Store: store, Schema: hardstate.DefaultSchema(), Sequence: hardstate.NewSequence(),
 		Board:     blackboard.New(),
-		Assembler: compensation.NewAssembler(gate.NewRuleGate(), expert.NewDefaultRegistry(4)),
+		Assembler: compensation.NewAssembler(gate.NewRuleGate(), expert.NewDefaultSet(4)),
 		Journal:   writer, DryRun: true,
 	})
 	if err != nil {

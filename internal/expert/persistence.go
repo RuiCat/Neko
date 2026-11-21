@@ -1,31 +1,126 @@
 // persistence.go saves and restores expert contexts as one JSON file so a
-// restart does not throw away the learned working memory.
+// restart does not throw away the learned working memory. The current shape is
+// v2 (one pool per entity); the retired v1 global pool is kept only for the
+// legacy SaveFile/LoadFile pair and is migrated by backup + empty start.
 package expert
 
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// PERSIST_VERSION is bumped when the file shape changes.
-const PERSIST_VERSION = 1
+// PERSIST_VERSION is the current on-disk file shape: per-entity pools.
+const PERSIST_VERSION = 2
 
-// persistedRegistry is the on-disk shape.
+// LEGACY_PERSIST_VERSION is the retired global-pool shape. SaveFile/LoadFile
+// keep it for the old registry tests; production loads go through the Set.
+const LEGACY_PERSIST_VERSION = 1
+
+// persistedSet is the v2 on-disk shape: 角色:猫猫 -> 事件记忆 -> entries.
+type persistedSet struct {
+	Version  int                           `json:"version"`
+	Entities map[string]map[string][]Entry `json:"entities"`
+}
+
+// persistedRegistry is the retired v1 on-disk shape (one global pool).
 type persistedRegistry struct {
 	Version int                `json:"version"`
 	Experts map[string][]Entry `json:"experts"`
 }
 
-// SaveFile writes every expert context atomically to path.
-func SaveFile(path string, registry *Registry) error {
-	payload := persistedRegistry{Version: PERSIST_VERSION, Experts: registry.Snapshot()}
+// SaveSetFile writes every entity pool atomically to path.
+func SaveSetFile(path string, set *Set) error {
+	if set == nil {
+		return fmt.Errorf("expert: 专家集合未配置")
+	}
+	payload := persistedSet{Version: PERSIST_VERSION, Entities: set.Snapshot()}
 	raw, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return fmt.Errorf("expert: 序列化上下文失败: %w", err)
 	}
+	return writeFileAtomic(path, raw)
+}
+
+// LoadSetFile restores per-entity contexts from path. A missing file is not an
+// error (first run); a malformed or unknown-version file is, so a corrupt
+// store is not silently ignored. A v1 file cannot be attributed to entities:
+// it is copied to <path>.v1.bak and the set starts empty (the next Save
+// overwrites the original file).
+func LoadSetFile(path string, set *Set) error {
+	if set == nil {
+		return fmt.Errorf("expert: 专家集合未配置")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("expert: 读取上下文失败: %w", err)
+	}
+	var header struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &header); err != nil {
+		return fmt.Errorf("expert: 解析上下文失败: %w", err)
+	}
+	switch header.Version {
+	case PERSIST_VERSION:
+		payload := persistedSet{}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return fmt.Errorf("expert: 解析上下文失败: %w", err)
+		}
+		set.Load(payload.Entities)
+		return nil
+	case LEGACY_PERSIST_VERSION:
+		// v1 是全局单池，无法归属实体：先备份，空状态启动，原文件留给后续 Save 覆盖。
+		backup := path + ".v1.bak"
+		if err := os.WriteFile(backup, raw, 0o644); err != nil {
+			return fmt.Errorf("expert: 备份 v1 上下文失败: %w", err)
+		}
+		log.Printf("expert: 旧版专家上下文已备份到 %s，按空状态启动（v1 无法按实体归属）", backup)
+		return nil
+	default:
+		return fmt.Errorf("expert: 上下文版本 %d 不受支持（期望 %d）", header.Version, PERSIST_VERSION)
+	}
+}
+
+// SaveFile writes one global registry atomically in the retired v1 shape.
+func SaveFile(path string, registry *Registry) error {
+	payload := persistedRegistry{Version: LEGACY_PERSIST_VERSION, Experts: registry.Snapshot()}
+	raw, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return fmt.Errorf("expert: 序列化上下文失败: %w", err)
+	}
+	return writeFileAtomic(path, raw)
+}
+
+// LoadFile restores one global registry from the retired v1 shape.
+func LoadFile(path string, registry *Registry) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("expert: 读取上下文失败: %w", err)
+	}
+	payload := persistedRegistry{}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return fmt.Errorf("expert: 解析上下文失败: %w", err)
+	}
+	if payload.Version != LEGACY_PERSIST_VERSION {
+		return fmt.Errorf("expert: 上下文版本 %d 不受支持（期望 %d）", payload.Version, LEGACY_PERSIST_VERSION)
+	}
+	registry.Load(payload.Experts)
+	return nil
+}
+
+// writeFileAtomic replaces path through a synced temp file, so a crash never
+// leaves a half-written store behind.
+func writeFileAtomic(path string, raw []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("expert: 创建目录失败: %w", err)
 	}
@@ -52,27 +147,6 @@ func SaveFile(path string, registry *Registry) error {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("expert: 替换上下文文件失败: %w", err)
 	}
-	return nil
-}
-
-// LoadFile restores contexts from path. A missing file is not an error (first
-// run); a malformed file is, so a corrupt store is not silently ignored.
-func LoadFile(path string, registry *Registry) error {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("expert: 读取上下文失败: %w", err)
-	}
-	payload := persistedRegistry{}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return fmt.Errorf("expert: 解析上下文失败: %w", err)
-	}
-	if payload.Version != PERSIST_VERSION {
-		return fmt.Errorf("expert: 上下文版本 %d 不受支持（期望 %d）", payload.Version, PERSIST_VERSION)
-	}
-	registry.Load(payload.Experts)
 	return nil
 }
 

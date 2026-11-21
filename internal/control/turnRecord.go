@@ -31,7 +31,7 @@ func (s *Server) recordDSHTurn(request sessionEventRequest, entityID string) {
 	}
 	now := time.Now()
 	turnID := s.runtime.JournalSequence.Next(now)
-	snapshot, pkg, active, err := s.buildTurnContext(context.Background(), turnID, entityID, strings.TrimSpace(request.Summary.UserDigest), now)
+	snapshot, pkg, active, err := s.buildTurnContext(context.Background(), turnID, entityID, request.SessionID, strings.TrimSpace(request.Summary.UserDigest), now)
 	if err != nil {
 		log.Printf("astrbox: DSH 轮记录失败: %v", err)
 		return
@@ -50,17 +50,19 @@ func (s *Server) recordDSHTurn(request sessionEventRequest, entityID string) {
 	// 只有带真实用户原话的轮次才进专家记忆：状态推送 / relay 触发的轮次没有用户输入，
 	// 记成记忆只会让 NPC 在下一轮「回忆」起自己的独白，再被当成用户的话推回去。
 	if record.UserInput != "" {
-		s.rememberTurn(turnID, record.UserInput, answer, now)
+		s.rememberTurn(turnID, entityID, request.SessionID, record.UserInput, answer, now)
 	}
 	if err := s.runtime.SaveExperts(); err != nil {
 		log.Printf("astrbox: 保存专家上下文失败: %v", err)
 	}
 }
 
-// rememberTurn feeds the turn into the experts' private contexts so later
+// rememberTurn feeds the turn into one entity's private contexts so later
 // compensation packages can recall it. The heuristic routing is deliberately
 // simple; it can be replaced by a trained classifier behind the same API.
-func (s *Server) rememberTurn(turnID, userInput, answer string, now time.Time) {
+// The entry carries the producing session, so that session does not recall its
+// own turn while sibling sessions of the same entity still can.
+func (s *Server) rememberTurn(turnID, entityID, sessionID, userInput, answer string, now time.Time) {
 	if s.runtime.Experts == nil {
 		return
 	}
@@ -70,12 +72,13 @@ func (s *Server) rememberTurn(turnID, userInput, answer string, now time.Time) {
 	}
 	entry := expert.Entry{
 		SnapshotID: turnID,
+		SessionID:  sessionID,
 		Content:    content,
 		Weight:     0.7,
 		At:         now.Unix(),
 	}
 	for _, id := range memoryTargets(userInput) {
-		s.runtime.Experts.Remember(id, entry)
+		s.runtime.Experts.Remember(entityID, id, entry)
 	}
 }
 

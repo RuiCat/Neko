@@ -39,24 +39,21 @@ func testBoard(t *testing.T) *blackboard.Board {
 	return board
 }
 
-func testRegistry(t *testing.T) *expert.Registry {
+func testRegistry(t *testing.T) *expert.Set {
 	t.Helper()
-	memory := expert.NewRecallExpert(gate.EXPERT_EVENT, 4, 2)
-	memory.Remember(expert.Entry{
+	experts := expert.NewDefaultSet(4)
+	experts.Remember("猫猫", gate.EXPERT_EVENT, expert.Entry{
 		SnapshotID: "evt_20261102_0009",
 		Content:    "昨晚的约定",
 		Weight:     0.8,
 	})
-	registry := expert.NewRegistry()
-	if err := registry.Add(memory); err != nil {
-		t.Fatal(err)
-	}
-	return registry
+	return experts
 }
 
 func TestAssembleProducesValidPackage(t *testing.T) {
 	assembler := NewAssembler(staticGate{active: []string{gate.EXPERT_EVENT}}, testRegistry(t))
 	pkg, err := assembler.Assemble(context.Background(), Input{
+		Entity:    "猫猫",
 		UserInput: "记得吗",
 		Board:     testBoard(t),
 		Situation: "室内·夜间·两人",
@@ -80,27 +77,25 @@ func TestAssembleProducesValidPackage(t *testing.T) {
 
 func TestAssembleFailsWithoutSnapshot(t *testing.T) {
 	assembler := NewAssembler(staticGate{active: []string{gate.EXPERT_EVENT}}, testRegistry(t))
-	if _, err := assembler.Assemble(context.Background(), Input{Board: blackboard.New()}); err == nil {
+	if _, err := assembler.Assemble(context.Background(), Input{Entity: "猫猫", Board: blackboard.New()}); err == nil {
 		t.Fatal("没有快照时应失败")
 	}
 }
 
 func TestAssemblePropagatesGateError(t *testing.T) {
 	assembler := NewAssembler(staticGate{err: errors.New("boom")}, testRegistry(t))
-	if _, err := assembler.Assemble(context.Background(), Input{Board: testBoard(t)}); err == nil {
+	if _, err := assembler.Assemble(context.Background(), Input{Entity: "猫猫", Board: testBoard(t)}); err == nil {
 		t.Fatal("门控错误应向上返回")
 	}
 }
 
 func TestAssembleCapsFragments(t *testing.T) {
-	memory := expert.NewRecallExpert(gate.EXPERT_EVENT, 4, 2)
-	memory.Remember(expert.Entry{SnapshotID: "a", Content: "一", Weight: 1})
-	memory.Remember(expert.Entry{SnapshotID: "b", Content: "二", Weight: 1})
-	registry := expert.NewRegistry()
-	_ = registry.Add(memory)
-	assembler := NewAssembler(staticGate{active: []string{gate.EXPERT_EVENT}}, registry)
+	experts := expert.NewDefaultSet(4)
+	experts.Remember("猫猫", gate.EXPERT_EVENT, expert.Entry{SnapshotID: "a", Content: "一", Weight: 1})
+	experts.Remember("猫猫", gate.EXPERT_EVENT, expert.Entry{SnapshotID: "b", Content: "二", Weight: 1})
+	assembler := NewAssembler(staticGate{active: []string{gate.EXPERT_EVENT}}, experts)
 	assembler.MaxFragments = 1
-	pkg, err := assembler.Assemble(context.Background(), Input{Board: testBoard(t)})
+	pkg, err := assembler.Assemble(context.Background(), Input{Entity: "猫猫", Board: testBoard(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +106,7 @@ func TestAssembleCapsFragments(t *testing.T) {
 
 func TestValidateRejectsMutations(t *testing.T) {
 	pkg, err := NewAssembler(staticGate{active: []string{gate.EXPERT_EVENT}}, testRegistry(t)).
-		Assemble(context.Background(), Input{Board: testBoard(t)})
+		Assemble(context.Background(), Input{Entity: "猫猫", Board: testBoard(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,12 +169,51 @@ func (g *captureGate) Activate(features gate.Features) ([]string, error) {
 	return []string{gate.EXPERT_EVENT}, nil
 }
 
+// TestAssembleKeepsEntityMemoriesSeparate proves one entity never recalls
+// another entity's private working memory.
+func TestAssembleKeepsEntityMemoriesSeparate(t *testing.T) {
+	assembler := NewAssembler(staticGate{active: []string{gate.EXPERT_EVENT}}, testRegistry(t))
+	pkg, err := assembler.Assemble(context.Background(), Input{Entity: "梦梦", Board: testBoard(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkg.Memory) != 0 {
+		t.Fatalf("梦梦 不应召回 猫猫 的记忆：%+v", pkg.Memory)
+	}
+}
+
+// TestAssembleSkipsOwnSessionEntries proves the entity pool still filters the
+// reading session's own turn, while sibling sessions of the same entity can
+// recall it.
+func TestAssembleSkipsOwnSessionEntries(t *testing.T) {
+	experts := expert.NewDefaultSet(4)
+	experts.Remember("猫猫", gate.EXPERT_EVENT, expert.Entry{
+		SnapshotID: "evt_self", SessionID: "s-main", Content: "用户: 在吗 | 助手: 在的", Weight: 0.8,
+	})
+	assembler := NewAssembler(staticGate{active: []string{gate.EXPERT_EVENT}}, experts)
+	own, err := assembler.Assemble(context.Background(), Input{Entity: "猫猫", SessionID: "s-main", Board: testBoard(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(own.Memory) != 0 {
+		t.Fatalf("本会话自己产生的条目不应召回：%+v", own.Memory)
+	}
+	sibling, err := assembler.Assemble(context.Background(), Input{Entity: "猫猫", SessionID: "s-child", Board: testBoard(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sibling.Memory) != 1 || sibling.Memory[0].SourceSnapshotID != "evt_self" {
+		t.Fatalf("同一实体的别的会话应能召回：%+v", sibling.Memory)
+	}
+}
+
 // TestAssembleDerivesFeaturesBeforeGate proves the live signals reach the gate
 // instead of the raw "turn" hint the callers pass.
 func TestAssembleDerivesFeaturesBeforeGate(t *testing.T) {
 	capture := &captureGate{}
 	assembler := NewAssembler(capture, testRegistry(t))
 	_, err := assembler.Assemble(context.Background(), Input{
+		Entity:    "猫猫",
 		UserInput: "你为什么这么晚才回来？",
 		Board:     testBoard(t),
 	})

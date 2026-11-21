@@ -181,6 +181,8 @@ export function createControlClient(options) {
      */
     async getTurnContext(query) {
       const params = new URLSearchParams({ entity: query.entity })
+      // 会话维度：服务端按 session 过滤「本会话自己说过的话」。
+      if (typeof query.sessionId === 'string' && query.sessionId !== '') params.set('session', query.sessionId)
       const response = await send({ method: 'GET', path: `/turn-context?${params.toString()}`, timeoutMs: requestTimeoutMs })
       if (response.status !== 200) throw errorFromResponse(response)
       return response.body
