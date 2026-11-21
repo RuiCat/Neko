@@ -25,8 +25,10 @@ process.on('exit', () => rmSync(TEST_STATE_DIR, { recursive: true, force: true }
  */
 function applyBridge(ctx, rawConfig = {}) {
   testStateSeq += 1
+  // entity 固定：apply() 默认会读本机 bridge.config.json，测试不能跟着本机配置漂。
   return apply(ctx, {
     subscriptionStatePath: join(TEST_STATE_DIR, `subscription-${process.pid}-${testStateSeq}.json`),
+    entity: '猫猫',
     ...rawConfig,
   })
 }
